@@ -46,6 +46,15 @@ logs/
 htmlcov/
 .tox/
 
+#Pessoal
+.claude/
+CLAUDE.md
+next.txt
+docs
+
 # Flask
 instance/
 .webassets-cache
+
+# Storage (PDFs gerados, uploads temporários)
+storage/
