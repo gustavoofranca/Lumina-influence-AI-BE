@@ -118,6 +118,10 @@ def create_app(config_name: str | None = None) -> Flask:
 
     _configure_logging(app.config.get("ENV", "dev"))
 
+    # Importa todos os models pra que estejam em Base.metadata antes do
+    # Migrate/Alembic ler. Sem isso, autogenerate não enxerga as tabelas.
+    import src.models  # noqa: F401
+
     db.init_app(app)
     migrate.init_app(app, db, directory="migrations")
     cors.init_app(
