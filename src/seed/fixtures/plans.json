@@ -1,0 +1,23 @@
+[
+  {
+    "name": "Free",
+    "max_influencers": 3,
+    "max_analyses_per_month": 10,
+    "allow_benchmarking": false,
+    "price_brl_cents": 0
+  },
+  {
+    "name": "Agency",
+    "max_influencers": 50,
+    "max_analyses_per_month": 500,
+    "allow_benchmarking": true,
+    "price_brl_cents": 129700
+  },
+  {
+    "name": "Enterprise",
+    "max_influencers": 500,
+    "max_analyses_per_month": 5000,
+    "allow_benchmarking": true,
+    "price_brl_cents": 0
+  }
+]

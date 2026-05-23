@@ -1,0 +1,74 @@
+[
+  {
+    "slug": "cmp-001",
+    "brand_name": "NovaTech Pro",
+    "title": "Verão 2026 — Tech Lifestyle",
+    "period_start": "2026-04-01",
+    "period_end": "2026-06-30",
+    "budget_brl_cents": 24000000,
+    "status": "active",
+    "participations": [
+      {"influencer_slug": "inf-001", "fee_brl_cents":  7800000, "deliverables": "12 posts (8 reels + 4 carrosséis)"},
+      {"influencer_slug": "inf-005", "fee_brl_cents":  5600000, "deliverables": "8 posts (3 vídeos longos YT + 5 reels IG)"},
+      {"influencer_slug": "inf-011", "fee_brl_cents":  3800000, "deliverables": "7 posts (5 vídeos YT + 2 reels IG)"},
+      {"influencer_slug": "inf-014", "fee_brl_cents":  2800000, "deliverables": "5 posts (3 vídeos YT + 2 reels IG)"}
+    ]
+  },
+  {
+    "slug": "cmp-002",
+    "brand_name": "Lumière Cosméticos",
+    "title": "Black Friday Beauty",
+    "period_start": "2026-10-15",
+    "period_end": "2026-12-05",
+    "budget_brl_cents": 18000000,
+    "status": "draft",
+    "participations": [
+      {"influencer_slug": "inf-004", "fee_brl_cents": 4500000, "deliverables": "Pendente — 6 posts"},
+      {"influencer_slug": "inf-008", "fee_brl_cents": 6200000, "deliverables": "Pendente — 8 posts multi-plataforma"},
+      {"influencer_slug": "inf-010", "fee_brl_cents": 7300000, "deliverables": "Pendente — 10 posts + 1 reel hero"}
+    ]
+  },
+  {
+    "slug": "cmp-003",
+    "brand_name": "PulseTrain",
+    "title": "Fitness Challenge Q2",
+    "period_start": "2026-04-01",
+    "period_end": "2026-05-15",
+    "budget_brl_cents": 9500000,
+    "status": "active",
+    "participations": [
+      {"influencer_slug": "inf-002", "fee_brl_cents": 3800000, "deliverables": "9 posts (challenge semanal)"},
+      {"influencer_slug": "inf-012", "fee_brl_cents": 2200000, "deliverables": "8 posts (alongamento + meditação)"},
+      {"influencer_slug": "inf-013", "fee_brl_cents": 3500000, "deliverables": "7 posts (treinos + nutrição)"}
+    ]
+  },
+  {
+    "slug": "cmp-004",
+    "brand_name": "AutoVerse",
+    "title": "Lançamento Pro Series",
+    "period_start": "2026-02-01",
+    "period_end": "2026-03-31",
+    "budget_brl_cents": 32000000,
+    "status": "ended",
+    "participations": [
+      {"influencer_slug": "inf-007", "fee_brl_cents": 9500000, "deliverables": "9 posts (test drive + review hero)"},
+      {"influencer_slug": "inf-003", "fee_brl_cents": 9200000, "deliverables": "11 posts (gaming crossover)"},
+      {"influencer_slug": "inf-005", "fee_brl_cents": 7800000, "deliverables": "4 posts (análise de TCO/financiamento)"},
+      {"influencer_slug": "inf-006", "fee_brl_cents": 5500000, "deliverables": "4 posts (lifestyle/viagem)"}
+    ]
+  },
+  {
+    "slug": "cmp-005",
+    "brand_name": "Aurora Brands",
+    "title": "Influencer Spotlight",
+    "period_start": "2026-03-15",
+    "period_end": "2026-05-10",
+    "budget_brl_cents": 14000000,
+    "status": "cancelled",
+    "participations": [
+      {"influencer_slug": "inf-009", "fee_brl_cents": 4800000, "deliverables": "4 posts (cancelado após 2 entregues)"},
+      {"influencer_slug": "inf-010", "fee_brl_cents": 5600000, "deliverables": "3 posts (cancelado após 2 entregues)"},
+      {"influencer_slug": "inf-015", "fee_brl_cents": 3600000, "deliverables": "2 posts (cancelado após 1 entregue)"}
+    ]
+  }
+]

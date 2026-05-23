@@ -92,15 +92,34 @@ def _register_error_handlers(app: Flask) -> None:
 def _register_cli(app: Flask) -> None:
     @app.cli.group()
     def seed() -> None:
-        """Comandos de seed (placeholder até B2)."""
+        """Comandos de seed do banco."""
 
     @seed.command("run")
-    def seed_run() -> None:
-        click.echo("seed run: implementação na etapa B2.")
+    def seed_run_cmd() -> None:
+        """Popula o banco com dados realistas espelhando os mocks do front."""
+        from src.seed.seed_data import seed_run
+
+        try:
+            stats = seed_run()
+        except RuntimeError as exc:
+            click.secho(f"[ERRO] {exc}", fg="red")
+            raise SystemExit(1) from exc
+        click.secho("[OK] Seed concluído:", fg="green")
+        for table, count in stats.items():
+            click.echo(f"  {table:.<24} {count}")
 
     @seed.command("clear")
-    def seed_clear() -> None:
-        click.echo("seed clear: implementação na etapa B2.")
+    def seed_clear_cmd() -> None:
+        """Apaga todos os dados de domínio (preserva alembic_version)."""
+        from src.seed.seed_data import seed_clear
+
+        deleted = seed_clear()
+        if not deleted:
+            click.secho("Nada pra apagar — banco já estava vazio.", fg="yellow")
+            return
+        click.secho("[OK] Tabelas limpas:", fg="green")
+        for table, count in deleted.items():
+            click.echo(f"  {table:.<24} {count}")
 
     @app.cli.group()
     def jobs() -> None:

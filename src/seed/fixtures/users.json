@@ -1,0 +1,44 @@
+[
+  {
+    "slug": "usr-001",
+    "name": "Marina Souza",
+    "email": "marina@lumina-agency.com.br",
+    "oauth_provider": "google",
+    "role": "admin"
+  },
+  {
+    "slug": "usr-002",
+    "name": "Pedro Lima",
+    "email": "pedro@lumina-agency.com.br",
+    "oauth_provider": "google",
+    "role": "member"
+  },
+  {
+    "slug": "usr-003",
+    "name": "Aline Tavares",
+    "email": "aline@lumina-agency.com.br",
+    "oauth_provider": "microsoft",
+    "role": "member"
+  },
+  {
+    "slug": "usr-004",
+    "name": "Bruno Castro",
+    "email": "bruno@lumina-agency.com.br",
+    "oauth_provider": "google",
+    "role": "member"
+  },
+  {
+    "slug": "usr-005",
+    "name": "Júlia Mendes",
+    "email": "julia@lumina-agency.com.br",
+    "oauth_provider": "google",
+    "role": "member"
+  },
+  {
+    "slug": "usr-006",
+    "name": "Felipe Rocha",
+    "email": "felipe.novo@externos.com",
+    "oauth_provider": "google",
+    "role": "viewer"
+  }
+]

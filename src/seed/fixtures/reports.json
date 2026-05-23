@@ -1,0 +1,58 @@
+[
+  {
+    "slug": "rep-001",
+    "title": "Verão 2026 — Relatório Q2",
+    "campaign_slug": "cmp-001",
+    "period_start": "2026-04-01",
+    "period_end": "2026-04-30",
+    "generated_by_slug": "usr-001",
+    "format": "pdf",
+    "sections": {
+      "included": ["kpis", "growth", "benchmark", "diagnostic", "recommendations"],
+      "page_count": 14
+    },
+    "generated_at_iso": "2026-05-01T14:23:00Z"
+  },
+  {
+    "slug": "rep-002",
+    "title": "Lançamento Pro Series — Final",
+    "campaign_slug": "cmp-004",
+    "period_start": "2026-02-01",
+    "period_end": "2026-03-31",
+    "generated_by_slug": "usr-002",
+    "format": "pdf",
+    "sections": {
+      "included": ["kpis", "growth", "benchmark", "diagnostic"],
+      "page_count": 11
+    },
+    "generated_at_iso": "2026-04-05T09:12:00Z"
+  },
+  {
+    "slug": "rep-003",
+    "title": "Fitness Challenge — Snapshot Mensal",
+    "campaign_slug": "cmp-003",
+    "period_start": "2026-04-01",
+    "period_end": "2026-04-30",
+    "generated_by_slug": "usr-001",
+    "format": "pdf",
+    "sections": {
+      "included": ["kpis", "benchmark"],
+      "page_count": 7
+    },
+    "generated_at_iso": "2026-04-30T17:48:00Z"
+  },
+  {
+    "slug": "rep-004",
+    "title": "Influencer Spotlight — Q1",
+    "campaign_slug": "cmp-005",
+    "period_start": "2026-03-15",
+    "period_end": "2026-04-10",
+    "generated_by_slug": "usr-003",
+    "format": "pdf",
+    "sections": {
+      "included": ["kpis", "recommendations"],
+      "page_count": 6
+    },
+    "generated_at_iso": "2026-04-12T11:05:00Z"
+  }
+]
