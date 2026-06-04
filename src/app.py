@@ -54,9 +54,11 @@ class _JsonFormatter(logging.Formatter):
 
 
 def _register_blueprints(app: Flask) -> None:
+    from src.api.auth import bp as auth_bp
     from src.api.health import bp as health_bp
 
     app.register_blueprint(health_bp)
+    app.register_blueprint(auth_bp)
 
 
 def _register_error_handlers(app: Flask) -> None:

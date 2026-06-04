@@ -59,6 +59,10 @@ class Config:
     # Front-end
     FRONTEND_ORIGIN: str = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
 
+    # Base usada pra montar os redirect_uri do OAuth. Deve bater EXATAMENTE com o
+    # que está registrado no provider (Google/Microsoft). Se None, usa o host da request.
+    OAUTH_REDIRECT_BASE: str | None = os.getenv("OAUTH_REDIRECT_BASE")
+
     # Scheduler
     SCHEDULER_API_ENABLED: bool = False
     SCHEDULER_TIMEZONE: str = "America/Sao_Paulo"
@@ -76,8 +80,13 @@ class TestConfig(Config):
     SQLALCHEMY_DATABASE_URI = os.getenv(
         "TEST_DATABASE_URL", "sqlite:///:memory:"
     )
-    JWT_SECRET = "test-secret"
+    JWT_SECRET = "test-secret-com-32-bytes-no-minimo-pra-hs256"
     FRONTEND_ORIGIN = "http://localhost:5173"
+    GOOGLE_CLIENT_ID = "test-google-client-id"
+    GOOGLE_CLIENT_SECRET = "test-google-client-secret"
+    MICROSOFT_CLIENT_ID = "test-ms-client-id"
+    MICROSOFT_CLIENT_SECRET = "test-ms-client-secret"
+    OAUTH_REDIRECT_BASE = "http://localhost:5000"
 
 
 class StagingConfig(Config):
