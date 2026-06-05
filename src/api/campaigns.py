@@ -8,6 +8,7 @@ from flask import Blueprint, request
 from src.extensions import db
 from src.models import Campaign, CampaignStatus, UserRole
 from src.schemas.campaign import CampaignCreateIn, CampaignOut, CampaignUpdateIn
+from src.services import dashboard_service
 from src.services.campaign_service import build_campaign_query
 from src.utils.auth_decorators import require_auth
 from src.utils.authz import current_agency_id, get_scoped_or_404, require_role
@@ -104,3 +105,14 @@ def delete_campaign(campaign_id):
     db.session.delete(camp)
     db.session.commit()
     return no_content()
+
+
+# --------------------------------------------------------------------------
+# Endpoint de dashboard (B5) — benchmarking entre influencers da campanha
+# --------------------------------------------------------------------------
+@bp.get("/<campaign_id>/benchmarking")
+@require_auth
+def campaign_benchmarking(campaign_id):
+    camp = get_scoped_or_404(Campaign, campaign_id)
+    data = dashboard_service.campaign_benchmarking(camp)
+    return ok(data)
