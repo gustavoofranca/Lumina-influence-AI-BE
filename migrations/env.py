@@ -58,6 +58,17 @@ def run_migrations_online() -> None:
     if conf_args.get("process_revision_directives") is None:
         conf_args["process_revision_directives"] = process_revision_directives
 
+    # Ignora tabelas gerenciadas por libs externas (jobstore do APScheduler),
+    # pra autogenerate não tentar dropá-las.
+    ignored_tables = {"apscheduler_jobs"}
+
+    def include_object(obj, name, type_, reflected, compare_to):
+        if type_ == "table" and name in ignored_tables:
+            return False
+        return True
+
+    conf_args.setdefault("include_object", include_object)
+
     connectable = get_engine()
     with connectable.connect() as connection:
         context.configure(

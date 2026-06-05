@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     Enum as SAEnum,
     Float,
@@ -16,6 +17,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Uuid,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -72,6 +74,11 @@ class Post(Base, TimestampMixin):
     # Métricas de vídeo (nullable porque nem todo post é vídeo)
     avg_watch_time: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     retention_rate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Marcador pro job de análises pendentes (B7).
+    needs_analysis: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false"), index=True
+    )
 
     social_account: Mapped["SocialAccount"] = relationship(back_populates="posts")
     campaign: Mapped[Optional["Campaign"]] = relationship(back_populates="posts")

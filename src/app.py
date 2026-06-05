@@ -141,11 +141,36 @@ def _register_cli(app: Flask) -> None:
 
     @app.cli.group()
     def jobs() -> None:
-        """Comandos dos background jobs (placeholder até B7)."""
+        """Comandos dos background jobs."""
 
     @jobs.command("list")
     def jobs_list() -> None:
-        click.echo("Nenhum job registrado (etapa B7).")
+        """Lista os jobs registrados e seus agendamentos."""
+        from src.jobs import list_jobs
+
+        click.secho("Jobs registrados:", fg="green")
+        for j in list_jobs():
+            sched = ", ".join(f"{k}={v}" for k, v in j["schedule"].items())
+            click.echo(f"  {j['id']:.<26} {j['trigger']} ({sched})")
+            click.echo(f"  {'':<26} {j['description']}")
+
+    @jobs.command("run")
+    @click.argument("name")
+    def jobs_run(name: str) -> None:
+        """Força a execução de um job pelo nome (síncrono)."""
+        from src.jobs import run_job_by_name
+
+        try:
+            result = run_job_by_name(name)
+        except KeyError:
+            click.secho(f"[ERRO] Job desconhecido: {name}", fg="red")
+            from src.jobs import list_jobs
+
+            click.echo("Disponíveis: " + ", ".join(j["id"] for j in list_jobs()))
+            raise SystemExit(1)
+        click.secho(f"[OK] Job '{name}' executado:", fg="green")
+        for k, v in result.items():
+            click.echo(f"  {k}: {v}")
 
 
 def create_app(config_name: str | None = None) -> Flask:
@@ -167,10 +192,20 @@ def create_app(config_name: str | None = None) -> Flask:
         supports_credentials=True,
     )
 
-    if not app.testing:
+    # Scheduler só inicia quando estamos SERVINDO (flask run / gunicorn),
+    # nunca em comandos CLI (flask seed/jobs/db) ou testes — ver _should_start_scheduler.
+    if _should_start_scheduler(app):
+        from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+
+        from src.jobs import register_jobs
+
+        app.config["SCHEDULER_JOBSTORES"] = {
+            "default": SQLAlchemyJobStore(url=app.config["SQLALCHEMY_DATABASE_URI"])
+        }
         scheduler.init_app(app)
         if not scheduler.running:
             scheduler.start()
+        register_jobs(scheduler)
 
     _register_blueprints(app)
     _register_error_handlers(app)
@@ -178,3 +213,23 @@ def create_app(config_name: str | None = None) -> Flask:
 
     app.logger.info("Lumina BE iniciado em modo %s", app.config.get("ENV"))
     return app
+
+
+def _should_start_scheduler(app: Flask) -> bool:
+    """True apenas quando o processo está servindo HTTP.
+
+    Evita iniciar o scheduler em `flask seed run`, `flask jobs run`, `flask db ...`
+    e em testes — onde ele só atrapalharia (e dispararia jobs fora de hora).
+    """
+    import os
+
+    if app.testing:
+        return False
+    if os.environ.get("LUMINA_DISABLE_SCHEDULER") == "1":
+        return False
+    argv = sys.argv
+    prog = (argv[0] if argv else "").lower()
+    if any(s in prog for s in ("gunicorn", "waitress", "wsgi")):
+        return True
+    # `flask run` → primeiro subcomando é "run". `flask seed run` → "seed".
+    return len(argv) > 1 and argv[1] == "run"

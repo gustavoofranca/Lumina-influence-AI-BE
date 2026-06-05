@@ -408,9 +408,11 @@ def seed_run() -> dict[str, int]:
     stats["comments"] = n_comments
 
     # ---------- AI Analyses (75% dos posts) ----------
+    # Os 25% restantes ficam marcados needs_analysis=True (trabalho pro job B7).
     n_analyses = 0
     for post in posts:
         if rng.random() >= 0.75:
+            post.needs_analysis = True
             continue
         data = inf_data_by_slug[
             next(s for s, sa_list in social_accounts_by_inf.items()
@@ -463,6 +465,7 @@ def seed_run() -> dict[str, int]:
         n_analyses += 1
     db.session.flush()
     stats["ai_analyses"] = n_analyses
+    stats["posts_needing_analysis"] = sum(1 for p in posts if p.needs_analysis)
 
     # ---------- Reports ----------
     n_reports = 0

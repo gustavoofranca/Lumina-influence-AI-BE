@@ -70,6 +70,12 @@ class Config:
     # Scheduler
     SCHEDULER_API_ENABLED: bool = False
     SCHEDULER_TIMEZONE: str = "America/Sao_Paulo"
+    # coalesce: junta execuções perdidas em uma só; misfire_grace_time: tolerância.
+    SCHEDULER_JOB_DEFAULTS: dict = {
+        "coalesce": True,
+        "max_instances": 1,
+        "misfire_grace_time": 3600,
+    }
 
 
 class DevConfig(Config):
@@ -91,6 +97,8 @@ class TestConfig(Config):
     MICROSOFT_CLIENT_ID = "test-ms-client-id"
     MICROSOFT_CLIENT_SECRET = "test-ms-client-secret"
     OAUTH_REDIRECT_BASE = "http://localhost:5000"
+    # Nunca usa a key real do .env em testes — força mock/NotConfigured.
+    GEMINI_API_KEY = None
 
 
 class StagingConfig(Config):
