@@ -116,3 +116,15 @@ def influencer_posts(influencer_id):
     limit = min(max(limit, 1), 100)
     data = dashboard_service.influencer_posts(inf, limit=limit)
     return ok(data, meta={"limit": limit, "count": len(data)})
+
+
+@bp.post("/<influencer_id>/sync")
+@require_auth
+@require_role(UserRole.ADMIN, UserRole.MEMBER)
+def sync_influencer(influencer_id):
+    """Força sync das contas sociais do influencer (real se conectado, simulado se não)."""
+    from src.services import integration_service
+
+    inf = get_scoped_or_404(Influencer, influencer_id)
+    result = integration_service.sync_influencer(inf)
+    return ok(result)

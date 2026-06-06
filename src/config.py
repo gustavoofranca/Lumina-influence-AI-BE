@@ -5,6 +5,7 @@ Variáveis sensíveis nunca têm default — em produção falha cedo se faltar.
 """
 from __future__ import annotations
 
+import base64
 import os
 from datetime import timedelta
 
@@ -53,6 +54,14 @@ class Config:
     # Criptografia de tokens das APIs sociais
     FERNET_KEY: str | None = os.getenv("FERNET_KEY")
 
+    # Credenciais das APIs sociais (B8). YouTube cai pra GOOGLE_* se não setado.
+    META_CLIENT_ID: str | None = os.getenv("META_CLIENT_ID")
+    META_CLIENT_SECRET: str | None = os.getenv("META_CLIENT_SECRET")
+    TIKTOK_CLIENT_KEY: str | None = os.getenv("TIKTOK_CLIENT_KEY")
+    TIKTOK_CLIENT_SECRET: str | None = os.getenv("TIKTOK_CLIENT_SECRET")
+    YOUTUBE_CLIENT_ID: str | None = os.getenv("YOUTUBE_CLIENT_ID")
+    YOUTUBE_CLIENT_SECRET: str | None = os.getenv("YOUTUBE_CLIENT_SECRET")
+
     # IA
     GEMINI_API_KEY: str | None = os.getenv("GEMINI_API_KEY")
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
@@ -99,6 +108,13 @@ class TestConfig(Config):
     OAUTH_REDIRECT_BASE = "http://localhost:5000"
     # Nunca usa a key real do .env em testes — força mock/NotConfigured.
     GEMINI_API_KEY = None
+    # Fernet key fixa e válida (32 bytes → base64), independente do .env.
+    FERNET_KEY = base64.urlsafe_b64encode(b"0123456789abcdef0123456789abcdef").decode()
+    # Credenciais de teste pras plataformas sociais (adapters montam auth URL).
+    META_CLIENT_ID = "test-meta-id"
+    META_CLIENT_SECRET = "test-meta-secret"
+    TIKTOK_CLIENT_KEY = "test-tiktok-key"
+    TIKTOK_CLIENT_SECRET = "test-tiktok-secret"
 
 
 class StagingConfig(Config):
