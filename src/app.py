@@ -63,6 +63,7 @@ def _register_blueprints(app: Flask) -> None:
     from src.api.integrations import bp as integrations_bp
     from src.api.plans import bp as plans_bp
     from src.api.posts import bp as posts_bp
+    from src.api.reports import bp as reports_bp
     from src.api.social_accounts import bp as social_accounts_bp
     from src.api.users import bp as users_bp
 
@@ -77,6 +78,7 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(posts_bp)
     app.register_blueprint(integrations_bp)
+    app.register_blueprint(reports_bp)
 
 
 def _register_error_handlers(app: Flask) -> None:

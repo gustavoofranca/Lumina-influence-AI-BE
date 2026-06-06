@@ -17,5 +17,6 @@ python-dotenv>=1.0
 cryptography>=42.0
 apscheduler>=3.10
 flasgger>=0.9.7.1
+xhtml2pdf>=0.2.17
 pytest>=8.0
 pytest-flask>=1.3
