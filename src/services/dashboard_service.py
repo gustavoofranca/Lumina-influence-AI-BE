@@ -174,14 +174,44 @@ def _influencer_scorecard(influencer: Influencer, *, since: datetime | None = No
     eng = M.engagement_rate(posts)
     ai = M.ai_aggregates(analyses)
     resonance = M.resonance_score(eng, ai["sentiment_index_pct"], ai["brand_coherence"])
+    accounts = influencer.social_accounts
+    handle = f"@{accounts[0].handle}" if accounts else None
+    followers = sum(sa.follower_count for sa in accounts)
     return {
         "influencer_id": str(influencer.id),
         "display_name": influencer.display_name,
         "niche": influencer.niche,
+        "handle": handle,
+        "followers": followers,
         "resonance_score": resonance,
         "viral_potential": M.viral_potential(resonance),
         "engagement_rate": eng,
         "status": influencer.status.value,
+    }
+
+
+def influencer_metrics(influencer: Influencer) -> dict:
+    """Métricas computadas de um influencer (pra enriquecer a listagem do front)."""
+    posts = M.fetch_influencer_posts(influencer.id)
+    analyses = M.fetch_influencer_analyses(influencer.id)
+    eng = M.engagement_rate(posts)
+    ai = M.ai_aggregates(analyses)
+    split = M.reach_split(posts)
+    resonance = M.resonance_score(eng, ai["sentiment_index_pct"], ai["brand_coherence"])
+    rating = M.safety_rating(ai["brand_coherence"], ai["sentiment_index_pct"], ai["bot_probability"])
+    last_at = analyses[0].analyzed_at.isoformat() if analyses else None
+    return {
+        "engagement_rate": eng,
+        "organic_pct": split["organic_pct"],
+        "paid_pct": split["paid_pct"],
+        "sentiment_index_pct": ai["sentiment_index_pct"],
+        "brand_coherence": ai["brand_coherence"],
+        "bot_probability": ai["bot_probability"],
+        "safety_rating": rating,
+        "resonance_score": resonance,
+        "viral_potential": M.viral_potential(resonance),
+        "last_analysis_at": last_at,
+        "analyses_count": ai["analyses_count"],
     }
 
 

@@ -22,6 +22,15 @@ def client(app):
     return app.test_client()
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limits():
+    """Zera os buckets de rate limit antes de cada teste (são module-global)."""
+    from src.utils.rate_limit import reset_rate_limits
+
+    reset_rate_limits()
+    yield
+
+
 @pytest.fixture()
 def db_session(app):
     """Sessão de banco com rollback no fim do teste."""

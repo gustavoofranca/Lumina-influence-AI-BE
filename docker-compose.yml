@@ -1,0 +1,22 @@
+# Sobe um PostgreSQL local para desenvolvimento.
+# Uso: docker compose up -d  →  DATABASE_URL=postgresql://lumina:lumina@localhost:5432/lumina_dev
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: lumina-postgres
+    environment:
+      POSTGRES_USER: lumina
+      POSTGRES_PASSWORD: lumina
+      POSTGRES_DB: lumina_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - lumina_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lumina -d lumina_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  lumina_pgdata:

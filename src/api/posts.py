@@ -17,6 +17,7 @@ from src.services.ai_analysis_service import analyze_post, analyze_post_multimod
 from src.utils.auth_decorators import require_auth
 from src.utils.authz import current_agency_id, require_role
 from src.utils.errors import NotFoundError
+from src.utils.rate_limit import rate_limit
 from src.utils.responses import created, ok
 
 bp = Blueprint("posts", __name__, url_prefix="/api/v1/posts")
@@ -66,6 +67,7 @@ def _truthy(value: str | None) -> bool:
 @bp.post("/<post_id>/analyze")
 @require_auth
 @require_role(UserRole.ADMIN, UserRole.MEMBER)
+@rate_limit("RATE_LIMIT_ANALYZE")
 def analyze(post_id):
     """Dispara análise síncrona via Gemini e persiste uma nova AIAnalysis.
 

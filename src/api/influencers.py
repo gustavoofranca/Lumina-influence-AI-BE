@@ -44,7 +44,14 @@ def list_influencers():
         follower_max=follower_max,
     )
     page = paginate(stmt)
-    return paginated([_dump(i) for i in page.items], page)
+    enriched = (request.args.get("enriched") or "").lower() in {"1", "true", "yes"}
+    items = []
+    for inf in page.items:
+        d = _dump(inf)
+        if enriched:
+            d["metrics"] = dashboard_service.influencer_metrics(inf)
+        items.append(d)
+    return paginated(items, page)
 
 
 @bp.get("/<influencer_id>")

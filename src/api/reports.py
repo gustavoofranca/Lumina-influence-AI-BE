@@ -12,6 +12,7 @@ from src.utils.auth_decorators import require_auth
 from src.utils.authz import current_agency_id, get_scoped_or_404, require_role
 from src.utils.errors import NotFoundError
 from src.utils.pagination import paginate
+from src.utils.rate_limit import rate_limit
 from src.utils.responses import created, ok, paginated
 from src.utils.validation import parse_json
 
@@ -44,6 +45,7 @@ def get_report(report_id):
 @bp.post("")
 @require_auth
 @require_role(UserRole.ADMIN, UserRole.MEMBER)
+@rate_limit("RATE_LIMIT_REPORTS")
 def create_report():
     payload = parse_json(ReportCreateIn)
     user = g.current_user
@@ -64,9 +66,8 @@ def create_report():
 @require_auth
 def download_report(report_id):
     report = get_scoped_or_404(Report, report_id)
-    path = report_service.report_pdf_path(report)
-    if not path.exists():
-        raise NotFoundError("Arquivo PDF não encontrado", code="pdf_missing")
+    # Gera o PDF sob demanda se ainda não existir (ex.: relatórios seedados).
+    path = report_service.ensure_pdf(report)
     return send_file(
         path,
         mimetype="application/pdf",

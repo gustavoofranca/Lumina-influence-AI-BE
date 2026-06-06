@@ -1,75 +1,88 @@
 # Lumina Influence AI — Back-End
 
-API REST em Python + Flask que serve o front-end do SaaS de auditoria de performance de influenciadores digitais. Persistência em PostgreSQL, integração com Google OAuth, APIs sociais (Instagram, TikTok, YouTube) e Google Gemini.
+API REST em **Python + Flask** que serve o front-end do SaaS de auditoria de performance de influenciadores digitais. Persistência em **PostgreSQL**, autenticação **OAuth 2.0 (Google/Microsoft) + JWT**, análise de IA via **Google Gemini** (texto e multimodal), integração com **APIs sociais** (Instagram/TikTok/YouTube) e geração de **relatórios PDF**.
 
-> Para o contexto completo do projeto (modelo de domínio, padrões, plano de etapas B0→B12, prompts), veja `claude.md` na raiz.
+> TCC de Engenharia de Software. Para o contexto completo (modelo de domínio, padrões, plano de etapas B0→B12), veja [`claude.md`](claude.md).
+
+---
+
+## Stack
+
+| Camada | Tecnologia |
+|---|---|
+| Linguagem | Python 3.11+ (testado em 3.13) |
+| Framework | Flask 3.x (factory pattern) |
+| ORM | SQLAlchemy 2.x (`DeclarativeBase`, `Mapped[]`) |
+| Banco | PostgreSQL 15+ |
+| Migrations | Alembic (via Flask-Migrate) |
+| Auth | OAuth 2.0 (Google/Microsoft) + JWT (PyJWT) |
+| Validação | Pydantic v2 |
+| IA | Google Gemini (`google-genai`), multimodal nativo |
+| Jobs | APScheduler (in-process, jobstore SQLAlchemy) |
+| Cripto | `cryptography` (Fernet) — tokens sociais em repouso |
+| PDF | xhtml2pdf (HTML→PDF puro Python) |
+| Testes | pytest + pytest-cov (126 testes, ~83% coverage) |
+| Docs | OpenAPI 3.1 + Swagger UI |
 
 ---
 
 ## Pré-requisitos
 
-- **Python 3.11+** (testado em 3.13.7)
-- **PostgreSQL 15+** rodando local (instalação testada com 17.5)
-- **Git**
-
-No Windows, o `psql` costuma estar em `C:\Program Files\PostgreSQL\17\bin\` — adicione ao PATH se quiser usar pelo terminal.
+- **Python 3.11+**
+- **PostgreSQL 15+** rodando local (ou via Docker — veja abaixo)
 
 ---
 
 ## Setup local
 
-1. **Clonar o repo**
-   ```bash
-   git clone https://github.com/<seu-usuario>/Lumina-influence-AI-BE.git
-   cd Lumina-influence-AI-BE
-   ```
+```bash
+# 1. venv
+python -m venv venv
+.\venv\Scripts\Activate.ps1     # Windows
+source venv/bin/activate         # Linux/macOS
 
-2. **Criar e ativar venv**
-   ```bash
-   python -m venv venv
-   # Windows PowerShell
-   .\venv\Scripts\Activate.ps1
-   # Linux/macOS
-   source venv/bin/activate
-   ```
+# 2. dependências
+pip install -r requirements.txt
 
-3. **Instalar dependências**
-   ```bash
-   pip install -r requirements.txt
-   ```
+# 3. variáveis de ambiente
+cp .env.example .env             # edite os valores
 
-4. **Configurar variáveis de ambiente**
-   ```bash
-   cp .env.example .env
-   # edite .env com seus valores reais (DATABASE_URL, JWT_SECRET, FERNET_KEY, etc.)
-   ```
+# gere a FERNET_KEY:
+python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"
 
-   Gere uma `FERNET_KEY`:
-   ```bash
-   python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"
-   ```
+# 4. banco (local OU docker)
+docker compose up -d             # sobe Postgres em localhost:5432
+# ou crie manualmente: CREATE DATABASE lumina_dev;
 
-5. **Criar o banco local**
-   ```bash
-   # com psql autenticado como superuser
-   psql -U postgres -c "CREATE DATABASE lumina_dev;"
-   ```
+# 5. migrations
+flask db upgrade
 
-6. **Rodar migrations**
-   ```bash
-   flask db upgrade
-   ```
+# 6. popular dados de exemplo
+flask seed run
 
-7. **Subir o servidor**
-   ```bash
-   flask run
-   ```
+# 7. subir o servidor
+flask run
 
-8. **Validar**
-   ```bash
-   curl http://localhost:5000/api/v1/health
-   # esperado: { "status": "ok", "db": "connected", "version": "0.1.0", "env": "dev" }
-   ```
+# 8. validar
+curl http://localhost:5000/api/v1/health
+```
+
+---
+
+## Variáveis de ambiente (`.env`)
+
+| Variável | Descrição |
+|---|---|
+| `DATABASE_URL` | `postgresql://user:senha@localhost:5432/lumina_dev` |
+| `JWT_SECRET` | segredo de assinatura dos JWTs |
+| `FERNET_KEY` | chave Fernet (cripto de tokens sociais) |
+| `GOOGLE_CLIENT_ID` / `_SECRET` | OAuth login Google |
+| `MICROSOFT_CLIENT_ID` / `_SECRET` | OAuth login Microsoft (opcional) |
+| `GEMINI_API_KEY` | Google AI Studio |
+| `GEMINI_MODEL` | default `gemini-2.5-flash` |
+| `OAUTH_REDIRECT_BASE` | base dos redirect URIs OAuth (ex: `http://localhost:5000`) |
+| `META/TIKTOK/YOUTUBE_CLIENT_*` | APIs sociais (B8) |
+| `FRONTEND_ORIGIN` | origem do front p/ CORS (default `http://localhost:5173`) |
 
 ---
 
@@ -78,12 +91,40 @@ No Windows, o `psql` costuma estar em `C:\Program Files\PostgreSQL\17\bin\` — 
 | Ação | Comando |
 |---|---|
 | Rodar testes | `pytest` |
+| Testes + coverage | `pytest --cov=src --cov-report=term-missing` |
 | Nova migration | `flask db migrate -m "descrição"` |
 | Aplicar migrations | `flask db upgrade` |
-| Reverter última migration | `flask db downgrade -1` |
-| Popular dados de exemplo (B2+) | `flask seed run` |
-| Limpar seed (B2+) | `flask seed clear` |
-| Listar jobs (B7+) | `flask jobs list` |
+| Popular seed | `flask seed run` |
+| Limpar seed | `flask seed clear` |
+| Listar jobs | `flask jobs list` |
+| Rodar job manual | `flask jobs run <name>` |
+| Servidor | `flask run` |
+
+> **Jobs:** o scheduler só inicia com `flask run` (servindo). Comandos CLI não o disparam. Desabilite com `LUMINA_DISABLE_SCHEDULER=1`.
+
+---
+
+## Documentação da API (Swagger)
+
+Com o servidor rodando:
+
+- **Swagger UI:** http://localhost:5000/api/v1/docs
+- **OpenAPI JSON:** http://localhost:5000/api/v1/openapi.json
+
+Quase todos os endpoints exigem `Authorization: Bearer <access_token>`. Para obter um token: faça login em `/api/v1/auth/google/login` e copie o `access_token` da resposta.
+
+---
+
+## Principais endpoints
+
+| Grupo | Endpoints |
+|---|---|
+| Auth | `/auth/google/login` · `/auth/google/callback` · `/auth/refresh` · `/auth/logout` · `/auth/me` |
+| CRUD | `/plans` `/agencies` `/users` `/influencers` `/social-accounts` `/campaigns` |
+| Dashboard | `/dashboard/overview` · `/dashboard/network-density` · `/influencers/:id/analysis` · `/influencers/:id/posts` · `/campaigns/:id/benchmarking` |
+| IA | `POST /posts/:id/analyze` (`?multimodal=true`) · `GET /posts/:id/analyses` |
+| Integrações | `/integrations/:platform/connect|callback|disconnect` · `POST /influencers/:id/sync` |
+| Relatórios | `POST /reports` · `GET /reports` · `GET /reports/:id/download` |
 
 ---
 
@@ -95,30 +136,42 @@ src/
   config.py           # Dev/Test/Staging/Prod
   extensions.py       # db, migrate, cors, scheduler
   api/                # blueprints REST (1 por recurso)
-  models/             # SQLAlchemy (a partir da B1)
-  schemas/            # Pydantic DTOs
-  services/           # lógica de negócio pura
-  integrations/       # adaptadores p/ APIs externas
-  jobs/               # APScheduler tasks
-  utils/              # erros, crypto, pagination, ...
-  seed/               # fixtures + seed_data.py
+  models/             # SQLAlchemy 2.x (13 tabelas)
+  schemas/            # Pydantic DTOs (In/Out)
+  services/           # lógica de negócio (auth, metric, dashboard, ai_analysis, report, integration)
+  integrations/       # adaptadores externos (gemini, instagram, tiktok, youtube, media, oauth)
+  jobs/               # APScheduler (sync_metrics, run_pending_analyses, cleanup)
+  utils/              # crypto, pagination, authz, rate_limit, pdf_generator, errors
+  seed/               # fixtures JSON + seed_data.py
 migrations/           # Alembic
-tests/                # pytest
-storage/              # PDFs gerados (gitignored)
-docs/                 # ADRs, diagramas (gitignored localmente)
+tests/                # pytest (126 testes)
+docs/adr/             # Architecture Decision Records
+storage/reports/      # PDFs gerados (gitignored)
 ```
 
 ---
 
-## Status do desenvolvimento
+## Arquitetura em 3 camadas (mitigação de risco)
 
-- ✅ **B0** — Setup e fundação (este commit)
-- ⏳ B1 — Modelagem do banco
-- ⏳ B2 → B12 — ver `claude.md`
+1. **Camada 1 (sempre funciona):** banco + seed realista (15 influenciadores, 5 campanhas, ~200 posts, ~3000 comentários, ~150 análises). Endpoints servem esses dados.
+2. **Camada 2 (APIs sociais):** OAuth Instagram/TikTok/YouTube. `POST /influencers/:id/sync` usa a API real se há token; senão simula (modo dev).
+3. **Camada 3 (IA real):** Gemini analisa texto e vídeo (multimodal nativo), persiste diagnósticos.
+
+Decisões técnicas documentadas em [`docs/adr/`](docs/adr/).
+
+---
+
+## Testes & CI
+
+```bash
+pytest --cov=src --cov-report=term-missing --cov-fail-under=60
+```
+
+Os testes usam **SQLite in-memory** (`TestConfig`) — não precisam de Postgres. CI (GitHub Actions) roda lint + testes + coverage em cada push.
 
 ---
 
 ## Links
 
 - **Front-end:** https://github.com/gustavoofranca/Lumina-influence-AI-FE
-- **Plano completo:** `claude.md`
+- **Plano completo (B0→B12):** [`claude.md`](claude.md)

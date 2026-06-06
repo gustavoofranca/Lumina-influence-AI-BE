@@ -58,6 +58,7 @@ def _register_blueprints(app: Flask) -> None:
     from src.api.auth import bp as auth_bp
     from src.api.campaigns import bp as campaigns_bp
     from src.api.dashboard import bp as dashboard_bp
+    from src.api.docs import bp as docs_bp
     from src.api.health import bp as health_bp
     from src.api.influencers import bp as influencers_bp
     from src.api.integrations import bp as integrations_bp
@@ -79,6 +80,7 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(posts_bp)
     app.register_blueprint(integrations_bp)
     app.register_blueprint(reports_bp)
+    app.register_blueprint(docs_bp)
 
 
 def _register_error_handlers(app: Flask) -> None:

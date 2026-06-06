@@ -236,3 +236,26 @@ def generate_report(
 
 def report_pdf_path(report: Report) -> Path:
     return _storage_dir() / f"{report.id}.pdf"
+
+
+def ensure_pdf(report: Report) -> Path:
+    """Garante que o PDF existe no disco; gera sob demanda se faltar.
+
+    Relatórios seedados (B2) têm metadados mas não o arquivo — esta função
+    materializa o PDF na primeira vez que é baixado.
+    """
+    path = report_pdf_path(report)
+    if path.exists():
+        return path
+    campaign = db.session.get(Campaign, report.campaign_id) if report.campaign_id else None
+    if campaign is None:
+        raise NotFoundError("Campanha do relatório não existe mais")
+    sections = (report.sections or {}).get("included") or SECTION_KEYS
+    context = build_report_context(
+        campaign=campaign, period_start=report.period_start, period_end=report.period_end,
+        sections=sections, title=report.title, generated_by="Equipe Lumina",
+    )
+    html = _template.render(**context)
+    path.write_bytes(render_pdf(html))
+    logger.info("PDF gerado sob demanda: report=%s", report.id)
+    return path

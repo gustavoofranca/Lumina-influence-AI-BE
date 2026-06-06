@@ -76,6 +76,16 @@ class Config:
     # que está registrado no provider (Google/Microsoft). Se None, usa o host da request.
     OAUTH_REDIRECT_BASE: str | None = os.getenv("OAUTH_REDIRECT_BASE")
 
+    # Se setado, o callback OAuth REDIRECIONA pra essa URL do front com os tokens
+    # no fragmento (#access_token=...). Se None, retorna JSON (modo API/teste).
+    AUTH_SUCCESS_REDIRECT: str | None = os.getenv("AUTH_SUCCESS_REDIRECT")
+    # Habilita POST /auth/dev-login (atalho de login local sem OAuth). Off em prod.
+    DEV_LOGIN_ENABLED: bool = os.getenv("DEV_LOGIN_ENABLED", "true").lower() == "true"
+
+    # Rate limit por agência em endpoints caros (in-memory, janela em segundos).
+    RATE_LIMIT_ANALYZE: dict = {"limit": 20, "window": 60}
+    RATE_LIMIT_REPORTS: dict = {"limit": 10, "window": 60}
+
     # Scheduler
     SCHEDULER_API_ENABLED: bool = False
     SCHEDULER_TIMEZONE: str = "America/Sao_Paulo"
@@ -132,6 +142,7 @@ class ProdConfig(Config):
     ENV = "prod"
     DEBUG = False
     TESTING = False
+    DEV_LOGIN_ENABLED = False  # nunca habilita atalho de login em produção
 
     SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "")
     JWT_SECRET = os.getenv("JWT_SECRET", "")
