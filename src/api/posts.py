@@ -6,14 +6,14 @@ from __future__ import annotations
 
 import uuid
 
-from flask import Blueprint, current_app
+from flask import Blueprint, current_app, request
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from src.extensions import db
 from src.models import AIAnalysis, Influencer, Post, SocialAccount, UserRole
 from src.schemas.analysis import AIAnalysisOut, PostOut
-from src.services.ai_analysis_service import analyze_post
+from src.services.ai_analysis_service import analyze_post, analyze_post_multimodal
 from src.utils.auth_decorators import require_auth
 from src.utils.authz import current_agency_id, require_role
 from src.utils.errors import NotFoundError
@@ -59,12 +59,24 @@ def list_post_analyses(post_id):
     return ok([AIAnalysisOut.model_validate(a).model_dump(mode="json") for a in analyses])
 
 
+def _truthy(value: str | None) -> bool:
+    return (value or "").lower() in {"1", "true", "yes", "on"}
+
+
 @bp.post("/<post_id>/analyze")
 @require_auth
 @require_role(UserRole.ADMIN, UserRole.MEMBER)
 def analyze(post_id):
-    """Dispara análise síncrona via Gemini e persiste uma nova AIAnalysis."""
+    """Dispara análise síncrona via Gemini e persiste uma nova AIAnalysis.
+
+    `?multimodal=true` faz a análise considerar o vídeo (transcrição + visão).
+    """
     post = _load_scoped_post(post_id)
     max_comments = current_app.config.get("GEMINI_MAX_COMMENTS", 30)
-    analysis = analyze_post(post, agency_id=current_agency_id(), max_comments=max_comments)
+    if _truthy(request.args.get("multimodal")):
+        analysis = analyze_post_multimodal(
+            post, agency_id=current_agency_id(), max_comments=max_comments
+        )
+    else:
+        analysis = analyze_post(post, agency_id=current_agency_id(), max_comments=max_comments)
     return created(AIAnalysisOut.model_validate(analysis).model_dump(mode="json"))

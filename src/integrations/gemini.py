@@ -104,3 +104,61 @@ class GeminiClient:
             total_tokens = getattr(usage, "total_token_count", 0) or 0
 
         return GeminiResult(text=text, total_tokens=total_tokens, model=self._model)
+
+    def generate_json_with_video(
+        self, prompt: str, video_path: str, mime_type: str = "video/mp4"
+    ) -> GeminiResult:
+        """Análise multimodal: sobe o vídeo (Files API), pede JSON e limpa o arquivo remoto.
+
+        Gemini processa o vídeo internamente (transcrição + visão), sem Whisper.
+        """
+        import time
+
+        from google.genai import errors as genai_errors
+        from google.genai import types
+
+        uploaded = None
+        try:
+            uploaded = self._client.files.upload(file=video_path)
+            # Vídeos passam por PROCESSING antes de ficarem ACTIVE.
+            for _ in range(self._timeout):
+                state = getattr(uploaded, "state", None)
+                state_name = getattr(state, "name", state)
+                if state_name == "ACTIVE":
+                    break
+                if state_name == "FAILED":
+                    raise GeminiError("Processamento do vídeo no Gemini falhou")
+                time.sleep(1)
+                uploaded = self._client.files.get(name=uploaded.name)
+
+            config = types.GenerateContentConfig(
+                response_mime_type="application/json", temperature=0.4
+            )
+            resp = self._client.models.generate_content(
+                model=self._model, contents=[uploaded, prompt], config=config
+            )
+        except genai_errors.ClientError as exc:
+            status = getattr(exc, "code", None)
+            if status == 429:
+                raise GeminiQuotaError("Cota do Gemini excedida", details={"status": status}) from exc
+            raise GeminiError("Gemini rejeitou a requisição multimodal",
+                              details={"status": status, "msg": str(exc)[:300]}) from exc
+        except GeminiError:
+            raise
+        except Exception as exc:
+            raise GeminiError("Falha na análise multimodal", details={"msg": str(exc)[:300]}) from exc
+        finally:
+            if uploaded is not None:
+                try:
+                    self._client.files.delete(name=uploaded.name)
+                except Exception:
+                    pass
+
+        text = (resp.text or "").strip()
+        if not text:
+            raise GeminiError("Gemini retornou resposta multimodal vazia")
+        total_tokens = 0
+        usage = getattr(resp, "usage_metadata", None)
+        if usage is not None:
+            total_tokens = getattr(usage, "total_token_count", 0) or 0
+        return GeminiResult(text=text, total_tokens=total_tokens, model=self._model)

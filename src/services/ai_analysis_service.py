@@ -25,9 +25,10 @@ from src.models import (
     ApiUsageLog,
     Comment,
     Post,
+    PostType,
     SentimentLabel,
 )
-from src.utils.errors import LuminaError
+from src.utils.errors import LuminaError, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,9 @@ def parse_analysis_payload(text: str) -> dict:
     if not isinstance(recommendations, list):
         recommendations = []
 
+    transcript = raw.get("transcript_text")
+    transcript = str(transcript) if transcript else None
+
     return {
         "sentiment_score": sentiment_score,
         "sentiment_label": SentimentLabel(label_raw),
@@ -166,6 +170,7 @@ def parse_analysis_payload(text: str) -> dict:
         "bot_probability": _clamp(raw.get("bot_probability"), 0, 100),
         "key_phrases": key_phrases,
         "recommendations": recommendations,
+        "transcript_text": transcript,
         "raw": raw,
     }
 
@@ -195,7 +200,11 @@ def analyze_post(
 
     result = gemini.generate_json(prompt)
     parsed = parse_analysis_payload(result.text)
+    return _persist_analysis(post, agency_id, parsed, result, transcript=None)
 
+
+def _persist_analysis(post, agency_id, parsed, result, *, transcript) -> AIAnalysis:
+    """Cria AIAnalysis + ApiUsageLog. transcript override (multimodal) vence o do parse."""
     analysis = AIAnalysis(
         post_id=post.id,
         analyzed_at=datetime.now(timezone.utc),
@@ -205,25 +214,123 @@ def analyze_post(
         script_score=parsed["script_score"],
         brand_coherence_score=parsed["brand_coherence_score"],
         bot_probability=parsed["bot_probability"],
-        transcript_text=None,  # multimodal é B9
+        transcript_text=transcript if transcript is not None else parsed.get("transcript_text"),
         key_phrases=parsed["key_phrases"],
         recommendations=parsed["recommendations"],
         sentiment_breakdown=parsed["sentiment_breakdown"],
         raw_response=parsed["raw"],
     )
     db.session.add(analysis)
-
-    usage = ApiUsageLog(
-        agency_id=agency_id,
-        endpoint=ANALYZE_ENDPOINT,
-        tokens_used=result.total_tokens,
-        called_at=datetime.now(timezone.utc),
+    db.session.add(
+        ApiUsageLog(
+            agency_id=agency_id,
+            endpoint=ANALYZE_ENDPOINT,
+            tokens_used=result.total_tokens,
+            called_at=datetime.now(timezone.utc),
+        )
     )
-    db.session.add(usage)
     db.session.commit()
-
     logger.info(
-        "Análise IA persistida: post=%s model=%s tokens=%s",
-        post.id, result.model, result.total_tokens,
+        "Análise IA persistida: post=%s model=%s tokens=%s multimodal=%s",
+        post.id, result.model, result.total_tokens, transcript is not None,
     )
     return analysis
+
+
+# ==========================================================================
+# Análise multimodal (B9) — Gemini-nativo, sem Whisper
+# ==========================================================================
+MULTIMODAL_PROMPT_TEMPLATE = """\
+Você é um analista sênior de marketing de influência. Analise o VÍDEO anexado \
+junto com a legenda e os comentários. Use o áudio (fala) e o visual do vídeo.
+
+Responda APENAS com um objeto JSON válido seguindo EXATAMENTE este schema:
+
+{{
+  "transcript_text": <transcrição fiel da fala do vídeo, em texto corrido>,
+  "sentiment_score": <float entre -1 e 1>,
+  "sentiment_label": "positive" | "neutral" | "negative",
+  "sentiment_breakdown": {{
+    "technical_enthusiasm": <int 0-100>, "purchase_intent": <int 0-100>,
+    "value_skepticism": <int 0-100>, "neutral": <int 0-100>
+  }},
+  "script_score": <float 0-10>,
+  "brand_coherence_score": <float 0-100>,
+  "bot_probability": <float 0-100>,
+  "key_phrases": [<string>, ...],
+  "recommendations": [
+    {{"priority": "high"|"medium"|"low", "title": <string>, "description": <string>}}
+  ]
+}}
+
+Regras:
+- transcript_text: transcreva o que é DITO no vídeo (não a legenda).
+- script_score: avalie a qualidade do roteiro considerando hook, clareza e CTA.
+- brand_coherence_score: coerência entre o que é mostrado/falado e o nicho.
+- Baseie-se no áudio, no visual, na legenda e nos comentários.
+
+=== DADOS DO POST ===
+Nicho: {niche} | Plataforma: {platform} | Tipo: {post_type}
+Legenda: {caption}
+
+=== AMOSTRA DE COMENTÁRIOS ({n_comments}) ===
+{comments_block}
+"""
+
+VIDEO_POST_TYPES = {PostType.VIDEO, PostType.REEL, PostType.SHORT, PostType.STORY}
+
+
+def _build_multimodal_prompt(post: Post, comments: list[Comment]) -> str:
+    sa = post.social_account
+    niche = sa.influencer.niche if sa and sa.influencer else "desconhecido"
+    comments_block = "\n".join(f"- {c.content}" for c in comments) or "(sem comentários)"
+    return MULTIMODAL_PROMPT_TEMPLATE.format(
+        niche=niche,
+        platform=sa.platform.value if sa else "?",
+        post_type=post.post_type.value,
+        caption=(post.caption or "")[:500],
+        n_comments=len(comments),
+        comments_block=comments_block,
+    )
+
+
+def analyze_post_multimodal(
+    post: Post,
+    *,
+    agency_id: uuid.UUID,
+    client: GeminiClient | None = None,
+    video_fetcher=None,
+    max_comments: int = 30,
+) -> AIAnalysis:
+    """Análise multimodal: baixa o vídeo, manda pro Gemini (transcreve+analisa), persiste."""
+    from src.integrations.media import HttpVideoFetcher
+
+    if post.post_type not in VIDEO_POST_TYPES:
+        raise ValidationError(
+            "Análise multimodal só é válida para posts de vídeo",
+            details={"post_type": post.post_type.value},
+        )
+
+    comments = list(
+        db.session.scalars(
+            select(Comment)
+            .where(Comment.post_id == post.id)
+            .order_by(Comment.like_count.desc())
+            .limit(max_comments)
+        ).all()
+    )
+
+    gemini = client or GeminiClient()
+    fetcher = video_fetcher or HttpVideoFetcher()
+
+    asset = fetcher.fetch(post.video_url)
+    try:
+        prompt = _build_multimodal_prompt(post, comments)
+        result = gemini.generate_json_with_video(prompt, asset.path, asset.mime_type)
+    finally:
+        fetcher.cleanup(asset)
+
+    parsed = parse_analysis_payload(result.text)
+    # Marca o modelo como multimodal pra distinguir no histórico.
+    result.model = f"{result.model}-multimodal"
+    return _persist_analysis(post, agency_id, parsed, result, transcript=parsed.get("transcript_text"))
