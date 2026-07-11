@@ -4,10 +4,9 @@ from __future__ import annotations
 from urllib.parse import parse_qs, urlparse
 
 import pytest
-from sqlalchemy import select
 
 from src.extensions import db
-from src.models import Agency, Influencer, OAuthProvider, Plan, Post, PostType, SocialAccount, Platform, User, UserRole
+from src.models import Agency, Influencer, OAuthProvider, Post, PostType, SocialAccount, Platform, User, UserRole
 from datetime import datetime, timezone
 
 
@@ -63,7 +62,6 @@ def test_dev_login_disabled(client, seeded_user, app, monkeypatch):
 # callback redirect pro front
 # ==========================================================================
 def test_callback_redirects_to_front_when_configured(client, seeded_user, app, monkeypatch):
-    import src.api.auth as auth_api
     from src.integrations.base_oauth import OAuthUserInfo
     from src.integrations.google_oauth import GoogleOAuthClient
 

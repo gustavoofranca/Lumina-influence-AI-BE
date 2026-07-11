@@ -7,14 +7,8 @@ from sqlalchemy import func, select
 from src.extensions import db
 from src.models import (
     Agency,
-    Campaign,
-    CampaignInfluencer,
-    Comment,
     Influencer,
-    Plan,
     Post,
-    SocialAccount,
-    User,
 )
 from src.seed.seed_data import SEEDED_AGENCY_NAME, seed_clear, seed_run
 

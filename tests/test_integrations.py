@@ -272,9 +272,6 @@ def test_disconnect_clears_tokens(client, ctx):
 # ==========================================================================
 def test_sync_simulated_when_no_token(client, ctx, app):
     """Conta seedada sem token → modo simulado, atualiza posts existentes."""
-    with app.app_context():
-        before = db.session.get(Post, db.session.scalar(select(Post.id))).likes
-
     r = client.post(f"/api/v1/influencers/{ctx.inf_id}/sync", headers=ctx.h_admin)
     assert r.status_code == 200
     accounts = r.get_json()["data"]["accounts"]

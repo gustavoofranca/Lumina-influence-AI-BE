@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import uuid
 
-from flask import Blueprint, current_app, jsonify, request, url_for
+from flask import Blueprint, current_app, request, url_for
 
 from src.models import UserRole
 from src.schemas.social_account import SocialAccountOut

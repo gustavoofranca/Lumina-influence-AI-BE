@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from flask import Blueprint, request
-from sqlalchemy.orm import selectinload
 
 from src.extensions import db
 from src.models import Influencer, InfluencerStatus, Platform, UserRole

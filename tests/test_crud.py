@@ -4,7 +4,6 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-from sqlalchemy import select
 
 from src.extensions import db
 from src.models import (

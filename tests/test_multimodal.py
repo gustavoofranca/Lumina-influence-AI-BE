@@ -1,7 +1,6 @@
 """Testes da análise multimodal (B9) — fetcher de vídeo + Gemini multimodal mockados."""
 from __future__ import annotations
 
-import uuid
 from datetime import datetime, timezone
 
 import pytest

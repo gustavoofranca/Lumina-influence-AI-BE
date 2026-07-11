@@ -4,13 +4,11 @@ from __future__ import annotations
 from flask import Blueprint, g, send_file
 from sqlalchemy import select
 
-from src.extensions import db
 from src.models import Report, UserRole
 from src.schemas.report import ReportCreateIn, ReportOut
 from src.services import report_service
 from src.utils.auth_decorators import require_auth
 from src.utils.authz import current_agency_id, get_scoped_or_404, require_role
-from src.utils.errors import NotFoundError
 from src.utils.pagination import paginate
 from src.utils.rate_limit import rate_limit
 from src.utils.responses import created, ok, paginated

@@ -6,7 +6,7 @@ import uuid
 from datetime import date, datetime, timezone
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from src.extensions import db
 from src.models import (

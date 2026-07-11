@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -19,8 +19,6 @@ from sqlalchemy.orm import selectinload
 from src.extensions import db
 from src.models import (
     AIAnalysis,
-    Campaign,
-    CampaignInfluencer,
     Influencer,
     Post,
     SocialAccount,

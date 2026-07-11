@@ -22,7 +22,7 @@ from src.models import (
     User,
     UserRole,
 )
-from src.utils.errors import LuminaError, UnauthorizedError
+from src.utils.errors import UnauthorizedError
 
 logger = logging.getLogger(__name__)
 

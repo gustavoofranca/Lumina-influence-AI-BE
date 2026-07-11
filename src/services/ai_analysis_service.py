@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 
 from src.extensions import db
-from src.integrations.gemini import GeminiClient, GeminiError
+from src.integrations.gemini import GeminiClient
 from src.models import (
     AIAnalysis,
     ApiUsageLog,

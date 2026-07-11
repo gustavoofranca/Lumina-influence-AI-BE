@@ -7,7 +7,6 @@ storage/reports/{report_id}.pdf.
 from __future__ import annotations
 
 import logging
-import os
 import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -18,13 +17,11 @@ from sqlalchemy import func, select
 
 from src.extensions import db
 from src.models import (
-    AIAnalysis,
     Campaign,
     Influencer,
     Post,
     Report,
     ReportFormat,
-    SocialAccount,
 )
 from src.services import dashboard_service
 from src.services import metric_service as M

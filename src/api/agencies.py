@@ -1,7 +1,7 @@
 """Blueprint /api/v1/agencies — usuário só enxerga/edita a própria agência."""
 from __future__ import annotations
 
-from flask import Blueprint, g
+from flask import Blueprint
 from sqlalchemy import select
 
 from src.extensions import db
