@@ -367,12 +367,15 @@ def campaign_benchmarking(campaign: Campaign) -> dict:
     radar_series = []
     for link in links:
         influencer = db.session.get(Influencer, link.influencer_id)
+        # Só o que é desta campanha. Sem fallback para o histórico completo:
+        # atribuir posts de outra campanha a esta inflaria os números dela.
         posts = [
             p for p in M.fetch_influencer_posts(influencer.id) if p.campaign_id == campaign.id
         ]
-        if not posts:
-            posts = M.fetch_influencer_posts(influencer.id)  # fallback: todos
-        analyses = M.fetch_influencer_analyses(influencer.id)
+        post_ids = {p.id for p in posts}
+        analyses = [
+            a for a in M.fetch_influencer_analyses(influencer.id) if a.post_id in post_ids
+        ]
         eng = M.engagement_rate(posts)
         ai = M.ai_aggregates(analyses)
         split = M.reach_split(posts)

@@ -7,10 +7,18 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from src.extensions import db
-from src.models import Campaign, Influencer, InfluencerStatus, User, UserRole
+from src.models import (
+    Campaign,
+    CampaignInfluencer,
+    Influencer,
+    InfluencerStatus,
+    Post,
+    User,
+    UserRole,
+)
 from src.seed.seed_data import seed_clear, seed_run
 from src.utils.jwt_utils import issue_token_pair
 
@@ -256,3 +264,36 @@ def test_participantes_batem_com_o_benchmarking(client, seeded):
     assert {p["influencer_id"] for p in detail["participants"]} == {
         r["influencer_id"] for r in bench["influencers"]
     }
+
+
+def test_benchmarking_nao_atribui_posts_de_outra_campanha(client, seeded):
+    """Campanha sem post próprio reporta zero, não o histórico do criador.
+
+    Antes havia fallback para todos os posts do influencer: uma campanha que
+    nem começou exibia alcance e engajamento como se tivesse performado.
+    """
+    with client.application.app_context():
+        camp = db.session.scalar(
+            select(Campaign).where(
+                ~Campaign.id.in_(select(Post.campaign_id).where(Post.campaign_id.is_not(None)))
+            )
+        )
+        assert camp is not None, "o seed precisa de uma campanha sem posts"
+        assert db.session.scalar(
+            select(func.count(CampaignInfluencer.id)).where(
+                CampaignInfluencer.campaign_id == camp.id
+            )
+        ) > 0, "e ela precisa ter participantes, senão o teste não prova nada"
+        camp_id = str(camp.id)
+
+    rows = client.get(
+        f"/api/v1/campaigns/{camp_id}/benchmarking", headers=seeded.header
+    ).get_json()["data"]["influencers"]
+
+    assert rows, "os participantes continuam listados"
+    for row in rows:
+        assert row["posts_count"] == 0
+        assert row["total_reach"] == 0
+        assert row["engagement_rate"] == 0
+        # O custo contratado é real e independe de já ter havido post.
+        assert row["cost_brl_cents"] > 0
