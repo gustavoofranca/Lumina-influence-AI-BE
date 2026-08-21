@@ -1,5 +1,9 @@
-# Sobe um PostgreSQL local para desenvolvimento.
-# Uso: docker compose up -d  →  DATABASE_URL=postgresql://lumina:lumina@localhost:5432/lumina_dev
+# Nome fixo do projeto: mantém esta stack única, seja qual for o diretório
+# de onde o `docker compose` é chamado.
+name: lumina
+
+# Ambiente de desenvolvimento do back-end: PostgreSQL + API Flask.
+# Uso: docker compose up -d  →  API em http://localhost:5000/api/v1
 services:
   db:
     image: postgres:17-alpine
@@ -17,6 +21,25 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  backend:
+    build: .
+    container_name: lumina-backend
+    env_file: .env
+    environment:
+      # Na rede do compose o Postgres atende no host `db`, não em localhost.
+      # Precedência do compose: `environment` sobrescreve o `.env` acima.
+      DATABASE_URL: postgresql://lumina:lumina@db:5432/lumina_dev
+      FLASK_ENV: dev
+      FLASK_DEBUG: 1
+    ports:
+      - "5000:5000"
+    volumes:
+      # Bind mount para hot-reload: o reloader do Flask enxerga as edições no host.
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
 
 volumes:
   lumina_pgdata:

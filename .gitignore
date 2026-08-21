@@ -48,6 +48,7 @@ htmlcov/
 
 #Pessoal
 .claude/
+.superpowers/
 CLAUDE.md
 next.txt
 docs
