@@ -129,3 +129,31 @@ def test_swagger_ui_served(client):
     r = client.get("/api/v1/docs")
     assert r.status_code == 200
     assert b"swagger-ui" in r.data
+
+
+# ==========================================================================
+# Cabeçalhos de segurança (CLAUDE.md 5.9)
+# ==========================================================================
+def test_resposta_traz_cabecalhos_de_seguranca(client):
+    r = client.get("/api/v1/health")
+    assert r.headers["X-Content-Type-Options"] == "nosniff"
+    assert r.headers["X-Frame-Options"] == "DENY"
+
+
+def test_cabecalhos_tambem_valem_para_respostas_de_erro(client):
+    """O handler global de erro não pode escapar dos cabeçalhos."""
+    r = client.get("/api/v1/rota-que-nao-existe")
+    assert r.status_code == 404
+    assert r.headers["X-Content-Type-Options"] == "nosniff"
+    assert r.headers["X-Frame-Options"] == "DENY"
+
+
+def test_hsts_ausente_em_conexao_nao_segura(client):
+    """Anunciar HSTS em http local fixaria o navegador num host sem TLS."""
+    r = client.get("/api/v1/health")
+    assert "Strict-Transport-Security" not in r.headers
+
+
+def test_hsts_presente_em_conexao_segura(client):
+    r = client.get("/api/v1/health", base_url="https://lumina.local")
+    assert "max-age=" in r.headers["Strict-Transport-Security"]

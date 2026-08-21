@@ -13,7 +13,7 @@ import sys
 from typing import Any
 
 import click
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from werkzeug.exceptions import HTTPException
 
 from src.config import get_config
@@ -111,6 +111,34 @@ def _register_error_handlers(app: Flask) -> None:
     def _unexpected(exc: Exception):
         app.logger.exception("Unhandled exception: %s", exc)
         return jsonify(_payload("internal_error", "Erro interno inesperado")), 500
+
+
+# Um ano — abaixo disso os navegadores não aceitam o domínio em listas de preload.
+HSTS_MAX_AGE_SECONDS = 31_536_000
+
+_SECURITY_HEADERS = {
+    # Impede o navegador de adivinhar o tipo do conteúdo e executar como script.
+    "X-Content-Type-Options": "nosniff",
+    # A API não é feita para ser embutida em frame — corta clickjacking.
+    "X-Frame-Options": "DENY",
+}
+
+
+def _register_security_headers(app: Flask) -> None:
+    """Aplica os cabeçalhos da seção 5.9 a toda resposta, inclusive as de erro."""
+
+    @app.after_request
+    def _apply_security_headers(response):
+        for header, value in _SECURITY_HEADERS.items():
+            response.headers.setdefault(header, value)
+        # HSTS só sobre TLS: anunciado em http local, fixaria o navegador num
+        # host que não tem certificado.
+        if request.is_secure:
+            response.headers.setdefault(
+                "Strict-Transport-Security",
+                f"max-age={HSTS_MAX_AGE_SECONDS}; includeSubDomains",
+            )
+        return response
 
 
 def _register_cli(app: Flask) -> None:
@@ -215,6 +243,7 @@ def create_app(config_name: str | None = None) -> Flask:
 
     _register_blueprints(app)
     _register_error_handlers(app)
+    _register_security_headers(app)
     _register_cli(app)
 
     app.logger.info("Lumina BE iniciado em modo %s", app.config.get("ENV"))
