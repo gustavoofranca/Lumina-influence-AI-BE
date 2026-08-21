@@ -9,7 +9,10 @@ from src.extensions import db
 from src.models import Campaign, CampaignStatus, UserRole
 from src.schemas.campaign import CampaignCreateIn, CampaignOut, CampaignUpdateIn
 from src.services import dashboard_service
-from src.services.campaign_service import build_campaign_query
+from src.services.campaign_service import (
+    build_campaign_query,
+    participants_by_campaign,
+)
 from src.utils.auth_decorators import require_auth
 from src.utils.authz import current_agency_id, get_scoped_or_404, require_role
 from src.utils.errors import ValidationError
@@ -48,14 +51,19 @@ def list_campaigns():
         search=request.args.get("search"),
     )
     page = paginate(stmt)
-    return paginated([_dump(c) for c in page.items], page)
+    participants = participants_by_campaign([c.id for c in page.items])
+    items = [
+        {**_dump(c), "participants": participants.get(c.id, [])} for c in page.items
+    ]
+    return paginated(items, page)
 
 
 @bp.get("/<campaign_id>")
 @require_auth
 def get_campaign(campaign_id):
     camp = get_scoped_or_404(Campaign, campaign_id)
-    return ok(_dump(camp))
+    participants = participants_by_campaign([camp.id])
+    return ok({**_dump(camp), "participants": participants[camp.id]})
 
 
 @bp.post("")

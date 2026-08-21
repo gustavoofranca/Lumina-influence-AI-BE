@@ -378,16 +378,26 @@ def campaign_benchmarking(campaign: Campaign) -> dict:
         split = M.reach_split(posts)
         resonance = M.resonance_score(eng, ai["sentiment_index_pct"], ai["brand_coherence"])
 
+        accounts = influencer.social_accounts
         rows.append(
             {
                 "influencer_id": str(influencer.id),
                 "display_name": influencer.display_name,
+                "handle": f"@{accounts[0].handle}" if accounts else None,
+                "niche": influencer.niche,
+                "status": influencer.status.value,
+                "platforms": [sa.platform.value for sa in accounts],
+                "followers": sum(sa.follower_count for sa in accounts),
                 "total_reach": split["total"],
                 "organic_pct": split["organic_pct"],
                 "paid_pct": split["paid_pct"],
                 "engagement_rate": eng,
                 "sentiment_index_pct": ai["sentiment_index_pct"],
+                "brand_coherence": ai["brand_coherence"],
+                "bot_probability": ai["bot_probability"],
                 "ai_score": resonance,
+                "posts_count": len(posts),
+                "deliverables": link.deliverables,
                 "cost_brl_cents": link.fee_brl_cents,
             }
         )

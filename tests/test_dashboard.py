@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import select
 
 from src.extensions import db
-from src.models import Campaign, Influencer, User, UserRole
+from src.models import Campaign, Influencer, InfluencerStatus, User, UserRole
 from src.seed.seed_data import seed_clear, seed_run
 from src.utils.jwt_utils import issue_token_pair
 
@@ -191,3 +191,68 @@ def test_benchmarking_other_agency_404(client, seeded):
         f"/api/v1/campaigns/{uuid.uuid4()}/benchmarking", headers=seeded.header
     )
     assert r.status_code == 404
+
+
+def test_benchmarking_row_traz_identidade_do_influencer(client, seeded):
+    """A tela de participantes precisa de identidade, não só métrica (B11)."""
+    r = client.get(
+        f"/api/v1/campaigns/{seeded.campaign_id}/benchmarking", headers=seeded.header
+    )
+    rows = r.get_json()["data"]["influencers"]
+    assert rows, "campanha seedada deve ter participantes"
+
+    for row in rows:
+        assert {
+            "influencer_id", "display_name", "handle", "niche", "status",
+            "platforms", "followers", "posts_count", "deliverables",
+            "brand_coherence", "bot_probability",
+        } <= set(row)
+        assert row["status"] in {s.value for s in InfluencerStatus}
+        assert isinstance(row["platforms"], list)
+        assert row["followers"] >= 0
+        assert row["posts_count"] >= 0
+
+
+def test_benchmarking_nao_expoe_token_de_conta_social(client, seeded):
+    """Contas sociais carregam token cifrado — ele não pode vazar na resposta."""
+    r = client.get(
+        f"/api/v1/campaigns/{seeded.campaign_id}/benchmarking", headers=seeded.header
+    )
+    assert "_encrypted" not in r.get_data(as_text=True)
+
+
+# --------------------------------------------------------------------------
+# participantes de campanha
+# --------------------------------------------------------------------------
+def test_lista_de_campanhas_traz_participantes(client, seeded):
+    r = client.get("/api/v1/campaigns", headers=seeded.header)
+    assert r.status_code == 200
+    items = r.get_json()["data"]
+    assert items
+
+    for camp in items:
+        assert isinstance(camp["participants"], list)
+        for p in camp["participants"]:
+            assert set(p) == {"influencer_id", "display_name"}
+
+    assert any(c["participants"] for c in items)
+
+
+def test_detalhe_da_campanha_traz_participantes(client, seeded):
+    r = client.get(f"/api/v1/campaigns/{seeded.campaign_id}", headers=seeded.header)
+    assert r.status_code == 200
+    assert isinstance(r.get_json()["data"]["participants"], list)
+
+
+def test_participantes_batem_com_o_benchmarking(client, seeded):
+    """Duas rotas, uma verdade: a associativa é a mesma."""
+    detail = client.get(
+        f"/api/v1/campaigns/{seeded.campaign_id}", headers=seeded.header
+    ).get_json()["data"]
+    bench = client.get(
+        f"/api/v1/campaigns/{seeded.campaign_id}/benchmarking", headers=seeded.header
+    ).get_json()["data"]
+
+    assert {p["influencer_id"] for p in detail["participants"]} == {
+        r["influencer_id"] for r in bench["influencers"]
+    }
