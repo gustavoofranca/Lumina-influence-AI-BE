@@ -4,8 +4,8 @@ from __future__ import annotations
 from flask import Blueprint, g, send_file
 from sqlalchemy import select
 
-from src.models import Report, UserRole
-from src.schemas.report import ReportCreateIn, ReportOut
+from src.models import Campaign, Report, UserRole
+from src.schemas.report import ReportCreateIn, ReportOut, ReportPreviewIn
 from src.services import report_service
 from src.utils.auth_decorators import require_auth
 from src.utils.authz import current_agency_id, get_scoped_or_404, require_role
@@ -58,6 +58,27 @@ def create_report():
         sections=payload.sections,
     )
     return created(_dump(report))
+
+
+@bp.post("/preview")
+@require_auth
+def preview_report():
+    """Conteúdo do relatório sem gerar nem gravar nada.
+
+    Mesma função que monta o PDF: a pré-visualização da tela e o arquivo
+    baixado saem da mesma fonte, senão divergem sem ninguém perceber.
+    """
+    payload = parse_json(ReportPreviewIn)
+    campaign = get_scoped_or_404(Campaign, payload.campaign_id)
+    context = report_service.build_report_context(
+        campaign=campaign,
+        period_start=payload.period_start,
+        period_end=payload.period_end,
+        sections=payload.sections,
+        title=payload.title,
+        generated_by=g.current_user.name,
+    )
+    return ok(context)
 
 
 @bp.get("/<report_id>/download")

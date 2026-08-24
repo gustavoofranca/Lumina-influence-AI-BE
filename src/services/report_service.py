@@ -90,7 +90,14 @@ def build_report_context(
     posts = _campaign_posts(campaign.id)
     growth_raw = M.growth_trajectory(posts, "90d")
     growth = [
-        {"x": g["x"], "organic_fmt": _fmt_compact(g["organic"]), "paid_fmt": _fmt_compact(g["paid"])}
+        {
+            "x": g["x"],
+            # Cru para o gráfico da pré-visualização, formatado para o PDF.
+            "organic": g["organic"],
+            "paid": g["paid"],
+            "organic_fmt": _fmt_compact(g["organic"]),
+            "paid_fmt": _fmt_compact(g["paid"]),
+        }
         for g in growth_raw
     ]
 

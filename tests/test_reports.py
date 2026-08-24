@@ -192,3 +192,57 @@ def test_full_sections_report(client, ctx, app):
     with app.app_context():
         report = db.session.get(Report, uuid.UUID(data["id"]))
         assert report_service.report_pdf_path(report).read_bytes()[:5] == b"%PDF-"
+
+
+# ==========================================================================
+# POST /reports/preview — mesmo conteúdo do PDF, sem gravar
+# ==========================================================================
+def test_preview_devolve_o_conteudo_do_relatorio(client, ctx):
+    r = client.post(
+        "/api/v1/reports/preview", headers=ctx.h_admin, json=_create_payload(ctx.camp_id)
+    )
+    assert r.status_code == 200, r.get_json()
+    data = r.get_json()["data"]
+
+    assert {
+        "report_title", "campaign", "period_start", "period_end", "budget_brl",
+        "generated_by", "summary", "sections", "kpis", "growth", "benchmark",
+        "diagnostic", "recommendations",
+    } <= set(data)
+    assert data["kpis"], "KPIs sempre existem, mesmo sem post"
+    for bucket in data["growth"]:
+        # O gráfico da tela precisa do número; o PDF, do texto formatado.
+        assert isinstance(bucket["organic"], (int, float))
+        assert isinstance(bucket["organic_fmt"], str)
+
+
+def test_preview_nao_grava_relatorio(client, ctx):
+    antes = len(client.get("/api/v1/reports", headers=ctx.h_admin).get_json()["data"])
+    client.post("/api/v1/reports/preview", headers=ctx.h_admin, json=_create_payload(ctx.camp_id))
+    depois = len(client.get("/api/v1/reports", headers=ctx.h_admin).get_json()["data"])
+    assert depois == antes
+
+
+def test_preview_bate_com_as_secoes_pedidas(client, ctx):
+    r = client.post(
+        "/api/v1/reports/preview",
+        headers=ctx.h_admin,
+        json=_create_payload(ctx.camp_id, sections=["kpis", "benchmark"]),
+    )
+    assert r.get_json()["data"]["sections"] == ["kpis", "benchmark"]
+
+
+def test_preview_de_campanha_de_outra_agencia_404(client, ctx):
+    r = client.post(
+        "/api/v1/reports/preview", headers=ctx.h_admin, json=_create_payload(ctx.camp_other_id)
+    )
+    assert r.status_code == 404
+
+
+def test_preview_secao_invalida_422(client, ctx):
+    r = client.post(
+        "/api/v1/reports/preview",
+        headers=ctx.h_admin,
+        json=_create_payload(ctx.camp_id, sections=["kpis", "inexistente"]),
+    )
+    assert r.status_code == 422

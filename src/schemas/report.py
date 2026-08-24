@@ -28,6 +28,12 @@ class ReportCreateIn(BaseModel):
         return v or list(SECTION_KEYS)
 
 
+class ReportPreviewIn(ReportCreateIn):
+    """Mesma entrada da criação — a pré-visualização não grava nada."""
+
+    title: str = Field(default="Prévia", min_length=1, max_length=200)
+
+
 class ReportOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
