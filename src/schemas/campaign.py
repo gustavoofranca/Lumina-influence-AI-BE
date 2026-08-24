@@ -25,6 +25,16 @@ class CampaignOut(BaseModel):
     updated_at: datetime
 
 
+class CampaignParticipantIn(BaseModel):
+    """Vínculo de um influencer com a campanha, com o cachê contratado."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    influencer_id: uuid.UUID
+    fee_brl_cents: int = Field(default=0, ge=0)
+    deliverables: Optional[str] = Field(default=None, max_length=500)
+
+
 class CampaignCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -34,11 +44,19 @@ class CampaignCreateIn(BaseModel):
     period_end: date
     budget_brl_cents: int = Field(default=0, ge=0)
     status: CampaignStatus = CampaignStatus.DRAFT
+    participants: list[CampaignParticipantIn] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check_period(self):
         if self.period_end < self.period_start:
             raise ValueError("period_end não pode ser anterior a period_start")
+        return self
+
+    @model_validator(mode="after")
+    def _check_participants(self):
+        ids = [p.influencer_id for p in self.participants]
+        if len(ids) != len(set(ids)):
+            raise ValueError("participants repete o mesmo influencer_id")
         return self
 
 

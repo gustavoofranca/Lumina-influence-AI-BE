@@ -10,8 +10,10 @@ from src.models import Campaign, CampaignStatus, UserRole
 from src.schemas.campaign import CampaignCreateIn, CampaignOut, CampaignUpdateIn
 from src.services import dashboard_service
 from src.services.campaign_service import (
+    attach_participants,
     build_campaign_query,
     participants_by_campaign,
+    validate_participants,
 )
 from src.utils.auth_decorators import require_auth
 from src.utils.authz import current_agency_id, get_scoped_or_404, require_role
@@ -71,8 +73,12 @@ def get_campaign(campaign_id):
 @require_role(UserRole.ADMIN, UserRole.MEMBER)
 def create_campaign():
     payload = parse_json(CampaignCreateIn)
+    agency_id = current_agency_id()
+    # Antes de qualquer INSERT: id inválido aqui abortaria a criação no meio.
+    validate_participants(payload.participants, agency_id)
+
     camp = Campaign(
-        agency_id=current_agency_id(),
+        agency_id=agency_id,
         brand_name=payload.brand_name,
         title=payload.title,
         period_start=payload.period_start,
@@ -81,8 +87,13 @@ def create_campaign():
         status=payload.status,
     )
     db.session.add(camp)
+    db.session.flush()
+
+    attach_participants(camp, payload.participants)
     db.session.commit()
-    return created(_dump(camp))
+
+    participants = participants_by_campaign([camp.id])
+    return created({**_dump(camp), "participants": participants[camp.id]})
 
 
 @bp.patch("/<campaign_id>")

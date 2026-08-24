@@ -8,6 +8,7 @@ from sqlalchemy import Select, select
 
 from src.extensions import db
 from src.models import Campaign, CampaignInfluencer, CampaignStatus, Influencer
+from src.utils.errors import NotFoundError
 
 
 def build_campaign_query(
@@ -65,3 +66,41 @@ def participants_by_campaign(
             {"influencer_id": str(influencer_id), "display_name": display_name}
         )
     return grouped
+
+
+def validate_participants(participants, agency_id: uuid.UUID) -> None:
+    """Confere que todo influencer pedido existe e é da agência.
+
+    Roda ANTES de gravar a campanha: não existe rollback automático aqui, então
+    validar depois do INSERT deixaria campanha órfã quando um id fosse inválido.
+
+    Id desconhecido e id de outra agência caem no mesmo 404 — responder coisas
+    diferentes revelaria quais ids existem (BOLA).
+    """
+    if not participants:
+        return
+
+    requested = {p.influencer_id for p in participants}
+    found = set(
+        db.session.scalars(
+            select(Influencer.id).where(
+                Influencer.id.in_(requested),
+                Influencer.agency_id == agency_id,
+            )
+        ).all()
+    )
+    if requested - found:
+        raise NotFoundError("Influencer não encontrado", code="influencer_not_found")
+
+
+def attach_participants(campaign: Campaign, participants) -> None:
+    """Cria os vínculos. Chame validate_participants antes."""
+    for participant in participants:
+        db.session.add(
+            CampaignInfluencer(
+                campaign_id=campaign.id,
+                influencer_id=participant.influencer_id,
+                fee_brl_cents=participant.fee_brl_cents,
+                deliverables=participant.deliverables,
+            )
+        )

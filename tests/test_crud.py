@@ -1,6 +1,7 @@
 """Testes de CRUD da B4 — cobre cada recurso + isolamento entre agências."""
 from __future__ import annotations
 
+import uuid
 from datetime import date
 
 import pytest
@@ -292,6 +293,119 @@ def test_create_campaign_invalid_period_422(client, ctx):
         json={"brand_name": "X", "period_start": "2026-04-01", "period_end": "2026-03-01"},
     )
     assert r.status_code == 422
+
+
+def test_create_campaign_com_participantes(client, ctx):
+    r = client.post(
+        "/api/v1/campaigns",
+        headers=ctx.h_a_admin,
+        json={
+            "brand_name": "Com Elenco",
+            "period_start": "2026-03-01",
+            "period_end": "2026-04-01",
+            "budget_brl_cents": 100000,
+            "participants": [
+                {
+                    "influencer_id": ctx.inf_a_id,
+                    "fee_brl_cents": 50000,
+                    "deliverables": "3 reels",
+                }
+            ],
+        },
+    )
+    assert r.status_code == 201, r.get_json()
+    data = r.get_json()["data"]
+    assert [p["influencer_id"] for p in data["participants"]] == [ctx.inf_a_id]
+
+    bench = client.get(
+        f"/api/v1/campaigns/{data['id']}/benchmarking", headers=ctx.h_a_admin
+    ).get_json()["data"]["influencers"]
+    assert bench[0]["cost_brl_cents"] == 50000
+    assert bench[0]["deliverables"] == "3 reels"
+
+
+def test_create_campaign_sem_participantes_continua_valido(client, ctx):
+    """O campo é opcional — o contrato anterior não pode ter quebrado."""
+    r = client.post(
+        "/api/v1/campaigns",
+        headers=ctx.h_a_admin,
+        json={
+            "brand_name": "Sem Elenco",
+            "period_start": "2026-03-01",
+            "period_end": "2026-04-01",
+        },
+    )
+    assert r.status_code == 201
+    assert r.get_json()["data"]["participants"] == []
+
+
+def test_create_campaign_com_influencer_de_outra_agencia_404(client, ctx):
+    """BOLA: vincular criador de outro cliente é o pior caso desta rota."""
+    r = client.post(
+        "/api/v1/campaigns",
+        headers=ctx.h_a_admin,
+        json={
+            "brand_name": "Invasora",
+            "period_start": "2026-03-01",
+            "period_end": "2026-04-01",
+            "participants": [{"influencer_id": ctx.inf_b_id}],
+        },
+    )
+    assert r.status_code == 404
+    # Não revela que o id existe em outra agência.
+    assert ctx.inf_b_id not in r.get_json()["error"]["message"]
+
+
+def test_participante_invalido_nao_deixa_campanha_orfa(client, ctx):
+    """A campanha é gravada com flush antes do vínculo — precisa reverter."""
+    antes = len(client.get("/api/v1/campaigns", headers=ctx.h_a_admin).get_json()["data"])
+
+    r = client.post(
+        "/api/v1/campaigns",
+        headers=ctx.h_a_admin,
+        json={
+            "brand_name": "Nao Deve Existir",
+            "period_start": "2026-03-01",
+            "period_end": "2026-04-01",
+            "participants": [{"influencer_id": str(uuid.uuid4())}],
+        },
+    )
+    assert r.status_code == 404
+
+    depois = client.get("/api/v1/campaigns", headers=ctx.h_a_admin).get_json()["data"]
+    assert len(depois) == antes
+    assert not any(c["brand_name"] == "Nao Deve Existir" for c in depois)
+
+
+def test_create_campaign_participante_repetido_422(client, ctx):
+    r = client.post(
+        "/api/v1/campaigns",
+        headers=ctx.h_a_admin,
+        json={
+            "brand_name": "Duplicada",
+            "period_start": "2026-03-01",
+            "period_end": "2026-04-01",
+            "participants": [
+                {"influencer_id": ctx.inf_a_id},
+                {"influencer_id": ctx.inf_a_id},
+            ],
+        },
+    )
+    assert r.status_code == 422
+
+
+def test_viewer_nao_cria_campanha_com_participantes(client, ctx):
+    r = client.post(
+        "/api/v1/campaigns",
+        headers=ctx.h_a_viewer,
+        json={
+            "brand_name": "Do Viewer",
+            "period_start": "2026-03-01",
+            "period_end": "2026-04-01",
+            "participants": [{"influencer_id": ctx.inf_a_id}],
+        },
+    )
+    assert r.status_code == 403
 
 
 def test_campaign_filter_by_status(client, ctx):
