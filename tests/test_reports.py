@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
@@ -246,3 +246,78 @@ def test_preview_secao_invalida_422(client, ctx):
         json=_create_payload(ctx.camp_id, sections=["kpis", "inexistente"]),
     )
     assert r.status_code == 422
+
+
+def test_preview_conta_so_os_posts_do_periodo_pedido(client, ctx):
+    """A capa declara um intervalo — o corpo precisa ser daquele intervalo.
+
+    Antes, posts e benchmark vinham da campanha inteira: o relatório dizia
+    cobrir jan-mar e trazia número de agosto.
+    """
+    hoje = date.today()
+    dentro = _create_payload(ctx.camp_id, sections=["kpis", "growth", "benchmark"])
+    dentro["period_start"] = (hoje - timedelta(days=7)).isoformat()
+    dentro["period_end"] = (hoje + timedelta(days=1)).isoformat()
+
+    fora = dict(dentro)
+    fora["period_start"] = "2020-01-01"
+    fora["period_end"] = "2020-12-31"
+
+    d_dentro = client.post(
+        "/api/v1/reports/preview", headers=ctx.h_admin, json=dentro
+    ).get_json()["data"]
+    d_fora = client.post(
+        "/api/v1/reports/preview", headers=ctx.h_admin, json=fora
+    ).get_json()["data"]
+
+    # A fixture cria 3 posts com posted_at = agora.
+    assert d_dentro["summary"]["posts_count"] == 3
+    assert d_dentro["growth"], "há posts na janela, então há trajetória"
+    assert d_dentro["benchmark"][0]["total_reach_fmt"] != "0"
+
+    assert d_fora["summary"]["posts_count"] == 0
+    assert d_fora["growth"] == []
+    assert d_fora["benchmark"][0]["total_reach_fmt"] == "0"
+
+
+def test_benchmarking_da_campanha_ignora_periodo_por_padrao(client, ctx):
+    """A tela de detalhe não escolhe período: continua vendo a campanha toda."""
+    rows = client.get(
+        f"/api/v1/campaigns/{ctx.camp_id}/benchmarking", headers=ctx.h_admin
+    ).get_json()["data"]["influencers"]
+    assert rows[0]["posts_count"] == 3
+
+
+def test_previa_e_pdf_saem_do_mesmo_conteudo(client, ctx, app):
+    """O que a tela mostra precisa ser o que o arquivo contém.
+
+    Renderiza o template do PDF com o payload da prévia: se o template passar a
+    exigir um campo que o contexto não fornece mais, os números somem do HTML e
+    o teste quebra antes de alguém baixar um relatório vazio.
+    """
+    payload = _create_payload(ctx.camp_id, sections=list(report_service.SECTION_KEYS))
+    hoje = date.today()
+    payload["period_start"] = (hoje - timedelta(days=7)).isoformat()
+    payload["period_end"] = (hoje + timedelta(days=1)).isoformat()
+
+    previa = client.post(
+        "/api/v1/reports/preview", headers=ctx.h_admin, json=payload
+    ).get_json()["data"]
+
+    with app.app_context():
+        html = report_service._template.render(**previa)
+
+    resumo = previa["summary"]
+    assert f"{resumo['avg_organic_pct']}%" in html
+    assert f"{resumo['avg_sentiment_pct']}%" in html
+    assert resumo["total_reach_fmt"] in html
+    assert str(resumo["posts_count"]) in html
+    assert previa["period_start"] in html and previa["period_end"] in html
+
+    for linha in previa["benchmark"]:
+        assert linha["display_name"] in html
+        assert linha["total_reach_fmt"] in html
+    for kpi in previa["kpis"]:
+        assert kpi["label"] in html
+    for bucket in previa["growth"]:
+        assert bucket["organic_fmt"] in html

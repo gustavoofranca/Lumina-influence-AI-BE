@@ -60,14 +60,16 @@ def build_report_context(
     *, campaign: Campaign, period_start: date, period_end: date, sections: list[str],
     title: str, generated_by: str,
 ) -> dict:
-    bench = dashboard_service.campaign_benchmarking(campaign)
+    bench = dashboard_service.campaign_benchmarking(
+        campaign, period_start=period_start, period_end=period_end
+    )
     rows = bench["influencers"]
 
     # Sumário executivo
     org_vals = [r["organic_pct"] for r in rows] or [0]
     sent_vals = [r["sentiment_index_pct"] or 0 for r in rows] or [0]
     total_reach = sum(r["total_reach"] for r in rows)
-    posts_count = _count_campaign_posts(campaign.id)
+    posts_count = _count_campaign_posts(campaign.id, period_start, period_end)
 
     summary = {
         "influencer_count": len(rows),
@@ -87,7 +89,7 @@ def build_report_context(
     ]
 
     # Growth (orgânico vs pago por bucket) — só dos posts da campanha
-    posts = _campaign_posts(campaign.id)
+    posts = _campaign_posts(campaign.id, period_start, period_end)
     growth_raw = M.growth_trajectory(posts, "90d")
     growth = [
         {
@@ -155,14 +157,23 @@ def build_report_context(
     }
 
 
-def _campaign_posts(campaign_id: uuid.UUID) -> list[Post]:
-    return list(db.session.scalars(select(Post).where(Post.campaign_id == campaign_id)).all())
+def _posts_in_period(campaign_id: uuid.UUID, period_start: date, period_end: date):
+    """Posts da campanha dentro do intervalo declarado na capa do relatório."""
+    return (
+        select(Post)
+        .where(Post.campaign_id == campaign_id)
+        .where(func.date(Post.posted_at) >= period_start)
+        .where(func.date(Post.posted_at) <= period_end)
+    )
 
 
-def _count_campaign_posts(campaign_id: uuid.UUID) -> int:
-    return int(db.session.scalar(
-        select(func.count(Post.id)).where(Post.campaign_id == campaign_id)
-    ) or 0)
+def _campaign_posts(campaign_id: uuid.UUID, period_start: date, period_end: date) -> list[Post]:
+    return list(db.session.scalars(_posts_in_period(campaign_id, period_start, period_end)).all())
+
+
+def _count_campaign_posts(campaign_id: uuid.UUID, period_start: date, period_end: date) -> int:
+    subq = _posts_in_period(campaign_id, period_start, period_end).subquery()
+    return int(db.session.scalar(select(func.count()).select_from(subq)) or 0)
 
 
 def _gather_recommendations(rows: list[dict]) -> list[dict]:

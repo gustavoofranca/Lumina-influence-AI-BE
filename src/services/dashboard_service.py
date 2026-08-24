@@ -358,10 +358,31 @@ def influencer_posts(influencer: Influencer, *, limit: int = 20) -> list[dict]:
 # ==========================================================================
 # Campaign benchmarking
 # ==========================================================================
-def campaign_benchmarking(campaign: Campaign) -> dict:
+def campaign_benchmarking(
+    campaign: Campaign,
+    *,
+    period_start=None,
+    period_end=None,
+) -> dict:
+    """Comparativo entre os influencers da campanha.
+
+    Sem período, considera toda a campanha (é o que a tela de detalhe mostra).
+    Com período, restringe aos posts da janela — o relatório declara um
+    intervalo na capa e precisa que os números sejam daquele intervalo.
+    """
     links = db.session.scalars(
         select(CampaignInfluencer).where(CampaignInfluencer.campaign_id == campaign.id)
     ).all()
+
+    def _in_period(post) -> bool:
+        if period_start is None and period_end is None:
+            return True
+        posted = M._as_aware(post.posted_at).date()
+        if period_start is not None and posted < period_start:
+            return False
+        if period_end is not None and posted > period_end:
+            return False
+        return True
 
     rows = []
     radar_series = []
@@ -370,7 +391,9 @@ def campaign_benchmarking(campaign: Campaign) -> dict:
         # Só o que é desta campanha. Sem fallback para o histórico completo:
         # atribuir posts de outra campanha a esta inflaria os números dela.
         posts = [
-            p for p in M.fetch_influencer_posts(influencer.id) if p.campaign_id == campaign.id
+            p
+            for p in M.fetch_influencer_posts(influencer.id)
+            if p.campaign_id == campaign.id and _in_period(p)
         ]
         post_ids = {p.id for p in posts}
         analyses = [
