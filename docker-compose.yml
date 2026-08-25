@@ -29,7 +29,7 @@ services:
     environment:
       # Na rede do compose o Postgres atende no host `db`, não em localhost.
       # Precedência do compose: `environment` sobrescreve o `.env` acima.
-      DATABASE_URL: postgresql://lumina:lumina@db:5432/lumina_dev
+      # DATABASE_URL: postgresql://lumina:lumina@db:5432/lumina_dev
       FLASK_ENV: dev
       FLASK_DEBUG: 1
     ports:
