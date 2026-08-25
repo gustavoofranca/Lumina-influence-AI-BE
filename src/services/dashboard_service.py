@@ -190,10 +190,14 @@ def _influencer_scorecard(influencer: Influencer, *, since: datetime | None = No
     }
 
 
-def influencer_metrics(influencer: Influencer) -> dict:
-    """Métricas computadas de um influencer (pra enriquecer a listagem do front)."""
-    posts = M.fetch_influencer_posts(influencer.id)
-    analyses = M.fetch_influencer_analyses(influencer.id)
+def influencer_metrics(influencer: Influencer, *, posts=None, analyses=None) -> dict:
+    """Métricas computadas de um influencer (pra enriquecer a listagem do front).
+
+    `posts` e `analyses` podem vir prontos de uma busca em lote — é o que evita
+    N+1 quando a listagem enriquece vários influencers de uma vez.
+    """
+    posts = M.fetch_influencer_posts(influencer.id) if posts is None else posts
+    analyses = M.fetch_influencer_analyses(influencer.id) if analyses is None else analyses
     eng = M.engagement_rate(posts)
     ai = M.ai_aggregates(analyses)
     split = M.reach_split(posts)
@@ -212,6 +216,21 @@ def influencer_metrics(influencer: Influencer) -> dict:
         "viral_potential": M.viral_potential(resonance),
         "last_analysis_at": last_at,
         "analyses_count": ai["analyses_count"],
+    }
+
+
+def influencer_metrics_bulk(influencers: list[Influencer]) -> dict[str, dict]:
+    """Métricas de vários influencers com duas queries no total, não duas por um."""
+    ids = [inf.id for inf in influencers]
+    posts_por_inf = M.fetch_posts_by_influencer(ids)
+    analises_por_inf = M.fetch_analyses_by_influencer(ids)
+    return {
+        str(inf.id): influencer_metrics(
+            inf,
+            posts=posts_por_inf.get(inf.id, []),
+            analyses=analises_por_inf.get(inf.id, []),
+        )
+        for inf in influencers
     }
 
 

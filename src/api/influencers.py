@@ -44,12 +44,12 @@ def list_influencers():
     )
     page = paginate(stmt)
     enriched = (request.args.get("enriched") or "").lower() in {"1", "true", "yes"}
-    items = []
-    for inf in page.items:
-        d = _dump(inf)
-        if enriched:
-            d["metrics"] = dashboard_service.influencer_metrics(inf)
-        items.append(d)
+    # Em lote: uma query de posts e uma de análises para a página inteira.
+    metricas = dashboard_service.influencer_metrics_bulk(page.items) if enriched else {}
+    items = [
+        {**_dump(inf), **({"metrics": metricas[str(inf.id)]} if enriched else {})}
+        for inf in page.items
+    ]
     return paginated(items, page)
 
 

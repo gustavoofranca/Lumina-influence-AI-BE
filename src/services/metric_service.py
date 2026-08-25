@@ -83,6 +83,52 @@ def fetch_influencer_posts(influencer_id: uuid.UUID, *, limit: int | None = None
     return list(db.session.scalars(stmt).all())
 
 
+def fetch_posts_by_influencer(
+    influencer_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, list[Post]]:
+    """Posts de vários influencers em uma query, agrupados por dono.
+
+    A versão por influencer multiplica idas ao banco. Com Postgres local isso
+    passa batido; com instância gerenciada, cada ida custa a latência da rede e
+    a listagem enriquecida levava 13s.
+    """
+    if not influencer_ids:
+        return {}
+
+    rows = db.session.execute(
+        select(SocialAccount.influencer_id, Post)
+        .join(Post, Post.social_account_id == SocialAccount.id)
+        .where(SocialAccount.influencer_id.in_(influencer_ids))
+        .order_by(Post.posted_at.desc())
+    ).all()
+
+    agrupado: dict[uuid.UUID, list[Post]] = {i: [] for i in influencer_ids}
+    for influencer_id, post in rows:
+        agrupado[influencer_id].append(post)
+    return agrupado
+
+
+def fetch_analyses_by_influencer(
+    influencer_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, list[AIAnalysis]]:
+    """Análises de vários influencers em uma query, agrupadas por dono."""
+    if not influencer_ids:
+        return {}
+
+    rows = db.session.execute(
+        select(SocialAccount.influencer_id, AIAnalysis)
+        .join(Post, Post.social_account_id == SocialAccount.id)
+        .join(AIAnalysis, AIAnalysis.post_id == Post.id)
+        .where(SocialAccount.influencer_id.in_(influencer_ids))
+        .order_by(AIAnalysis.analyzed_at.desc())
+    ).all()
+
+    agrupado: dict[uuid.UUID, list[AIAnalysis]] = {i: [] for i in influencer_ids}
+    for influencer_id, analise in rows:
+        agrupado[influencer_id].append(analise)
+    return agrupado
+
+
 def fetch_influencer_analyses(influencer_id: uuid.UUID) -> list[AIAnalysis]:
     stmt = (
         select(AIAnalysis)
