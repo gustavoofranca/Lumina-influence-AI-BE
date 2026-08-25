@@ -151,8 +151,12 @@ class GeminiClient:
             if uploaded is not None:
                 try:
                     self._client.files.delete(name=uploaded.name)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning(
+                        "Falha ao remover arquivo enviado ao Gemini: %s (%s)",
+                        uploaded.name,
+                        str(exc)[:200],
+                    )
 
         text = (resp.text or "").strip()
         if not text:
