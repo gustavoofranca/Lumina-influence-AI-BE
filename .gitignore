@@ -51,9 +51,11 @@ htmlcov/
 .superpowers/
 CLAUDE.md
 next.txt
-# docs/ é pessoal, mas as ADRs são exigidas pelo projeto e vão versionadas.
+# docs/ é pessoal, mas as ADRs e os relatórios de teste são exigidos pelo
+# projeto e vão versionados.
 docs/*
 !docs/adr/
+!docs/security/
 
 # Flask
 instance/
