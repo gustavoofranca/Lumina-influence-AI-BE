@@ -27,6 +27,7 @@ from src.services.auth_service import (
     consume_oauth_state,
     create_oauth_state,
     find_or_create_user_from_oauth,
+    resolve_dev_login_user,
 )
 from src.utils.auth_decorators import require_auth, require_refresh
 from src.utils.errors import ForbiddenError, UnauthorizedError, ValidationError
@@ -170,24 +171,11 @@ def dev_login():
     Habilitado só fora de produção (DEV_LOGIN_ENABLED). Body opcional: {"email": "..."}.
     Sem email, usa o primeiro admin com email da agência seedada.
     """
-    from sqlalchemy import select
-
-    from src.extensions import db
-    from src.models import User, UserRole
-
     if not current_app.config.get("DEV_LOGIN_ENABLED", False):
         raise ForbiddenError("dev-login desabilitado", code="dev_login_disabled")
 
     body = request.get_json(silent=True) or {}
-    email = body.get("email")
-    if email:
-        user = db.session.scalar(select(User).where(User.email == email))
-    else:
-        user = db.session.scalar(
-            select(User)
-            .where(User.role == UserRole.ADMIN, User.email.like("%lumina-agency%"))
-            .order_by(User.created_at.asc())
-        ) or db.session.scalar(select(User).where(User.role == UserRole.ADMIN))
+    user = resolve_dev_login_user(body.get("email"))
 
     if user is None:
         raise UnauthorizedError(

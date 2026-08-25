@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from flask import Blueprint, g, send_file
-from sqlalchemy import select
 
 from src.models import Campaign, Report, UserRole
 from src.schemas.report import ReportCreateIn, ReportOut, ReportPreviewIn
@@ -24,12 +23,7 @@ def _dump(r: Report) -> dict:
 @bp.get("")
 @require_auth
 def list_reports():
-    stmt = (
-        select(Report)
-        .where(Report.agency_id == current_agency_id())
-        .order_by(Report.generated_at.desc())
-    )
-    page = paginate(stmt)
+    page = paginate(report_service.build_report_query(current_agency_id()))
     return paginated([_dump(r) for r in page.items], page)
 
 

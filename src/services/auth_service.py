@@ -137,3 +137,23 @@ def cleanup_expired_oauth_states() -> int:
     )
     db.session.commit()
     return count
+
+
+def resolve_dev_login_user(email: str | None) -> User | None:
+    """Usuário para o dev-login.
+
+    Com email, busca aquele. Sem email, prefere o admin da agência seedada —
+    é o que dá um ambiente reconhecível ao abrir o app — e cai em qualquer
+    admin se o seed não estiver carregado.
+    """
+    if email:
+        return db.session.scalar(select(User).where(User.email == email))
+
+    seeded_admin = db.session.scalar(
+        select(User)
+        .where(User.role == UserRole.ADMIN, User.email.like("%lumina-agency%"))
+        .order_by(User.created_at.asc())
+    )
+    if seeded_admin is not None:
+        return seeded_admin
+    return db.session.scalar(select(User).where(User.role == UserRole.ADMIN))

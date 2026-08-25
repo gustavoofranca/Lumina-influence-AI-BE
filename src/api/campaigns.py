@@ -5,12 +5,11 @@ from datetime import date
 
 from flask import Blueprint, request
 
-from src.extensions import db
 from src.models import Campaign, CampaignStatus, UserRole
 from src.schemas.campaign import CampaignCreateIn, CampaignOut, CampaignUpdateIn
 from src.services import dashboard_service
+from src.services import campaign_service
 from src.services.campaign_service import (
-    attach_participants,
     build_campaign_query,
     participants_by_campaign,
     validate_participants,
@@ -77,20 +76,9 @@ def create_campaign():
     # Antes de qualquer INSERT: id inválido aqui abortaria a criação no meio.
     validate_participants(payload.participants, agency_id)
 
-    camp = Campaign(
-        agency_id=agency_id,
-        brand_name=payload.brand_name,
-        title=payload.title,
-        period_start=payload.period_start,
-        period_end=payload.period_end,
-        budget_brl_cents=payload.budget_brl_cents,
-        status=payload.status,
+    camp = campaign_service.create_campaign(
+        agency_id=agency_id, payload=payload, participants=payload.participants
     )
-    db.session.add(camp)
-    db.session.flush()
-
-    attach_participants(camp, payload.participants)
-    db.session.commit()
 
     participants = participants_by_campaign([camp.id])
     return created({**_dump(camp), "participants": participants[camp.id]})
@@ -102,27 +90,15 @@ def create_campaign():
 def update_campaign(campaign_id):
     camp = get_scoped_or_404(Campaign, campaign_id)
     payload = parse_json(CampaignUpdateIn)
-    data = payload.model_dump(exclude_unset=True)
-
-    # Valida período resultante após o merge.
-    new_start = data.get("period_start", camp.period_start)
-    new_end = data.get("period_end", camp.period_end)
-    if new_end < new_start:
-        raise ValidationError("period_end não pode ser anterior a period_start")
-
-    for field, value in data.items():
-        setattr(camp, field, value)
-    db.session.commit()
-    return ok(_dump(camp))
+    updated = campaign_service.apply_update(camp, payload.model_dump(exclude_unset=True))
+    return ok(_dump(updated))
 
 
 @bp.delete("/<campaign_id>")
 @require_auth
 @require_role(UserRole.ADMIN, UserRole.MEMBER)
 def delete_campaign(campaign_id):
-    camp = get_scoped_or_404(Campaign, campaign_id)
-    db.session.delete(camp)
-    db.session.commit()
+    campaign_service.delete_campaign(get_scoped_or_404(Campaign, campaign_id))
     return no_content()
 
 

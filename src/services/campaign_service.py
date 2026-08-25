@@ -8,7 +8,7 @@ from sqlalchemy import Select, select
 
 from src.extensions import db
 from src.models import Campaign, CampaignInfluencer, CampaignStatus, Influencer
-from src.utils.errors import NotFoundError
+from src.utils.errors import NotFoundError, ValidationError
 
 
 def build_campaign_query(
@@ -104,3 +104,44 @@ def attach_participants(campaign: Campaign, participants) -> None:
                 deliverables=participant.deliverables,
             )
         )
+
+
+def create_campaign(*, agency_id: uuid.UUID, payload, participants) -> Campaign:
+    """Cria a campanha e os vínculos numa transação.
+
+    Os participantes já vêm validados: gravar antes de validar deixaria
+    campanha órfã quando um influencer fosse inválido.
+    """
+    camp = Campaign(
+        agency_id=agency_id,
+        brand_name=payload.brand_name,
+        title=payload.title,
+        period_start=payload.period_start,
+        period_end=payload.period_end,
+        budget_brl_cents=payload.budget_brl_cents,
+        status=payload.status,
+    )
+    db.session.add(camp)
+    db.session.flush()
+
+    attach_participants(camp, participants)
+    db.session.commit()
+    return camp
+
+
+def apply_update(campaign: Campaign, data: dict) -> Campaign:
+    """Aplica o PATCH validando o período resultante do merge."""
+    new_start = data.get("period_start", campaign.period_start)
+    new_end = data.get("period_end", campaign.period_end)
+    if new_end < new_start:
+        raise ValidationError("period_end não pode ser anterior a period_start")
+
+    for field, value in data.items():
+        setattr(campaign, field, value)
+    db.session.commit()
+    return campaign
+
+
+def delete_campaign(campaign: Campaign) -> None:
+    db.session.delete(campaign)
+    db.session.commit()

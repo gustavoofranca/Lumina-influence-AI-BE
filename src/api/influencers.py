@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from flask import Blueprint, request
 
-from src.extensions import db
 from src.models import Influencer, InfluencerStatus, Platform, UserRole
 from src.schemas.influencer import (
     InfluencerCreateIn,
@@ -11,6 +10,7 @@ from src.schemas.influencer import (
     InfluencerUpdateIn,
 )
 from src.services import dashboard_service
+from src.services import influencer_service
 from src.services.influencer_service import build_influencer_query
 from src.utils.auth_decorators import require_auth
 from src.utils.authz import current_agency_id, get_scoped_or_404, require_role
@@ -65,15 +65,13 @@ def get_influencer(influencer_id):
 @require_role(UserRole.ADMIN, UserRole.MEMBER)
 def create_influencer():
     payload = parse_json(InfluencerCreateIn)
-    inf = Influencer(
+    inf = influencer_service.create_influencer(
         agency_id=current_agency_id(),
         display_name=payload.display_name,
         niche=payload.niche,
         bio=payload.bio,
         status=payload.status,
     )
-    db.session.add(inf)
-    db.session.commit()
     return created(_dump(inf))
 
 
@@ -83,20 +81,15 @@ def create_influencer():
 def update_influencer(influencer_id):
     inf = get_scoped_or_404(Influencer, influencer_id)
     payload = parse_json(InfluencerUpdateIn)
-    for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(inf, field, value)
-    db.session.commit()
-    return ok(_dump(inf))
+    updated = influencer_service.apply_update(inf, payload.model_dump(exclude_unset=True))
+    return ok(_dump(updated))
 
 
 @bp.delete("/<influencer_id>")
 @require_auth
 @require_role(UserRole.ADMIN, UserRole.MEMBER)
 def delete_influencer(influencer_id):
-    inf = get_scoped_or_404(Influencer, influencer_id)
-    # Influencer não tem soft delete — delete físico (cascade nas contas/posts).
-    db.session.delete(inf)
-    db.session.commit()
+    influencer_service.delete_influencer(get_scoped_or_404(Influencer, influencer_id))
     return no_content()
 
 

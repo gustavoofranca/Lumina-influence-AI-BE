@@ -1,19 +1,16 @@
 """Blueprint /api/v1/users — gestão de membros da própria agência."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from flask import Blueprint, g
-from sqlalchemy import select
 
-from src.extensions import db
 from src.models import User, UserRole
 from src.schemas.user import UserCreateIn, UserOut, UserUpdateIn
+from src.services import user_service
 from src.utils.auth_decorators import require_auth
 from src.utils.authz import current_agency_id, get_scoped_or_404, require_role
-from src.utils.errors import ConflictError, ForbiddenError, ValidationError
+from src.utils.errors import ForbiddenError, ValidationError
 from src.utils.pagination import paginate
-from src.utils.responses import created, no_content, ok
+from src.utils.responses import created, no_content, ok, paginated
 from src.utils.validation import parse_json
 
 bp = Blueprint("users", __name__, url_prefix="/api/v1/users")
@@ -26,14 +23,7 @@ def _dump(user: User) -> dict:
 @bp.get("")
 @require_auth
 def list_users():
-    stmt = (
-        select(User)
-        .where(User.agency_id == current_agency_id(), User.deleted_at.is_(None))
-        .order_by(User.name.asc())
-    )
-    page = paginate(stmt)
-    from src.utils.responses import paginated
-
+    page = paginate(user_service.build_user_query(current_agency_id()))
     return paginated([_dump(u) for u in page.items], page)
 
 
@@ -49,22 +39,13 @@ def get_user(user_id):
 @require_role(UserRole.ADMIN)
 def create_user():
     payload = parse_json(UserCreateIn)
-
-    existing = db.session.scalar(select(User).where(User.email == payload.email))
-    if existing is not None:
-        raise ConflictError("Email já cadastrado", details={"email": payload.email})
-
-    user = User(
+    user = user_service.create_member(
         email=payload.email,
         name=payload.name,
-        oauth_provider=payload.oauth_provider,
-        # oauth_id provisório até o membro logar de fato via OAuth.
-        oauth_id=f"pending-{payload.email}",
         role=payload.role,
+        oauth_provider=payload.oauth_provider,
         agency_id=current_agency_id(),
     )
-    db.session.add(user)
-    db.session.commit()
     return created(_dump(user))
 
 
@@ -86,10 +67,7 @@ def update_user(user_id):
     if "role" in data and not is_admin:
         raise ForbiddenError("Só admin pode alterar role", code="insufficient_role")
 
-    for field, value in data.items():
-        setattr(target, field, value)
-    db.session.commit()
-    return ok(_dump(target))
+    return ok(_dump(user_service.apply_update(target, data)))
 
 
 @bp.delete("/<user_id>")
@@ -99,6 +77,5 @@ def delete_user(user_id):
     target = get_scoped_or_404(User, user_id)
     if target.id == g.current_user.id:
         raise ValidationError("Admin não pode se auto-remover", code="cannot_delete_self")
-    target.deleted_at = datetime.now(timezone.utc)
-    db.session.commit()
+    user_service.soft_delete(target)
     return no_content()

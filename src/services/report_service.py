@@ -33,6 +33,15 @@ logger = logging.getLogger(__name__)
 
 SECTION_KEYS = ["kpis", "growth", "benchmark", "diagnostic", "recommendations"]
 
+
+def build_report_query(agency_id: uuid.UUID):
+    """SELECT de relatórios da agência, do mais recente para o mais antigo."""
+    return (
+        select(Report)
+        .where(Report.agency_id == agency_id)
+        .order_by(Report.generated_at.desc())
+    )
+
 _jinja = Environment(autoescape=select_autoescape(["html", "xml"]))
 _template = _jinja.from_string(REPORT_HTML)
 

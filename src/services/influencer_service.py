@@ -9,6 +9,7 @@ import uuid
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import selectinload
 
+from src.extensions import db
 from src.models import Influencer, InfluencerStatus, Platform, SocialAccount
 
 
@@ -65,3 +66,36 @@ def build_influencer_query(
             stmt = stmt.where(sums.c.total <= follower_max)
 
     return stmt
+
+
+def create_influencer(
+    *,
+    agency_id: uuid.UUID,
+    display_name: str,
+    niche: str | None,
+    bio: str | None,
+    status: InfluencerStatus,
+) -> Influencer:
+    inf = Influencer(
+        agency_id=agency_id,
+        display_name=display_name,
+        niche=niche,
+        bio=bio,
+        status=status,
+    )
+    db.session.add(inf)
+    db.session.commit()
+    return inf
+
+
+def apply_update(influencer: Influencer, data: dict) -> Influencer:
+    for field, value in data.items():
+        setattr(influencer, field, value)
+    db.session.commit()
+    return influencer
+
+
+def delete_influencer(influencer: Influencer) -> None:
+    """Delete físico — cascade leva contas sociais e posts. Não há soft delete."""
+    db.session.delete(influencer)
+    db.session.commit()
