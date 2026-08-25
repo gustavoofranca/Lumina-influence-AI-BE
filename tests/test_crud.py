@@ -438,6 +438,35 @@ def test_agency_patch_admin_ok(client, ctx):
     assert r.get_json()["data"]["name"] == "Renomeada"
 
 
+def test_agency_usage_conta_uso_e_traz_limite_do_plano(client, ctx):
+    r = client.get(f"/api/v1/agencies/{ctx.agency_a_id}/usage", headers=ctx.h_a_admin)
+    assert r.status_code == 200
+    data = r.get_json()["data"]
+
+    assert set(data) == {"influencers", "analyses", "reports"}
+    # A fixture cria 1 influencer na agência A; o da agência B não conta.
+    assert data["influencers"]["used"] == 1
+    assert data["influencers"]["limit"] == 50
+    assert data["analyses"]["limit"] == 500
+    assert data["analyses"]["period"] == "current_month"
+    # Relatório não tem teto no plano — nulo é "sem limite", não "limite zero".
+    assert data["reports"]["limit"] is None
+
+
+def test_agency_usage_de_outra_agencia_404(client, ctx):
+    r = client.get(f"/api/v1/agencies/{ctx.agency_b_id}/usage", headers=ctx.h_a_admin)
+    assert r.status_code == 404
+
+
+def test_agency_usage_sem_plano_devolve_limite_nulo(client, ctx):
+    """Agência B não tem plano: a tela precisa distinguir isso de teto zero."""
+    r = client.get(f"/api/v1/agencies/{ctx.agency_b_id}/usage", headers=ctx.h_b_admin)
+    assert r.status_code == 200
+    data = r.get_json()["data"]
+    assert data["influencers"]["limit"] is None
+    assert data["influencers"]["used"] == 1
+
+
 def test_agency_patch_member_forbidden(client, ctx):
     r = client.patch(
         f"/api/v1/agencies/{ctx.agency_a_id}", headers=ctx.h_a_member, json={"name": "X"}
