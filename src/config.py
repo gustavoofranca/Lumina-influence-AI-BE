@@ -64,8 +64,8 @@ class Config:
 
     # IA
     GEMINI_API_KEY: str | None = os.getenv("GEMINI_API_KEY")
-    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    GEMINI_TIMEOUT_SECONDS: int = int(os.getenv("GEMINI_TIMEOUT_SECONDS", "30"))
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+    GEMINI_TIMEOUT_SECONDS: int = int(os.getenv("GEMINI_TIMEOUT_SECONDS", "90"))
     # Máximo de comentários enviados no prompt (controle de custo/contexto)
     GEMINI_MAX_COMMENTS: int = int(os.getenv("GEMINI_MAX_COMMENTS", "30"))
 
