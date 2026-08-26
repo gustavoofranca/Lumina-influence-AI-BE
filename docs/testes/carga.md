@@ -164,6 +164,30 @@ pelo gateway do host, o que acrescenta um custo que não existiria num
 Quatro vezes e meia a vazão inicial. Metade veio de remover round trips, metade
 de usar processos em vez de um só.
 
+### Cenário 2 — tráfego misto
+
+Uma sessão real não bate num endpoint só. `NavegacaoUser` reproduz a mistura,
+com peso proporcional ao uso esperado: dashboard, listagem de criadores, a mesma
+listagem enriquecida, campanhas e densidade de rede. 150 usuários, 4 workers,
+90 segundos.
+
+| Endpoint | Requisições | p50 | p95 | Vazão |
+|---|---|---|---|---|
+| `/dashboard/overview` | 1.983 | 290 ms | 820 ms | 22,2 req/s |
+| `/influencers` | 1.437 | 210 ms | 690 ms | 16,1 req/s |
+| `/campaigns` | 983 | 200 ms | 630 ms | 11,0 req/s |
+| `/influencers?enriched=true` | 962 | 240 ms | 810 ms | 10,8 req/s |
+| `/dashboard/network-density` | 451 | 200 ms | 650 ms | 5,1 req/s |
+| **Agregado** | **5.816** | **240 ms** | **740 ms** | **65,1 req/s** |
+
+**Zero falhas.** A vazão agregada é maior que a do cenário isolado (65 contra 43
+req/s) porque a mistura inclui endpoints mais baratos que o dashboard.
+
+Vale destacar `/influencers?enriched=true`: essa rota já tinha sido corrigida de
+um N+1 antes desta bateria, e sob carga ela se mantém no mesmo patamar das
+demais — a busca em lote continua valendo com concorrência, não só numa
+requisição isolada.
+
 ## Achado — o scheduler não sobrevive a múltiplos workers
 
 Subir a aplicação sob gunicorn expôs um problema que o servidor de
