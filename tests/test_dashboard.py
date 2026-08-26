@@ -297,3 +297,52 @@ def test_benchmarking_nao_atribui_posts_de_outra_campanha(client, seeded):
         assert row["engagement_rate"] == 0
         # O custo contratado é real e independe de já ter havido post.
         assert row["cost_brl_cents"] > 0
+
+
+# --------------------------------------------------------------------------
+# Custo em round trips — N+1 no overview
+# --------------------------------------------------------------------------
+def _contar_queries(app, funcao):
+    """Executa `funcao` contando as queries emitidas no engine."""
+    from sqlalchemy import event
+
+    contagem = {"n": 0}
+    engine = db.engine
+
+    def contar(*_args, **_kwargs):
+        contagem["n"] += 1
+
+    event.listen(engine, "before_cursor_execute", contar)
+    try:
+        funcao()
+    finally:
+        event.remove(engine, "before_cursor_execute", contar)
+    return contagem["n"]
+
+
+def test_overview_nao_consulta_por_influenciador(app, seeded):
+    """O custo do overview não pode crescer com o número de criadores.
+
+    Cada query é um round trip. Em banco local a diferença some no ruído; contra
+    instância gerenciada, 70 round trips viraram 15 segundos de resposta —
+    medido na carga da B12. O teto abaixo é folgado de propósito: ele existe
+    para pegar a volta do N+1, não para congelar a implementação.
+    """
+    from src.models import Agency
+    from src.services import dashboard_service
+
+    with app.app_context():
+        agencia = db.session.scalar(select(Agency))
+        total_influenciadores = db.session.scalar(
+            select(func.count(Influencer.id)).where(Influencer.agency_id == agencia.id)
+        )
+        assert total_influenciadores >= 5, "seed pequeno demais para revelar N+1"
+
+        n = _contar_queries(
+            app, lambda: dashboard_service.overview(agencia.id, period="30d")
+        )
+
+    assert n <= 20, (
+        f"{n} queries para {total_influenciadores} criadores — o overview voltou "
+        "a consultar por influenciador em vez de buscar em lote"
+    )

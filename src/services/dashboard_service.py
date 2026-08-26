@@ -10,6 +10,7 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 
 from src.extensions import db
 from src.models import (
@@ -165,11 +166,24 @@ def featured_diagnosis(agency_id: uuid.UUID) -> dict | None:
 # ==========================================================================
 # Top performing networks
 # ==========================================================================
-def _influencer_scorecard(influencer: Influencer, *, since: datetime | None = None) -> dict:
-    posts = M.fetch_influencer_posts(influencer.id)
+def _influencer_scorecard(
+    influencer: Influencer,
+    *,
+    since: datetime | None = None,
+    posts=None,
+    analyses=None,
+) -> dict:
+    """Cartão de um criador.
+
+    `posts` e `analyses` podem vir de uma busca em lote — mesma convenção de
+    `influencer_metrics`. Sem isso, montar a lista inteira custa três queries
+    por criador.
+    """
+    posts = M.fetch_influencer_posts(influencer.id) if posts is None else posts
     if since is not None:
         posts = [p for p in posts if M._as_aware(p.posted_at) >= since]
-    analyses = M.fetch_influencer_analyses(influencer.id)
+    if analyses is None:
+        analyses = M.fetch_influencer_analyses(influencer.id)
 
     eng = M.engagement_rate(posts)
     ai = M.ai_aggregates(analyses)
@@ -235,10 +249,25 @@ def influencer_metrics_bulk(influencers: list[Influencer]) -> dict[str, dict]:
 
 
 def top_performing(agency_id: uuid.UUID, *, period: str = "30d", limit: int = 6) -> list[dict]:
+    # Três buscas no total — posts, análises e contas sociais — em vez de três
+    # por criador. Cada query é um round trip, e contra banco remoto era isso
+    # que fazia o overview levar 15s (relatório em docs/testes/carga.md).
     influencers = db.session.scalars(
-        select(Influencer).where(Influencer.agency_id == agency_id)
+        select(Influencer)
+        .where(Influencer.agency_id == agency_id)
+        .options(selectinload(Influencer.social_accounts))
     ).all()
-    cards = [_influencer_scorecard(inf) for inf in influencers]
+    ids = [inf.id for inf in influencers]
+    posts_por_inf = M.fetch_posts_by_influencer(ids)
+    analises_por_inf = M.fetch_analyses_by_influencer(ids)
+    cards = [
+        _influencer_scorecard(
+            inf,
+            posts=posts_por_inf.get(inf.id, []),
+            analyses=analises_por_inf.get(inf.id, []),
+        )
+        for inf in influencers
+    ]
     cards.sort(key=lambda c: c["resonance_score"], reverse=True)
     return cards[:limit]
 
