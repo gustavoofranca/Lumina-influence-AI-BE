@@ -265,6 +265,11 @@ def _should_start_scheduler(app: Flask) -> bool:
     argv = sys.argv
     prog = (argv[0] if argv else "").lower()
     if any(s in prog for s in ("gunicorn", "waitress", "wsgi")):
-        return True
+        # Servidor WSGI de produção roda vários processos, e cada um criaria o
+        # próprio agendador — todo job passaria a executar uma vez por worker.
+        # Com o free tier do Gemini (20 requisições/dia) isso esgota a cota em
+        # minutos. Aqui o agendador é opt-in: exatamente um processo assume o
+        # papel, declarando LUMINA_SCHEDULER_ROLE=worker.
+        return os.environ.get("LUMINA_SCHEDULER_ROLE") == "worker"
     # `flask run` → primeiro subcomando é "run". `flask seed run` → "seed".
     return len(argv) > 1 and argv[1] == "run"

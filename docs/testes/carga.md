@@ -208,12 +208,14 @@ workers, o consumo quadruplica — a cota diária se esgota em minutos.
 
 Não é defeito introduzido pelo gunicorn: é uma consequência de manter o
 agendador em processo (`APScheduler in-process`, decisão da B7) num deploy com
-mais de um processo. As saídas usuais são rodar os jobs num processo dedicado,
-fora do servidor web, ou dar ao agendador um lock compartilhado. **A decisão
-está em aberto.**
+mais de um processo.
 
-Enquanto isso, `LUMINA_DISABLE_SCHEDULER=1` continua no `.env` e os jobs são
-disparados sob demanda com `flask jobs run <nome>`.
+**Corrigido.** Sob servidor WSGI o agendador deixou de iniciar sozinho: agora é
+opt-in, e exatamente um processo assume o papel declarando
+`LUMINA_SCHEDULER_ROLE=worker`. Um lock compartilhado resolveria também, mas
+exigiria coordenação entre processos que este monólito não tem — e orquestração
+está fora do escopo do trabalho. Designar um processo é a saída mais simples que
+resolve. Em `flask run`, onde há um processo só, nada muda.
 
 ## Como reproduzir
 

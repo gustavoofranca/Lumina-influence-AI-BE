@@ -186,3 +186,45 @@ def test_cleanup_removes_expired_states(app, ctx):
         remaining = db.session.scalars(select(OAuthState.state_token)).all()
         assert "valid" in remaining
         assert "expired" not in remaining
+
+
+# --------------------------------------------------------------------------
+# Agendamento sob servidor WSGI com múltiplos processos
+# --------------------------------------------------------------------------
+def _decide_scheduler(monkeypatch, *, argv0, role=None, disable=None):
+    """Roda a decisão de iniciar o agendador simulando o processo hospedeiro."""
+    import sys as _sys
+
+    from src.app import _should_start_scheduler
+
+    class _App:
+        testing = False
+
+    monkeypatch.setattr(_sys, "argv", [argv0, "run"])
+    monkeypatch.delenv("LUMINA_SCHEDULER_ROLE", raising=False)
+    monkeypatch.delenv("LUMINA_DISABLE_SCHEDULER", raising=False)
+    if role is not None:
+        monkeypatch.setenv("LUMINA_SCHEDULER_ROLE", role)
+    if disable is not None:
+        monkeypatch.setenv("LUMINA_DISABLE_SCHEDULER", disable)
+    return _should_start_scheduler(_App())
+
+
+def test_gunicorn_nao_inicia_agendador_por_padrao(monkeypatch):
+    """Cada worker é um processo: iniciar por padrão faz todo job rodar N vezes."""
+    assert _decide_scheduler(monkeypatch, argv0="/usr/local/bin/gunicorn") is False
+
+
+def test_gunicorn_inicia_agendador_quando_o_processo_e_designado(monkeypatch):
+    assert _decide_scheduler(
+        monkeypatch, argv0="/usr/local/bin/gunicorn", role="worker") is True
+
+
+def test_flask_run_continua_iniciando_o_agendador(monkeypatch):
+    """Em desenvolvimento há um processo só — a conveniência não muda."""
+    assert _decide_scheduler(monkeypatch, argv0="/usr/local/bin/flask") is True
+
+
+def test_kill_switch_vence_o_papel_designado(monkeypatch):
+    assert _decide_scheduler(
+        monkeypatch, argv0="/usr/local/bin/gunicorn", role="worker", disable="1") is False

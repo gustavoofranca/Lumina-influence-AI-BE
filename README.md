@@ -109,10 +109,10 @@ curl http://localhost:5000/api/v1/health
 
 > **Jobs:** o scheduler só inicia com `flask run` (servindo). Comandos CLI não o disparam. Desabilite com `LUMINA_DISABLE_SCHEDULER=1`.
 >
-> **Atenção sob gunicorn:** cada worker cria a própria instância do APScheduler, então
-> todo job roda uma vez por worker. Com o free tier do Gemini (20 requisições/dia) isso
-> esgota a cota em minutos. Mantenha `LUMINA_DISABLE_SCHEDULER=1` e dispare os jobs sob
-> demanda até que os agendamentos saiam do processo web — ver `docs/testes/carga.md`.
+> **Sob gunicorn** o agendador não inicia sozinho: cada worker é um processo e criaria a
+> própria instância, fazendo todo job rodar uma vez por worker — o que esgotaria a cota
+> diária do Gemini em minutos. Designe **um** processo com `LUMINA_SCHEDULER_ROLE=worker`,
+> ou dispare sob demanda com `flask jobs run <nome>`.
 
 ---
 
