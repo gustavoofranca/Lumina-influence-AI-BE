@@ -6,7 +6,6 @@ import uuid
 from flask import Blueprint, current_app, redirect, request, url_for
 
 from src.models import UserRole
-from src.schemas.social_account import SocialAccountOut
 from src.services import integration_service
 from src.utils.auth_decorators import require_auth
 from src.utils.authz import current_agency_id, get_scoped_or_404, require_role
@@ -73,17 +72,13 @@ def callback(platform):
         state=state,
         redirect_uri=_redirect_uri(platform),
     )
-    dados = SocialAccountOut.model_validate(account).model_dump(mode="json")
-
     # O browser está nesta aba: devolver JSON deixaria o usuário olhando para um
-    # payload. Com destino configurado, volta para a tela do criador.
-    destino = current_app.config.get("AUTH_SUCCESS_REDIRECT")
-    if destino:
-        return redirect(
-            f"{destino.rstrip('/')}/app/influenciadores/{account.influencer_id}"
-            f"?conectado={plat.value}"
-        )
-    return ok(dados, status=201)
+    # payload. Volta para a tela do criador, na origem do front — e não em
+    # AUTH_SUCCESS_REDIRECT, que aponta para a página de callback do login.
+    destino = current_app.config["FRONTEND_ORIGIN"].rstrip("/")
+    return redirect(
+        f"{destino}/app/influenciadores/{account.influencer_id}?conectado={plat.value}"
+    )
 
 
 @bp.post("/<platform>/disconnect/<social_account_id>")

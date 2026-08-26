@@ -224,8 +224,7 @@ def build_openapi() -> dict:
                         {"name": "code", "in": "query", "required": True, "schema": {"type": "string"}},
                         {"name": "state", "in": "query", "required": True, "schema": {"type": "string"}},
                     ],
-                    "responses": {"302": {"description": "Redirect ao front-end"},
-                                  "201": {"description": "Conta vinculada, quando não há redirect configurado"},
+                    "responses": {"302": {"description": "Redirect à tela do criador, com ?conectado=<plataforma>"},
                                   "401": {"description": "State inválido, expirado ou já utilizado"}}},
         },
         "/api/v1/integrations/{platform}/disconnect/{id}": {

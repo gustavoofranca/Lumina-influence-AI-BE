@@ -65,9 +65,12 @@ Três garantias sustentam a troca:
    pertencer à agência declarada no state **agora**, não só quando o fluxo
    começou.
 
-Com sucesso e `AUTH_SUCCESS_REDIRECT` configurado, o callback redireciona o
-navegador de volta à tela do criador. Sem destino configurado, devolve 201 com a
-conta — é o que os testes exercitam.
+Com sucesso, o callback redireciona o navegador à tela do criador
+(`{FRONTEND_ORIGIN}/app/influenciadores/{id}?conectado={plataforma}`). Não há
+ramo alternativo devolvendo JSON: quem chega ali é sempre um navegador, e
+`FRONTEND_ORIGIN` sempre existe porque o CORS depende dela. Note que o destino
+**não** é `AUTH_SUCCESS_REDIRECT` — essa aponta para a página de callback do
+login (`/auth/callback`), e usá-la como base produziria uma rota inexistente.
 
 ## Consequências
 

@@ -214,18 +214,16 @@ def test_callback_creates_account_with_encrypted_tokens(client, ctx, app, monkey
             influencer_id=uuid.UUID(ctx.inf_id), platform=Platform.YOUTUBE, agency_id=ctx.agency_id
         )
 
-    r = client.get(f"/api/v1/integrations/youtube/callback?code=abc&state={state}", headers=ctx.h_admin)
-    assert r.status_code == 201, r.get_json()
-    data = r.get_json()["data"]
-    assert data["handle"] == "canal_teste"
-    assert data["follower_count"] == 50000
-    # token nunca exposto no Out
-    assert "access_token_encrypted" not in data
+    r = client.get(f"/api/v1/integrations/youtube/callback?code=abc&state={state}")
+    # O callback é navegação de browser: termina em redirect, não em JSON.
+    assert r.status_code == 302, r.data
 
     with app.app_context():
         acc = db.session.scalar(
             select(SocialAccount).where(SocialAccount.platform_user_id == "ch-1")
         )
+        assert acc.handle == "canal_teste"
+        assert acc.follower_count == 50000
         assert acc.access_token_encrypted is not None
         assert acc.access_token_encrypted != "acc-123"  # cifrado
         assert decrypt_token(acc.access_token_encrypted) == "acc-123"
@@ -354,8 +352,8 @@ def test_callback_conclui_sem_bearer(client, ctx, app, monkeypatch):
 
     r = client.get(f"/api/v1/integrations/youtube/callback?code=abc&state={state}")
 
-    assert r.status_code == 201, r.get_json()
-    assert r.get_json()["data"]["handle"] == "canal_teste"
+    assert r.status_code == 302, r.data
+    assert ctx.inf_id in r.headers["Location"]
 
 
 def test_callback_recusa_state_reapresentado(client, ctx, app, monkeypatch):
@@ -368,7 +366,7 @@ def test_callback_recusa_state_reapresentado(client, ctx, app, monkeypatch):
         )
 
     primeira = client.get(f"/api/v1/integrations/youtube/callback?code=abc&state={state}")
-    assert primeira.status_code == 201
+    assert primeira.status_code == 302
 
     segunda = client.get(f"/api/v1/integrations/youtube/callback?code=abc&state={state}")
     assert segunda.status_code == 401
@@ -388,19 +386,19 @@ def test_callback_recusa_influencer_de_outra_agencia(client, ctx, app, monkeypat
     assert r.status_code == 404
 
 
-def test_callback_redireciona_para_o_front_quando_configurado(client, ctx, app, monkeypatch):
-    """Com destino configurado, o browser volta para a tela do criador."""
+def test_callback_redireciona_para_a_tela_do_criador(client, ctx, app, monkeypatch):
+    """O destino é a origem do front, não a página de callback do login.
+
+    AUTH_SUCCESS_REDIRECT aponta para /auth/callback: usá-la como base produziria
+    /auth/callback/app/influenciadores/... — uma rota que não existe.
+    """
     monkeypatch.setattr(isvc, "get_adapter", lambda platform: FakeAdapter())
     with app.app_context():
         state = isvc.mint_state(
             influencer_id=uuid.UUID(ctx.inf_id), platform=Platform.YOUTUBE,
             agency_id=ctx.agency_id,
         )
-    app.config["AUTH_SUCCESS_REDIRECT"] = "http://localhost:5173"
-    try:
-        r = client.get(f"/api/v1/integrations/youtube/callback?code=abc&state={state}")
-    finally:
-        app.config["AUTH_SUCCESS_REDIRECT"] = None
+    r = client.get(f"/api/v1/integrations/youtube/callback?code=abc&state={state}")
 
     assert r.status_code == 302
     assert r.headers["Location"].startswith(
