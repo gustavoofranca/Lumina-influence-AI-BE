@@ -66,9 +66,26 @@ CAC, que "sem custo registrado, os dois devolvem `null` em vez de zero: a
 interface mostra ausência de dado, não desempenho nulo". O mesmo princípio não
 foi aplicado ao PDF.
 
-**Correção sugerida:** quando o período não tem posts, o sumário e os KPIs devem
-declarar ausência de dado em vez de zero, e a tabela de benchmarking deve trazer
-uma linha de estado vazio no lugar do cabeçalho solto.
+**Corrigido.** O contexto do relatório passou a carregar `summary.has_data`
+(verdadeiro quando há post no período) e cada KPI passou a declarar
+`depends_on_posts`. Com isso:
+
+- o sumário, sem dado, declara a ausência em vez de afirmar percentuais;
+- os três KPIs medidos saem como `—`; a contagem de criadores continua sendo
+  exibida, porque é fato do elenco da campanha e não medição do período;
+- as tabelas de trajetória e de benchmarking trazem linha de estado vazio no
+  lugar do cabeçalho solto e das linhas de zero.
+
+Cinco testes cobrem o comportamento nos dois sentidos — com e sem post no
+período —, e o relatório com dados foi conferido para garantir que os números
+continuam saindo iguais.
+
+**Fica aberto, e depende de decisão:** a seção "Diagnóstico de IA" continua
+sendo exibida num período sem posts, porque agrega as análises do criador sem
+filtrar por período. Não é obviamente errado — o diagnóstico é sobre o criador,
+não sobre a janela —, mas convive mal com um relatório que acabou de declarar
+não ter dado no período. Resolver exige decidir se o diagnóstico é do período
+ou do criador.
 
 ## Achado 2 — emoji vira quadrado preto
 
