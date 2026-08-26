@@ -62,6 +62,17 @@ def _fmt_brl(cents: int) -> str:
     return f"{(cents or 0) / 100:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def _media(values: list[float | None], casas: int = 1) -> float | None:
+    """Média apenas do que foi medido. Sem nenhuma medição, não há média (ADR-003)."""
+    medidos = [v for v in values if v is not None]
+    return round(sum(medidos) / len(medidos), casas) if medidos else None
+
+
+def _fmt_pct(value: float | None) -> str:
+    """Percentual para exibição; ausência de medição vira travessão, não `0%`."""
+    return "—" if value is None else f"{value}%"
+
+
 # ==========================================================================
 # Contexto
 # ==========================================================================
@@ -75,8 +86,8 @@ def build_report_context(
     rows = bench["influencers"]
 
     # Sumário executivo
-    org_vals = [r["organic_pct"] for r in rows] or [0]
-    sent_vals = [r["sentiment_index_pct"] or 0 for r in rows] or [0]
+    org_vals = [r["organic_pct"] for r in rows]
+    sent_vals = [r["sentiment_index_pct"] for r in rows]
     total_reach = sum(r["total_reach"] for r in rows)
     posts_count = _count_campaign_posts(campaign.id, period_start, period_end)
 
@@ -87,15 +98,17 @@ def build_report_context(
 
     summary = {
         "influencer_count": len(rows),
-        "avg_organic_pct": round(sum(org_vals) / len(org_vals), 1),
-        "avg_sentiment_pct": round(sum(sent_vals) / len(sent_vals), 1),
+        "avg_organic_pct": _media(org_vals),
+        "avg_organic_pct_fmt": _fmt_pct(_media(org_vals)),
+        "avg_sentiment_pct": _media(sent_vals),
+        "avg_sentiment_pct_fmt": _fmt_pct(_media(sent_vals)),
         "total_reach_fmt": _fmt_compact(total_reach),
         "posts_count": posts_count,
         "has_data": has_data,
     }
 
     # KPIs da campanha
-    avg_eng = round(sum(r["engagement_rate"] for r in rows) / max(len(rows), 1), 2)
+    avg_eng = _media([r["engagement_rate"] for r in rows], casas=2)
     # `depends_on_posts` diz quais cartões perdem o sentido num período sem
     # post. A contagem de criadores não é um deles: é fato do elenco da
     # campanha, não medição do período.
@@ -104,9 +117,9 @@ def build_report_context(
          "depends_on_posts": False},
         {"label": "Alcance Total", "value": _fmt_compact(total_reach), "change": None,
          "depends_on_posts": True},
-        {"label": "Engajamento Médio", "value": f"{avg_eng}%", "change": None,
+        {"label": "Engajamento Médio", "value": _fmt_pct(avg_eng), "change": None,
          "depends_on_posts": True},
-        {"label": "Sentimento Médio", "value": f"{summary['avg_sentiment_pct']}%",
+        {"label": "Sentimento Médio", "value": summary["avg_sentiment_pct_fmt"],
          "change": None, "depends_on_posts": True},
     ]
 
@@ -125,22 +138,34 @@ def build_report_context(
         for g in growth_raw
     ]
 
-    # Benchmark
+    # Benchmark — os valores crus servem a gráfico; os `_fmt` são o que PDF e
+    # pré-visualização exibem, para que a ausência de medição vire travessão nos
+    # dois e não "None%" num e "0%" no outro.
     benchmark = [
         {
             "display_name": r["display_name"],
             "total_reach_fmt": _fmt_compact(r["total_reach"]),
             "organic_pct": r["organic_pct"],
+            "organic_pct_fmt": _fmt_pct(r["organic_pct"]),
             "engagement_rate": r["engagement_rate"],
-            "sentiment_index_pct": r["sentiment_index_pct"] or 0,
+            "engagement_rate_fmt": _fmt_pct(r["engagement_rate"]),
+            "sentiment_index_pct": r["sentiment_index_pct"],
+            "sentiment_index_pct_fmt": _fmt_pct(r["sentiment_index_pct"]),
             "ai_score": r["ai_score"],
+            "ai_score_fmt": "—" if r["ai_score"] is None else str(r["ai_score"]),
         }
         for r in rows
     ]
 
-    # Diagnostic (top 2 por score IA)
+    # Diagnostic (top 2 por score IA) — quem não tem score não disputa as duas
+    # vagas, em vez de entrar na fila como se tivesse pontuado zero.
     diagnostic = []
-    for r in sorted(rows, key=lambda x: x["ai_score"], reverse=True)[:2]:
+    ranqueaveis = sorted(
+        (r for r in rows if r["ai_score"] is not None),
+        key=lambda x: x["ai_score"],
+        reverse=True,
+    )
+    for r in ranqueaveis[:2]:
         inf = db.session.get(Influencer, uuid.UUID(r["influencer_id"]))
         ai = M.ai_aggregates(M.fetch_influencer_analyses(inf.id))
         coh = ai["brand_coherence"] or 0

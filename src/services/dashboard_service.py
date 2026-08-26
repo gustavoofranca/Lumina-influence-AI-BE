@@ -85,9 +85,9 @@ def overview(agency_id: uuid.UUID, *, period: str = "30d", campaign_id: uuid.UUI
     )
 
     # Sem post no período não há engajamento medido — e zero afirmaria que houve
-    # medição e deu zero. Mesmo tratamento que ROI e CAC já recebem na ADR-002.
-    eng_curr = M.engagement_rate(posts_curr) if posts_curr else None
-    eng_prev = M.engagement_rate(posts_prev) if posts_prev else None
+    # medição e deu zero (ADR-003). O próprio engagement_rate já devolve None.
+    eng_curr = M.engagement_rate(posts_curr)
+    eng_prev = M.engagement_rate(posts_prev)
     roi_curr = M.roi_proxy(posts_curr, cost)
     roi_prev = M.roi_proxy(posts_prev, cost)
     cac_curr = M.cac_proxy_cents(posts_curr, cost)
@@ -270,7 +270,12 @@ def top_performing(agency_id: uuid.UUID, *, period: str = "30d", limit: int = 6)
         )
         for inf in influencers
     ]
-    cards.sort(key=lambda c: c["resonance_score"], reverse=True)
+    # Quem não tem métrica medida vai para o fim do ranking, em vez de ser
+    # comparado como se tivesse pontuado zero.
+    cards.sort(
+        key=lambda c: (c["resonance_score"] is not None, c["resonance_score"] or 0),
+        reverse=True,
+    )
     return cards[:limit]
 
 
@@ -519,11 +524,13 @@ def campaign_benchmarking(
             {
                 "influencer_id": str(influencer.id),
                 "name": influencer.display_name,
+                # Dimensão sem medição vira null e o radar abre uma lacuna, em
+                # vez de desenhar um vértice na origem como se fosse nota zero.
                 "values": [
                     min(round(split["total"] / 10000), 100),  # reach normalizado
-                    round(eng * 8, 1),  # engajamento escalado
-                    ai["sentiment_index_pct"] or 0,
-                    ai["brand_coherence"] or 0,
+                    round(eng * 8, 1) if eng is not None else None,  # engajamento escalado
+                    ai["sentiment_index_pct"],
+                    ai["brand_coherence"],
                     split["organic_pct"],
                 ],
             }

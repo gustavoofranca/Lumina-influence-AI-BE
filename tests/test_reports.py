@@ -308,8 +308,10 @@ def test_previa_e_pdf_saem_do_mesmo_conteudo(client, ctx, app):
         html = report_service._template.render(**previa)
 
     resumo = previa["summary"]
-    assert f"{resumo['avg_organic_pct']}%" in html
-    assert f"{resumo['avg_sentiment_pct']}%" in html
+    # O que aparece no HTML é o campo já formatado: com medição vem "12.3%",
+    # sem medição vem travessão. Comparar contra o valor cru afirmaria "None%".
+    assert resumo["avg_organic_pct_fmt"] in html
+    assert resumo["avg_sentiment_pct_fmt"] in html
     assert resumo["total_reach_fmt"] in html
     assert str(resumo["posts_count"]) in html
     assert previa["period_start"] in html and previa["period_end"] in html

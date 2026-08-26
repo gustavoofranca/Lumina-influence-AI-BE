@@ -293,8 +293,11 @@ def test_benchmarking_nao_atribui_posts_de_outra_campanha(client, seeded):
     assert rows, "os participantes continuam listados"
     for row in rows:
         assert row["posts_count"] == 0
+        # Alcance é soma: sem post, soma zero de verdade.
         assert row["total_reach"] == 0
-        assert row["engagement_rate"] == 0
+        # Engajamento é razão: sem post não foi medido, e zero afirmaria medição.
+        assert row["engagement_rate"] is None
+        assert row["organic_pct"] is None
         # O custo contratado é real e independe de já ter havido post.
         assert row["cost_brl_cents"] > 0
 
@@ -411,3 +414,87 @@ def test_engajamento_sem_post_no_periodo_vem_nulo(client, seeded, app):
     assert kpis["engagement_rate"]["change"] is None
     # A contagem de criadores é fato do elenco, não medição do período.
     assert kpis["active_influencers"]["value"] >= 0
+
+
+# ==========================================================================
+# Ausência de dado nunca vira zero (ADR-003)
+# ==========================================================================
+def test_metricas_de_performance_sem_base_vem_nulas(app):
+    """Sem post não há proporção a informar — mas há soma, e soma vazia é zero.
+
+    A distinção importa: `organic` é um total de alcance, e nenhum alcance
+    somado dá zero de verdade. `organic_pct` é uma proporção sobre um total
+    inexistente, e afirmar "0% do alcance foi orgânico" é medir o que não houve.
+    """
+    from src.services import metric_service as M
+
+    assert M.engagement_rate([]) is None
+
+    split = M.reach_split([])
+    assert split["organic"] == 0
+    assert split["paid"] == 0
+    assert split["total"] == 0
+    assert split["organic_pct"] is None
+    assert split["paid_pct"] is None
+
+
+def test_scores_derivados_de_metrica_ausente_tambem_vem_nulos(app):
+    """Score composto sem nenhuma parcela medida não é zero, é indefinido."""
+    from src.services import metric_service as M
+
+    assert M.resonance_score(None, None, None) is None
+    assert M.viral_potential(None) is None
+
+    # Com uma parcela medida, o score existe e usa só o que foi medido.
+    assert M.resonance_score(None, 80.0, None) == 80.0
+    assert M.resonance_score(6.0, None, None) == 50.0
+
+
+def test_criador_sem_post_nao_declara_engajamento_zero(client, seeded, app):
+    """O criador sem post mostrava 0,0% de engajamento ao lado de sentimento em —.
+
+    Era o mesmo dado ausente contado de duas formas na mesma tela.
+    """
+    with app.app_context():
+        influencer = db.session.scalar(select(Influencer))
+        for p in db.session.scalars(
+            select(Post).join(Post.social_account).where(
+                Post.social_account_id.in_(
+                    [sa.id for sa in influencer.social_accounts]
+                )
+            )
+        ).all():
+            db.session.delete(p)
+        db.session.commit()
+        inf_id = str(influencer.id)
+
+    r = client.get(f"/api/v1/influencers/{inf_id}?enriched=true", headers=seeded.header)
+    assert r.status_code == 200
+    m = r.get_json()["data"]["metrics"]
+
+    assert m["engagement_rate"] is None
+    assert m["organic_pct"] is None
+    assert m["paid_pct"] is None
+
+
+def test_ranking_nao_quebra_com_criador_sem_metrica(client, seeded, app):
+    """Ordenar por um score que pode ser nulo não pode levantar TypeError."""
+    with app.app_context():
+        influencer = db.session.scalar(select(Influencer))
+        for p in db.session.scalars(
+            select(Post).where(
+                Post.social_account_id.in_(
+                    [sa.id for sa in influencer.social_accounts]
+                )
+            )
+        ).all():
+            db.session.delete(p)
+        db.session.commit()
+
+    r = client.get("/api/v1/dashboard/overview", headers=seeded.header)
+    assert r.status_code == 200
+    top = r.get_json()["data"]["top_performing"]
+    assert top, "o ranking continua sendo devolvido"
+    # Quem não tem métrica não pode aparecer à frente de quem tem.
+    medidos = [c["resonance_score"] for c in top if c["resonance_score"] is not None]
+    assert medidos == sorted(medidos, reverse=True)

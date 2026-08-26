@@ -147,18 +147,27 @@ def _post_engagement(p: Post) -> int:
     return (p.likes or 0) + (p.comments_count or 0) + (p.shares or 0) + (p.saves or 0)
 
 
-def engagement_rate(posts: list[Post]) -> float:
-    """Engajamento médio (%) = média de (interações / reach_total) por post."""
+def engagement_rate(posts: list[Post]) -> float | None:
+    """Engajamento médio (%) = média de (interações / reach_total) por post.
+
+    Sem post com alcance registrado, devolve None: zero por cento afirmaria uma
+    medição que não houve (ADR-003).
+    """
     rates = []
     for p in posts:
         if p.reach_total and p.reach_total > 0:
             rates.append(_post_engagement(p) / p.reach_total)
     if not rates:
-        return 0.0
+        return None
     return round(sum(rates) / len(rates) * 100, 2)
 
 
 def reach_split(posts: list[Post]) -> dict:
+    """Alcance somado e a proporção entre orgânico e pago.
+
+    Os absolutos são somas: sem post, somam zero de verdade. As proporções são
+    razões sobre um total inexistente e vêm None (ADR-003).
+    """
     organic = sum(p.reach_organic or 0 for p in posts)
     paid = sum(p.reach_paid or 0 for p in posts)
     total = organic + paid
@@ -166,8 +175,8 @@ def reach_split(posts: list[Post]) -> dict:
         "organic": organic,
         "paid": paid,
         "total": total,
-        "organic_pct": round(organic / total * 100, 1) if total else 0.0,
-        "paid_pct": round(paid / total * 100, 1) if total else 0.0,
+        "organic_pct": round(organic / total * 100, 1) if total else None,
+        "paid_pct": round(paid / total * 100, 1) if total else None,
     }
 
 
@@ -222,21 +231,33 @@ def safety_rating(brand_coherence: float | None, sentiment_index: float | None, 
     return "D"
 
 
-def resonance_score(engagement_pct: float, sentiment_index: float | None, brand_coherence: float | None) -> float:
+def resonance_score(
+    engagement_pct: float | None,
+    sentiment_index: float | None,
+    brand_coherence: float | None,
+) -> float | None:
     """Score 0-100 composto: engajamento (normalizado), sentimento e coerência.
 
     engagement_pct tipicamente 0-12% → normaliza dividindo por 12 e *100 (cap 100).
+    Compõe apenas as parcelas medidas; sem nenhuma delas, o score é indefinido e
+    não zero (ADR-003).
     """
-    eng_norm = min(engagement_pct / 12 * 100, 100)
-    parts = [eng_norm]
+    parts = []
+    if engagement_pct is not None:
+        parts.append(min(engagement_pct / 12 * 100, 100))
     if sentiment_index is not None:
         parts.append(sentiment_index)
     if brand_coherence is not None:
         parts.append(brand_coherence)
+    if not parts:
+        return None
     return round(sum(parts) / len(parts), 1)
 
 
-def viral_potential(resonance: float) -> str:
+def viral_potential(resonance: float | None) -> str | None:
+    """Faixa qualitativa da ressonância. Sem ressonância medida, não há faixa."""
+    if resonance is None:
+        return None
     if resonance >= 82:
         return "high"
     if resonance >= 65:

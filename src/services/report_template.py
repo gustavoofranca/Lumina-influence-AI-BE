@@ -91,8 +91,8 @@ REPORT_HTML = """\
   <h2 class="section">Sumário Executivo</h2>
   {% if summary.has_data %}
   <p class="desc">Esta auditoria cobre <b>{{ summary.influencer_count }} criadores</b> da campanha
-  <b>{{ campaign.brand_name }}</b>. Em média, <b>{{ summary.avg_organic_pct }}%</b> do alcance foi
-  orgânico e o índice de sentimento ficou em <b>{{ summary.avg_sentiment_pct }}%</b>.
+  <b>{{ campaign.brand_name }}</b>. Em média, <b>{{ summary.avg_organic_pct_fmt }}</b> do alcance foi
+  orgânico e o índice de sentimento ficou em <b>{{ summary.avg_sentiment_pct_fmt }}</b>.
   Alcance total auditado: <b>{{ summary.total_reach_fmt }}</b> em <b>{{ summary.posts_count }}</b> posts.</p>
   {% else %}
   <p class="desc">A campanha <b>{{ campaign.brand_name }}</b> tem
@@ -147,10 +147,10 @@ REPORT_HTML = """\
         <tr>
           <td><b>{{ inf.display_name }}</b></td>
           <td class="num">{{ inf.total_reach_fmt }}</td>
-          <td class="num">{{ inf.organic_pct }}%</td>
-          <td class="num">{{ inf.engagement_rate }}%</td>
-          <td class="num">{{ inf.sentiment_index_pct }}%</td>
-          <td class="num score">{{ inf.ai_score }}</td>
+          <td class="num">{{ inf.organic_pct_fmt }}</td>
+          <td class="num">{{ inf.engagement_rate_fmt }}</td>
+          <td class="num">{{ inf.sentiment_index_pct_fmt }}</td>
+          <td class="num score">{{ inf.ai_score_fmt }}</td>
         </tr>
       {% endfor %}
       {% else %}
