@@ -4,7 +4,8 @@ API REST em **Python + Flask** que serve o front-end do SaaS de auditoria de per
 
 > TCC de Engenharia de Software. O contexto completo — modelo de domínio, padrões e plano de
 > etapas B0→B12 — vive no documento do trabalho, fora deste repositório. As decisões de
-> arquitetura estão em [`docs/adr/`](docs/adr/) e os relatórios de teste em
+> arquitetura estão em [`docs/adr/`](docs/adr/), os diagramas em
+> [`docs/arquitetura/`](docs/arquitetura/) e os relatórios de teste em
 > [`docs/security/`](docs/security/) e [`docs/testes/`](docs/testes/).
 
 ---
@@ -157,6 +158,7 @@ src/
 migrations/           # Alembic
 tests/                # pytest (190 testes)
 docs/adr/             # Architecture Decision Records
+docs/arquitetura/     # diagramas (camadas, análise de IA, dados, autenticação)
 docs/security/        # relatórios de análise estática e de IDOR
 docs/testes/          # relatórios de teste (robustez de PDF)
 storage/reports/      # PDFs gerados (gitignored)
