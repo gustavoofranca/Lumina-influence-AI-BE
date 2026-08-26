@@ -235,6 +235,15 @@ def build_openapi() -> dict:
     paths.update(_crud_paths("users", "UserOut", "UserCreateIn", "Users"))
     paths.update(_crud_paths("agencies", "AgencyOut", None, "Agencies"))
     paths.update(_crud_paths("influencers", "InfluencerOut", "InfluencerCreateIn", "Influencers"))
+    # `enriched` vale na listagem e no detalhe: acrescenta as métricas
+    # calculadas (engajamento, sentimento, bot, ressonância) ao recurso.
+    _enriched = {
+        "name": "enriched", "in": "query",
+        "description": "Inclui o objeto `metrics` com as métricas calculadas.",
+        "schema": {"type": "boolean"},
+    }
+    paths["/api/v1/influencers"]["get"].setdefault("parameters", []).append(_enriched)
+    paths["/api/v1/influencers/{id}"]["get"].setdefault("parameters", []).append(_enriched)
     paths.update(_crud_paths("social-accounts", "SocialAccountOut", "SocialAccountCreateIn",
                              "Integrations"))
     paths.update(_crud_paths("campaigns", "CampaignOut", "CampaignCreateIn", "Campaigns"))

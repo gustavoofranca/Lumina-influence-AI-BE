@@ -119,3 +119,51 @@ def test_influencers_enriched_includes_metrics(client, app):
     # sem enriched, não vem metrics
     r2 = client.get("/api/v1/influencers", headers=h)
     assert "metrics" not in r2.get_json()["data"][0]
+
+
+def test_detalhe_do_influencer_tambem_aceita_enriched(client, app):
+    """A tela de análise mostra engajamento, sentimento e bot do criador.
+
+    Esses números vêm de `metrics`. Sem eles no detalhe, o front cai no
+    fallback e exibe 0% — que o usuário lê como desempenho nulo, não como
+    campo ausente. A listagem já enriquece; o detalhe precisa oferecer o mesmo.
+    """
+    from src.utils.jwt_utils import issue_token_pair
+
+    with app.app_context():
+        for m in (Post, SocialAccount, Influencer, User, Agency):
+            db.session.query(m).delete()
+        db.session.commit()
+        agency = Agency(name="Ag")
+        db.session.add(agency)
+        db.session.flush()
+        admin = User(email="a@a.com", name="A", oauth_provider=OAuthProvider.GOOGLE,
+                     oauth_id="o", role=UserRole.ADMIN, agency=agency)
+        inf = Influencer(agency=agency, display_name="Nina", niche="tech")
+        db.session.add_all([admin, inf])
+        db.session.flush()
+        sa = SocialAccount(influencer=inf, platform=Platform.INSTAGRAM, handle="nina",
+                           follower_count=1000)
+        db.session.add(sa)
+        db.session.flush()
+        db.session.add(Post(social_account=sa, platform_post_id="p1", post_type=PostType.REEL,
+                            posted_at=datetime.now(timezone.utc), reach_total=1000,
+                            reach_organic=700, reach_paid=300, impressions=1500, likes=100,
+                            comments_count=10, shares=5, saves=8))
+        db.session.commit()
+        h = {"Authorization": f"Bearer {issue_token_pair(admin)['access_token']}"}
+        inf_id = str(inf.id)
+
+    r = client.get(f"/api/v1/influencers/{inf_id}?enriched=true", headers=h)
+    assert r.status_code == 200
+    item = r.get_json()["data"]
+    assert "metrics" in item
+    assert item["metrics"]["engagement_rate"] > 0
+
+    # o mesmo criador na listagem enriquecida traz os mesmos números
+    lista = client.get("/api/v1/influencers?enriched=true", headers=h).get_json()["data"][0]
+    assert lista["metrics"] == item["metrics"]
+
+    # sem o parâmetro, o payload continua enxuto
+    r2 = client.get(f"/api/v1/influencers/{inf_id}", headers=h)
+    assert "metrics" not in r2.get_json()["data"]

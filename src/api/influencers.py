@@ -25,6 +25,11 @@ def _dump(inf: Influencer) -> dict:
     return InfluencerOut.model_validate(inf).model_dump(mode="json")
 
 
+def _quer_metricas() -> bool:
+    """`?enriched=true` pede as métricas calculadas junto do recurso."""
+    return (request.args.get("enriched") or "").lower() in {"1", "true", "yes"}
+
+
 @bp.get("")
 @require_auth
 def list_influencers():
@@ -43,7 +48,7 @@ def list_influencers():
         follower_max=follower_max,
     )
     page = paginate(stmt)
-    enriched = (request.args.get("enriched") or "").lower() in {"1", "true", "yes"}
+    enriched = _quer_metricas()
     # Em lote: uma query de posts e uma de análises para a página inteira.
     metricas = dashboard_service.influencer_metrics_bulk(page.items) if enriched else {}
     items = [
@@ -57,7 +62,13 @@ def list_influencers():
 @require_auth
 def get_influencer(influencer_id):
     inf = get_scoped_or_404(Influencer, influencer_id)
-    return ok(_dump(inf))
+    if not _quer_metricas():
+        return ok(_dump(inf))
+    # Mesmo cálculo da listagem, para um só criador: a tela de análise mostra
+    # engajamento, sentimento e probabilidade de bot, e sem estes campos o
+    # front exibe zero — ausência de dado lida como desempenho nulo.
+    metricas = dashboard_service.influencer_metrics_bulk([inf])
+    return ok({**_dump(inf), "metrics": metricas[str(inf.id)]})
 
 
 @bp.post("")
