@@ -117,6 +117,14 @@ def influencer_analysis(influencer_id):
     return ok(data)
 
 
+@bp.get("/<influencer_id>/analyses")
+@require_auth
+def influencer_analyses(influencer_id):
+    """Histórico de análises do criador, da mais recente para a mais antiga."""
+    inf = get_scoped_or_404(Influencer, influencer_id)
+    return ok(dashboard_service.influencer_analysis_history(inf))
+
+
 @bp.get("/<influencer_id>/posts")
 @require_auth
 def influencer_posts(influencer_id):

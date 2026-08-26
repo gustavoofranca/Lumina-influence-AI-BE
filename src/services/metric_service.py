@@ -179,6 +179,13 @@ def _avg(values: list[float]) -> float | None:
     return round(sum(vals) / len(vals), 2) if vals else None
 
 
+def sentiment_to_pct(score: float | None) -> float | None:
+    """Converte o score de sentimento (-1..1) no índice exibido (0..100)."""
+    if score is None:
+        return None
+    return round((score + 1) / 2 * 100, 1)
+
+
 def ai_aggregates(analyses: list[AIAnalysis]) -> dict:
     """Médias de sentimento, coerência e bot a partir das análises do influencer."""
     if not analyses:
@@ -193,8 +200,7 @@ def ai_aggregates(analyses: list[AIAnalysis]) -> dict:
     sentiment = _avg([a.sentiment_score for a in analyses])  # -1..1
     return {
         "sentiment_score": sentiment,
-        # índice 0..100 derivado do score -1..1
-        "sentiment_index_pct": round((sentiment + 1) / 2 * 100, 1) if sentiment is not None else None,
+        "sentiment_index_pct": sentiment_to_pct(sentiment),
         "brand_coherence": _avg([a.brand_coherence_score for a in analyses]),
         "bot_probability": _avg([a.bot_probability for a in analyses]),
         "script_score": _avg([a.script_score for a in analyses]),

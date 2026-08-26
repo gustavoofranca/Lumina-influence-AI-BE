@@ -129,6 +129,13 @@ def build_openapi() -> dict:
             "get": {"tags": ["Dashboard"], "summary": "Diagnóstico IA completo do influencer",
                     "security": [{"bearerAuth": []}], "responses": {"200": {"description": "OK"}}},
         },
+        "/api/v1/influencers/{id}/analyses": {
+            "get": {"tags": ["AI"], "summary": "Histórico de análises do criador",
+                    "description": "Une as análises de todos os posts das contas do criador, "
+                                   "da mais recente para a mais antiga.",
+                    "security": [{"bearerAuth": []}],
+                    "responses": {"200": {"description": "Lista de análises"}}},
+        },
         "/api/v1/influencers/{id}/posts": {
             "get": {"tags": ["Dashboard"], "summary": "Grid de posts analisados",
                     "security": [{"bearerAuth": []}], "responses": {"200": {"description": "OK"}}},

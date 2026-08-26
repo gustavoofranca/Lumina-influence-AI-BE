@@ -292,6 +292,44 @@ def network_density(agency_id: uuid.UUID) -> dict:
 # ==========================================================================
 # Influencer analysis (tela Diagnóstico IA)
 # ==========================================================================
+def influencer_analysis_history(influencer: Influencer) -> list[dict]:
+    """Histórico de análises do criador, da mais recente para a mais antiga.
+
+    Uma análise é sempre de um post; o histórico do criador é a união das
+    análises de todos os posts das contas dele. O `scope` diz de que plataforma
+    e formato veio cada uma, porque duas análises no mesmo dia costumam ser de
+    peças diferentes.
+    """
+    analyses = M.fetch_influencer_analyses(influencer.id)
+    if not analyses:
+        return []
+
+    posts = {
+        p.id: p
+        for p in db.session.scalars(
+            select(Post)
+            .where(Post.id.in_([a.post_id for a in analyses]))
+            .options(selectinload(Post.social_account))
+        ).all()
+    }
+    historico = []
+    for a in analyses:
+        post = posts.get(a.post_id)
+        plataforma = post.social_account.platform.value if post and post.social_account else None
+        historico.append({
+            "analysis_id": str(a.id),
+            "post_id": str(a.post_id),
+            "analyzed_at": a.analyzed_at.isoformat(),
+            "platform": plataforma,
+            "post_type": post.post_type.value if post else None,
+            "brand_coherence": a.brand_coherence_score,
+            "sentiment_index_pct": M.sentiment_to_pct(a.sentiment_score),
+            "bot_probability": a.bot_probability,
+            "script_score": a.script_score,
+        })
+    return historico
+
+
 def influencer_analysis(influencer: Influencer) -> dict:
     analyses = M.fetch_influencer_analyses(influencer.id)
     posts = M.fetch_influencer_posts(influencer.id)

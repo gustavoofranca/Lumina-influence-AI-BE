@@ -346,3 +346,40 @@ def test_overview_nao_consulta_por_influenciador(app, seeded):
         f"{n} queries para {total_influenciadores} criadores — o overview voltou "
         "a consultar por influenciador em vez de buscar em lote"
     )
+
+
+# --------------------------------------------------------------------------
+# /influencers/:id/analyses — histórico do criador
+# --------------------------------------------------------------------------
+def test_historico_de_analises_do_criador(client, seeded):
+    """A aba Histórico existe no front e não tinha endpoint que a alimentasse."""
+    r = client.get(f"/api/v1/influencers/{seeded.influencer_id}/analyses",
+                   headers=seeded.header)
+    assert r.status_code == 200
+    itens = r.get_json()["data"]
+    assert itens, "o seed tem análises para este criador"
+
+    primeiro = itens[0]
+    for campo in ("analysis_id", "post_id", "analyzed_at", "platform",
+                  "brand_coherence", "sentiment_index_pct"):
+        assert campo in primeiro, campo
+
+    datas = [i["analyzed_at"] for i in itens]
+    assert datas == sorted(datas, reverse=True), "mais recente primeiro"
+
+
+def test_historico_de_criador_de_outra_agencia_404(client, seeded, app):
+    from src.models import Agency, Influencer, InfluencerStatus
+
+    with app.app_context():
+        outra = Agency(name="Outra")
+        db.session.add(outra)
+        db.session.flush()
+        alheio = Influencer(agency_id=outra.id, display_name="Alheio",
+                            status=InfluencerStatus.ACTIVE)
+        db.session.add(alheio)
+        db.session.commit()
+        alheio_id = str(alheio.id)
+
+    r = client.get(f"/api/v1/influencers/{alheio_id}/analyses", headers=seeded.header)
+    assert r.status_code == 404
