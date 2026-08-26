@@ -411,3 +411,102 @@ def test_texto_sem_emoji_passa_intacto_e_sem_aviso(caplog):
     with caplog.at_level(logging.WARNING):
         assert strip_unsupported_glyphs(original) == original
     assert caplog.text == ""
+
+
+def test_diagnostico_usa_so_as_analises_do_periodo(client, ctx, app):
+    """A capa promete um intervalo; o diagnóstico afirmava sobre a vida inteira.
+
+    O bloco relia `ai_aggregates` de todas as análises do criador, ignorando o
+    período do relatório. Um criador auditado em janeiro aparecia com as mesmas
+    notas num relatório de março.
+    """
+    from src.models import AIAnalysis, SentimentLabel
+
+    with app.app_context():
+        post = db.session.scalar(select(Post))
+        db.session.add(AIAnalysis(
+            post_id=post.id, model_version="teste", sentiment_score=0.8,
+            sentiment_label=SentimentLabel.POSITIVE, script_score=8.0,
+            brand_coherence_score=90.0, bot_probability=3.0,
+        ))
+        db.session.commit()
+
+    payload = _create_payload(ctx.camp_id, sections=list(report_service.SECTION_KEYS))
+    hoje = date.today()
+    payload["period_start"] = (hoje - timedelta(days=7)).isoformat()
+    payload["period_end"] = (hoje + timedelta(days=1)).isoformat()
+
+    previa = client.post(
+        "/api/v1/reports/preview", headers=ctx.h_admin, json=payload
+    ).get_json()["data"]
+
+    assert previa["diagnostic"], "o período tem análise, então há o que diagnosticar"
+    d = previa["diagnostic"][0]
+    assert d["display_name"] == "Nina Tech"
+    # Os números são os da análise que caiu dentro do período, não uma média
+    # da vida inteira do criador nem um zero de preenchimento.
+    assert d["brand_coherence"] == 90.0
+    assert d["bot_probability"] == 3.0
+    assert "alinhamento forte" in d["note"]
+
+
+def test_diagnostico_ignora_criador_sem_analise_no_periodo(client, ctx, app):
+    """Sem análise no período não há diagnóstico — nem com nota zero."""
+    from src.models import AIAnalysis
+
+    with app.app_context():
+        for a in db.session.scalars(select(AIAnalysis)).all():
+            db.session.delete(a)
+        db.session.commit()
+
+    payload = _create_payload(ctx.camp_id, sections=list(report_service.SECTION_KEYS))
+    hoje = date.today()
+    payload["period_start"] = (hoje - timedelta(days=7)).isoformat()
+    payload["period_end"] = (hoje + timedelta(days=1)).isoformat()
+
+    previa = client.post(
+        "/api/v1/reports/preview", headers=ctx.h_admin, json=payload
+    ).get_json()["data"]
+
+    assert previa["diagnostic"] == []
+
+
+def test_recomendacoes_saem_so_das_analises_do_periodo(client, ctx, app):
+    """As recomendações também descreviam a vida inteira do criador.
+
+    O bloco relia todas as análises de cada participante, então um relatório de
+    março listava sugestões geradas em janeiro — sob uma capa que promete março.
+    """
+    from src.models import AIAnalysis, SentimentLabel, SocialAccount
+
+    with app.app_context():
+        sa = db.session.scalar(select(SocialAccount))
+        camp_id = uuid.UUID(ctx.camp_id)
+
+        def post_com_recomendacao(quando, marcador):
+            p = Post(social_account_id=sa.id, campaign_id=camp_id,
+                     platform_post_id=f"rec-{marcador}", post_type=PostType.REEL,
+                     posted_at=quando, reach_total=1000, reach_organic=700,
+                     reach_paid=300, impressions=1200, likes=50, comments_count=5,
+                     shares=2, saves=3)
+            db.session.add(p)
+            db.session.flush()
+            db.session.add(AIAnalysis(
+                post_id=p.id, model_version="teste", sentiment_score=0.5,
+                sentiment_label=SentimentLabel.POSITIVE,
+                recommendations=[{"title": marcador, "description": "d"}],
+            ))
+
+        post_com_recomendacao(datetime(2026, 2, 1, tzinfo=timezone.utc), "DENTRO")
+        post_com_recomendacao(datetime.now(timezone.utc), "FORA")
+        db.session.commit()
+
+    # O período padrão do payload cobre 01/01 a 01/03 de 2026.
+    previa = client.post(
+        "/api/v1/reports/preview", headers=ctx.h_admin,
+        json=_create_payload(ctx.camp_id, sections=list(report_service.SECTION_KEYS)),
+    ).get_json()["data"]
+
+    titulos = [r["title"] for r in previa["recommendations"]]
+    assert "DENTRO" in titulos
+    assert "FORA" not in titulos

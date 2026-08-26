@@ -18,7 +18,6 @@ from sqlalchemy import func, select
 from src.extensions import db
 from src.models import (
     Campaign,
-    Influencer,
     Post,
     Report,
     ReportFormat,
@@ -157,31 +156,38 @@ def build_report_context(
         for r in rows
     ]
 
-    # Diagnostic (top 2 por score IA) — quem não tem score não disputa as duas
-    # vagas, em vez de entrar na fila como se tivesse pontuado zero.
-    diagnostic = []
-    ranqueaveis = sorted(
-        (r for r in rows if r["ai_score"] is not None),
+    # Diagnostic (top 2 por score IA) — sai das próprias linhas do benchmarking,
+    # que já vêm filtradas pelo período. Reler as análises do criador aqui
+    # descrevia a vida inteira dele sob uma capa que promete um intervalo.
+    # Quem não tem as três notas no período não entra: uma frase montada sobre
+    # zeros afirmaria "alinhamento parcial" e "bot baixa" sem nenhuma análise.
+    diagnosticaveis = sorted(
+        (
+            r for r in rows
+            if r["ai_score"] is not None
+            and r["brand_coherence"] is not None
+            and r["bot_probability"] is not None
+            and r["sentiment_index_pct"] is not None
+        ),
         key=lambda x: x["ai_score"],
         reverse=True,
     )
-    for r in ranqueaveis[:2]:
-        inf = db.session.get(Influencer, uuid.UUID(r["influencer_id"]))
-        ai = M.ai_aggregates(M.fetch_influencer_analyses(inf.id))
-        coh = ai["brand_coherence"] or 0
-        bot = ai["bot_probability"] or 0
+    diagnostic = []
+    for r in diagnosticaveis[:2]:
+        coh = r["brand_coherence"]
+        bot = r["bot_probability"]
         note = (
             f"Análise indica alinhamento {'forte' if coh > 85 else 'parcial'} com a marca, "
-            f"sentimento {'majoritariamente positivo' if (ai['sentiment_index_pct'] or 0) >= 80 else 'misto'} "
+            f"sentimento {'majoritariamente positivo' if r['sentiment_index_pct'] >= 80 else 'misto'} "
             f"e probabilidade de bot {'baixa' if bot < 5 else 'a monitorar'}."
         )
         diagnostic.append({
-            "display_name": inf.display_name, "niche": inf.niche or "—",
-            "brand_coherence": round(coh, 1), "bot_probability": round(bot, 1), "note": note,
+            "display_name": r["display_name"], "niche": r["niche"] or "—",
+            "brand_coherence": coh, "bot_probability": bot, "note": note,
         })
 
-    # Recommendations — agrega das análises recentes dos criadores da campanha
-    recommendations = _gather_recommendations(rows)
+    # Recommendations — das análises dos posts que entraram no período
+    recommendations = _gather_recommendations(rows, posts)
 
     return {
         "report_title": title,
@@ -223,11 +229,24 @@ def _count_campaign_posts(campaign_id: uuid.UUID, period_start: date, period_end
     return int(db.session.scalar(select(func.count()).select_from(subq)) or 0)
 
 
-def _gather_recommendations(rows: list[dict]) -> list[dict]:
+def _gather_recommendations(rows: list[dict], posts: list[Post]) -> list[dict]:
+    """Recomendações das análises dos posts do período, não da vida do criador.
+
+    Ler todas as análises de cada participante fazia um relatório de março
+    listar sugestões geradas em janeiro, sob uma capa que promete março. Busca
+    em lote e filtra pelos posts que entraram no intervalo.
+    """
+    ids_do_periodo = {p.id for p in posts}
+    por_influencer = M.fetch_analyses_by_influencer(
+        [uuid.UUID(r["influencer_id"]) for r in rows]
+    )
     recs: list[dict] = []
     seen = set()
     for r in rows:
-        analyses = M.fetch_influencer_analyses(uuid.UUID(r["influencer_id"]))
+        analyses = [
+            a for a in por_influencer.get(uuid.UUID(r["influencer_id"]), [])
+            if a.post_id in ids_do_periodo
+        ]
         for a in analyses:
             for item in (a.recommendations or []):
                 if isinstance(item, dict):
