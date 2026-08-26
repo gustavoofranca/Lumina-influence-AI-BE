@@ -300,3 +300,50 @@ def test_logout_returns_204(client, clean_db, app):
         "/api/v1/auth/logout", headers={"Authorization": f"Bearer {access}"}
     )
     assert r.status_code == 204
+
+
+def test_google_callback_nao_aceita_o_mesmo_state_duas_vezes(
+    client, clean_db, fake_google, monkeypatch, app
+):
+    """O state precisa ser de uso único.
+
+    Um state que continua valendo depois do primeiro uso permite replay: quem
+    interceptar a URL de callback (histórico do navegador, log de proxy, um
+    Referer vazado) reencena o login e recebe um par de tokens novo.
+    """
+    r = client.get("/api/v1/auth/google/login")
+    state = parse_qs(urlparse(r.headers["Location"]).query)["state"][0]
+    _patch_userinfo(monkeypatch, sub="g-replay", email="replay@teste.com", name="Replay")
+
+    primeira = client.get(f"/api/v1/auth/google/callback?code=fake-code&state={state}")
+    assert primeira.status_code == 200
+
+    segunda = client.get(f"/api/v1/auth/google/callback?code=fake-code&state={state}")
+    assert segunda.status_code == 401
+    assert segunda.get_json()["error"]["code"] == "oauth_state_invalid"
+
+
+def test_google_callback_devolve_os_tokens_no_fragmento_da_url(
+    client, clean_db, fake_google, monkeypatch, app
+):
+    """Com AUTH_SUCCESS_REDIRECT configurado, o callback volta para o front.
+
+    Os tokens têm que ir no fragmento (#), nunca na query (?): o fragmento não
+    é enviado ao servidor, não entra em log de acesso nem em cabeçalho Referer.
+    """
+    app.config["AUTH_SUCCESS_REDIRECT"] = "http://localhost:5173/auth/callback"
+    try:
+        r = client.get("/api/v1/auth/google/login")
+        state = parse_qs(urlparse(r.headers["Location"]).query)["state"][0]
+        _patch_userinfo(monkeypatch, sub="g-frag", email="frag@teste.com", name="Frag")
+
+        r = client.get(f"/api/v1/auth/google/callback?code=fake-code&state={state}")
+        assert r.status_code == 302
+
+        destino = urlparse(r.headers["Location"])
+        assert destino.path == "/auth/callback"
+        assert "access_token" not in destino.query
+        assert "access_token" in parse_qs(destino.fragment)
+        assert "refresh_token" in parse_qs(destino.fragment)
+    finally:
+        app.config["AUTH_SUCCESS_REDIRECT"] = None

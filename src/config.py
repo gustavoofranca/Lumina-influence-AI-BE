@@ -116,6 +116,11 @@ class TestConfig(Config):
     MICROSOFT_CLIENT_ID = "test-ms-client-id"
     MICROSOFT_CLIENT_SECRET = "test-ms-client-secret"
     OAUTH_REDIRECT_BASE = "http://localhost:5000"
+    # Fixo em None: com a variável setada no .env do desenvolvedor, o callback
+    # passa a redirecionar em vez de responder JSON e a suíte muda de
+    # comportamento conforme a máquina em que roda. Quem quiser exercitar o
+    # redirect sobrescreve a config no próprio teste.
+    AUTH_SUCCESS_REDIRECT = None
     # Nunca usa a key real do .env em testes — força mock/NotConfigured.
     GEMINI_API_KEY = None
     # Fernet key fixa e válida (32 bytes → base64), independente do .env.
