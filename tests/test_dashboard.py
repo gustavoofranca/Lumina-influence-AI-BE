@@ -498,3 +498,26 @@ def test_ranking_nao_quebra_com_criador_sem_metrica(client, seeded, app):
     # Quem não tem métrica não pode aparecer à frente de quem tem.
     medidos = [c["resonance_score"] for c in top if c["resonance_score"] is not None]
     assert medidos == sorted(medidos, reverse=True)
+
+
+def test_criador_sem_analise_nao_afirma_audiencia_organica(client, seeded, app):
+    """Sem análise, bot_probability era lido como 0 e a tela dizia "100% orgânico".
+
+    Zero inventado já é ruim; este inventava um número favorável ao criador,
+    que é exatamente o que um sistema de auditoria não pode fazer.
+    """
+    from src.models import AIAnalysis
+
+    with app.app_context():
+        influencer = db.session.scalar(select(Influencer))
+        for a in db.session.scalars(select(AIAnalysis)).all():
+            db.session.delete(a)
+        db.session.commit()
+        inf_id = str(influencer.id)
+
+    r = client.get(f"/api/v1/influencers/{inf_id}/analysis", headers=seeded.header)
+    assert r.status_code == 200
+    data = r.get_json()["data"]
+
+    assert data["audience_integrity"] is None
+    assert data["neural_confidence"] == []

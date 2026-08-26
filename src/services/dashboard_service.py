@@ -366,19 +366,36 @@ def influencer_analysis(influencer: Influencer) -> dict:
     )
     keywords = [{"word": w, "weight": c} for w, c in key_phrase_counter.most_common(12)]
 
-    # Audience integrity (derivado de bot_probability médio)
-    bot = ai["bot_probability"] or 0
-    suspicious_pct = round(bot * 0.6, 1)
-    bots_pct = round(bot * 0.4, 1)
-    organic_pct = round(100 - suspicious_pct - bots_pct, 1)
+    # Audience integrity deriva do bot_probability médio. Sem análise não há de
+    # onde derivar, e o cartão inteiro sai como ausente: tratar bot como 0
+    # anunciava "100% de audiência orgânica" para quem nunca foi analisado —
+    # uma afirmação favorável inventada, pior que um zero (ADR-003).
+    bot = ai["bot_probability"]
     total_followers = sum(sa.follower_count for sa in influencer.social_accounts)
+    audience_integrity = None
+    if bot is not None:
+        suspicious_pct = round(bot * 0.6, 1)
+        bots_pct = round(bot * 0.4, 1)
+        audiencia_organica_pct = round(100 - suspicious_pct - bots_pct, 1)
+        audience_integrity = {
+            "organic": audiencia_organica_pct,
+            "suspicious": suspicious_pct,
+            "bots": bots_pct,
+            "totals": {
+                "verified_humans": int(total_followers * audiencia_organica_pct / 100),
+                "suspicious": int(total_followers * suspicious_pct / 100),
+                "bots": int(total_followers * bots_pct / 100),
+            },
+        }
 
-    # Neural confidence
-    neural = [
-        {"key": "script_accuracy", "value": round((ai["script_score"] or 0) * 10, 1)},
-        {"key": "tone_matching", "value": sentiment_index or 0},
-        {"key": "demographic_sync", "value": ai["brand_coherence"] or 0},
+    # Neural confidence — só as dimensões efetivamente medidas. Lista vazia é o
+    # que o cartão do front já espera para mostrar seu estado vazio.
+    neural_bruto = [
+        ("script_accuracy", None if ai["script_score"] is None else round(ai["script_score"] * 10, 1)),
+        ("tone_matching", sentiment_index),
+        ("demographic_sync", ai["brand_coherence"]),
     ]
+    neural = [{"key": k, "value": v} for k, v in neural_bruto if v is not None]
 
     # Recomendações da análise mais recente
     recommendations = analyses[0].recommendations if analyses and analyses[0].recommendations else []
@@ -402,16 +419,7 @@ def influencer_analysis(influencer: Influencer) -> dict:
         "reach_split": split,
         "sentiment_clusters": clusters,
         "keywords": keywords,
-        "audience_integrity": {
-            "organic": organic_pct,
-            "suspicious": suspicious_pct,
-            "bots": bots_pct,
-            "totals": {
-                "verified_humans": int(total_followers * organic_pct / 100),
-                "suspicious": int(total_followers * suspicious_pct / 100),
-                "bots": int(total_followers * bots_pct / 100),
-            },
-        },
+        "audience_integrity": audience_integrity,
         "neural_confidence": neural,
         "recommendations": recommendations,
         "latest_analysis_id": latest_analysis_id,
