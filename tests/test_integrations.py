@@ -333,3 +333,77 @@ def test_sync_handles_revoked_token(client, ctx, monkeypatch):
     db.session.expire_all()
     acc = db.session.get(SocialAccount, uuid.UUID(ctx.sa_id))
     assert acc.access_token_encrypted is None  # limpo pra reconexão
+
+
+# ==========================================================================
+# Callback sem sessão — é o browser que chega, não o front
+# ==========================================================================
+def test_callback_conclui_sem_bearer(client, ctx, app, monkeypatch):
+    """O provedor redireciona o browser, e navegação não carrega Authorization.
+
+    Com @require_auth no callback o fluxo devolvia 401 antes de fazer qualquer
+    coisa — verde nos testes, que mandavam o header na mão, e impossível na
+    vida real. A identidade vem do state assinado.
+    """
+    monkeypatch.setattr(isvc, "get_adapter", lambda platform: FakeAdapter())
+    with app.app_context():
+        state = isvc.mint_state(
+            influencer_id=uuid.UUID(ctx.inf_id), platform=Platform.YOUTUBE,
+            agency_id=ctx.agency_id,
+        )
+
+    r = client.get(f"/api/v1/integrations/youtube/callback?code=abc&state={state}")
+
+    assert r.status_code == 201, r.get_json()
+    assert r.get_json()["data"]["handle"] == "canal_teste"
+
+
+def test_callback_recusa_state_reapresentado(client, ctx, app, monkeypatch):
+    """Sem sessão, o uso único do state é o que impede reapresentação."""
+    monkeypatch.setattr(isvc, "get_adapter", lambda platform: FakeAdapter())
+    with app.app_context():
+        state = isvc.mint_state(
+            influencer_id=uuid.UUID(ctx.inf_id), platform=Platform.YOUTUBE,
+            agency_id=ctx.agency_id,
+        )
+
+    primeira = client.get(f"/api/v1/integrations/youtube/callback?code=abc&state={state}")
+    assert primeira.status_code == 201
+
+    segunda = client.get(f"/api/v1/integrations/youtube/callback?code=abc&state={state}")
+    assert segunda.status_code == 401
+    assert segunda.get_json()["error"]["code"] == "oauth_state_replayed"
+
+
+def test_callback_recusa_influencer_de_outra_agencia(client, ctx, app, monkeypatch):
+    """O state diz a agência; o influencer precisa pertencer a ela agora."""
+    monkeypatch.setattr(isvc, "get_adapter", lambda platform: FakeAdapter())
+    with app.app_context():
+        state = isvc.mint_state(
+            influencer_id=uuid.UUID(ctx.inf_other_id), platform=Platform.YOUTUBE,
+            agency_id=ctx.agency_id,
+        )
+
+    r = client.get(f"/api/v1/integrations/youtube/callback?code=abc&state={state}")
+    assert r.status_code == 404
+
+
+def test_callback_redireciona_para_o_front_quando_configurado(client, ctx, app, monkeypatch):
+    """Com destino configurado, o browser volta para a tela do criador."""
+    monkeypatch.setattr(isvc, "get_adapter", lambda platform: FakeAdapter())
+    with app.app_context():
+        state = isvc.mint_state(
+            influencer_id=uuid.UUID(ctx.inf_id), platform=Platform.YOUTUBE,
+            agency_id=ctx.agency_id,
+        )
+    app.config["AUTH_SUCCESS_REDIRECT"] = "http://localhost:5173"
+    try:
+        r = client.get(f"/api/v1/integrations/youtube/callback?code=abc&state={state}")
+    finally:
+        app.config["AUTH_SUCCESS_REDIRECT"] = None
+
+    assert r.status_code == 302
+    assert r.headers["Location"].startswith(
+        f"http://localhost:5173/app/influenciadores/{ctx.inf_id}"
+    )
+    assert "conectado=youtube" in r.headers["Location"]

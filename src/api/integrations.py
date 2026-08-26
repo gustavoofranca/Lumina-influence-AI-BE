@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import uuid
 
-from flask import Blueprint, current_app, request, url_for
+from flask import Blueprint, current_app, redirect, request, url_for
 
 from src.models import UserRole
 from src.schemas.social_account import SocialAccountOut
@@ -46,9 +46,15 @@ def connect(platform):
 
 
 @bp.get("/<platform>/callback")
-@require_auth
 def callback(platform):
-    """Recebe o code, troca por tokens, criptografa e persiste a SocialAccount."""
+    """Recebe o code, troca por tokens, criptografa e persiste a SocialAccount.
+
+    Sem `@require_auth` de propósito: quem chega aqui é o browser redirecionado
+    pelo provedor, numa navegação limpa que não carrega header Authorization —
+    exigir Bearer tornava o endpoint inalcançável fora dos testes. A identidade
+    vem do `state`, um JWT assinado com o JWT_SECRET, com validade de 15 minutos
+    e agora de uso único. É o mesmo desenho do callback de login.
+    """
     plat = integration_service.parse_platform(platform)
     error = request.args.get("error")
     if error:
@@ -65,10 +71,19 @@ def callback(platform):
         platform=plat,
         code=code,
         state=state,
-        agency_id=current_agency_id(),
         redirect_uri=_redirect_uri(platform),
     )
-    return ok(SocialAccountOut.model_validate(account).model_dump(mode="json"), status=201)
+    dados = SocialAccountOut.model_validate(account).model_dump(mode="json")
+
+    # O browser está nesta aba: devolver JSON deixaria o usuário olhando para um
+    # payload. Com destino configurado, volta para a tela do criador.
+    destino = current_app.config.get("AUTH_SUCCESS_REDIRECT")
+    if destino:
+        return redirect(
+            f"{destino.rstrip('/')}/app/influenciadores/{account.influencer_id}"
+            f"?conectado={plat.value}"
+        )
+    return ok(dados, status=201)
 
 
 @bp.post("/<platform>/disconnect/<social_account_id>")

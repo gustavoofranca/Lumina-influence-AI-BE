@@ -217,11 +217,16 @@ def build_openapi() -> dict:
         "/api/v1/integrations/{platform}/callback": {
             "get": {"tags": ["Integrations"],
                     "summary": "Callback do OAuth da plataforma (redirect do navegador)",
+                    "description": "Não exige Bearer: quem chega é o navegador vindo do "
+                                   "provedor. A identidade sai do `state` assinado, de uso "
+                                   "único e validade de 15 min (ADR-004).",
                     "parameters": [
                         {"name": "code", "in": "query", "required": True, "schema": {"type": "string"}},
                         {"name": "state", "in": "query", "required": True, "schema": {"type": "string"}},
                     ],
-                    "responses": {"302": {"description": "Redirect ao front-end"}}},
+                    "responses": {"302": {"description": "Redirect ao front-end"},
+                                  "201": {"description": "Conta vinculada, quando não há redirect configurado"},
+                                  "401": {"description": "State inválido, expirado ou já utilizado"}}},
         },
         "/api/v1/integrations/{platform}/disconnect/{id}": {
             "post": {"tags": ["Integrations"], "summary": "Desvincula a conta social da plataforma",

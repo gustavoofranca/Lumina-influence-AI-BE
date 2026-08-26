@@ -27,7 +27,8 @@ from src.integrations.base import (
 from src.integrations.instagram import InstagramAdapter
 from src.integrations.tiktok import TikTokAdapter
 from src.integrations.youtube import YouTubeAdapter
-from src.models import Comment, Influencer, Platform, Post, SocialAccount
+from src.models import (Comment, Influencer, OAuthProvider, OAuthState, Platform,
+                        Post, SocialAccount)
 from src.utils.crypto import decrypt_token, encrypt_token
 from src.utils.errors import NotFoundError, UnauthorizedError, ValidationError
 
@@ -40,6 +41,16 @@ _ADAPTERS = {
     Platform.INSTAGRAM: InstagramAdapter,
     Platform.TIKTOK: TikTokAdapter,
     Platform.YOUTUBE: YouTubeAdapter,
+}
+
+# Provedor OAuth de cada plataforma, para registrar o nonce do state na tabela
+# `oauth_states` — a mesma que o login usa para garantir uso único. O enum
+# `oauth_provider` só conhece google e microsoft: o YouTube cabe porque seu
+# provedor é literalmente accounts.google.com. Instagram e TikTok exigiriam
+# ampliar o enum, o que é migration; até lá ficam de fora do mapa e o
+# consumo do nonce falha fechado, em vez de seguir sem garantia.
+_STATE_NONCE_PROVIDER = {
+    Platform.YOUTUBE: OAuthProvider.GOOGLE,
 }
 
 
@@ -102,13 +113,53 @@ def build_connect_url(
     return adapter.build_auth_url(state=state, redirect_uri=redirect_uri)
 
 
-def handle_callback(
-    *, platform: Platform, code: str, state: str, agency_id: uuid.UUID, redirect_uri: str
-) -> SocialAccount:
-    payload = verify_state(state, expected_platform=platform)
-    if payload.get("ag") != str(agency_id):
-        raise UnauthorizedError("OAuth state de outra agência", code="oauth_state_invalid")
+def consume_state_nonce(payload: dict, platform: Platform) -> None:
+    """Gasta o `jti` do state, tornando-o de uso único.
 
+    O callback não é autenticado — quem chega nele é o browser vindo do
+    provedor, sem Bearer. A garantia de que aquele state vale uma vez só é o
+    que substitui a sessão: sem isso, um state vazado dentro dos 15 minutos
+    poderia ser reapresentado. Espelha o `consume_oauth_state` do login.
+    """
+    provider = _STATE_NONCE_PROVIDER.get(platform)
+    if provider is None:
+        raise ValidationError(
+            f"Uso único de state ainda não suportado para {platform.value}",
+            details={"motivo": "enum oauth_provider precisa ser ampliado (migration)"},
+        )
+
+    jti = payload.get("jti")
+    if not jti:
+        raise UnauthorizedError("OAuth state sem identificador", code="oauth_state_invalid")
+
+    ja_usado = db.session.scalar(
+        select(OAuthState).where(OAuthState.state_token == jti)
+    )
+    if ja_usado is not None:
+        raise UnauthorizedError("OAuth state já utilizado", code="oauth_state_replayed")
+
+    db.session.add(OAuthState(
+        provider=provider,
+        state_token=jti,
+        expires_at=datetime.fromtimestamp(payload["exp"], tz=timezone.utc),
+    ))
+    db.session.commit()
+
+
+def handle_callback(
+    *, platform: Platform, code: str, state: str, redirect_uri: str
+) -> SocialAccount:
+    """Conclui o OAuth a partir do state assinado, sem depender de sessão.
+
+    A agência sai do próprio state — ele é assinado com o JWT_SECRET e só é
+    emitido em /connect, que exige ADMIN ou MEMBER e resolve o influencer no
+    escopo de quem pediu. O influencer precisa continuar pertencendo àquela
+    agência agora, e não só quando o fluxo começou.
+    """
+    payload = verify_state(state, expected_platform=platform)
+    consume_state_nonce(payload, platform)
+
+    agency_id = uuid.UUID(payload["ag"])
     influencer_id = uuid.UUID(payload["inf"])
     influencer = db.session.scalar(
         select(Influencer).where(
