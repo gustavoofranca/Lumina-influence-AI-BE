@@ -2,7 +2,10 @@
 
 API REST em **Python + Flask** que serve o front-end do SaaS de auditoria de performance de influenciadores digitais. Persistência em **PostgreSQL**, autenticação **OAuth 2.0 (Google/Microsoft) + JWT**, análise de IA via **Google Gemini** (texto e multimodal), integração com **APIs sociais** (Instagram/TikTok/YouTube) e geração de **relatórios PDF**.
 
-> TCC de Engenharia de Software. Para o contexto completo (modelo de domínio, padrões, plano de etapas B0→B12), veja [`claude.md`](claude.md).
+> TCC de Engenharia de Software. O contexto completo — modelo de domínio, padrões e plano de
+> etapas B0→B12 — vive no documento do trabalho, fora deste repositório. As decisões de
+> arquitetura estão em [`docs/adr/`](docs/adr/) e os relatórios de teste em
+> [`docs/security/`](docs/security/) e [`docs/testes/`](docs/testes/).
 
 ---
 
@@ -21,7 +24,7 @@ API REST em **Python + Flask** que serve o front-end do SaaS de auditoria de per
 | Jobs | APScheduler (in-process, jobstore SQLAlchemy) |
 | Cripto | `cryptography` (Fernet) — tokens sociais em repouso |
 | PDF | xhtml2pdf (HTML→PDF puro Python) |
-| Testes | pytest + pytest-cov (126 testes, ~83% coverage) |
+| Testes | pytest + pytest-cov (190 testes, 84% de cobertura) |
 | Docs | OpenAPI 3.1 + Swagger UI |
 
 ---
@@ -73,16 +76,18 @@ curl http://localhost:5000/api/v1/health
 
 | Variável | Descrição |
 |---|---|
-| `DATABASE_URL` | `postgresql://user:senha@localhost:5432/lumina_dev` |
+| `DATABASE_URL` | local: `postgresql://user:senha@localhost:5432/lumina_dev`. Em instância gerenciada, use a string do **Session pooler** — a conexão direta resolve só em IPv6 e o container não a alcança |
 | `JWT_SECRET` | segredo de assinatura dos JWTs |
 | `FERNET_KEY` | chave Fernet (cripto de tokens sociais) |
 | `GOOGLE_CLIENT_ID` / `_SECRET` | OAuth login Google |
 | `MICROSOFT_CLIENT_ID` / `_SECRET` | OAuth login Microsoft (opcional) |
 | `GEMINI_API_KEY` | Google AI Studio |
-| `GEMINI_MODEL` | default `gemini-2.5-flash` |
+| `GEMINI_MODEL` | default `gemini-3.6-flash` — `gemini-2.0-flash` e `gemini-2.5-flash` foram retirados e respondem 404 |
 | `OAUTH_REDIRECT_BASE` | base dos redirect URIs OAuth (ex: `http://localhost:5000`) |
 | `META/TIKTOK/YOUTUBE_CLIENT_*` | APIs sociais (B8) |
+| `AUTH_SUCCESS_REDIRECT` | para onde o callback devolve o navegador (ex: `http://localhost:5173/auth/callback`). Vazio faz o callback responder JSON |
 | `FRONTEND_ORIGIN` | origem do front p/ CORS (default `http://localhost:5173`) |
+| `LUMINA_DISABLE_SCHEDULER` | `1` desliga os jobs em background. **Recomendado no free tier do Gemini**, que dá 20 requisições por dia: o job de análises consome a cota inteira sozinho |
 
 ---
 
@@ -144,8 +149,10 @@ src/
   utils/              # crypto, pagination, authz, rate_limit, pdf_generator, errors
   seed/               # fixtures JSON + seed_data.py
 migrations/           # Alembic
-tests/                # pytest (126 testes)
+tests/                # pytest (190 testes)
 docs/adr/             # Architecture Decision Records
+docs/security/        # relatórios de análise estática e de IDOR
+docs/testes/          # relatórios de teste (robustez de PDF)
 storage/reports/      # PDFs gerados (gitignored)
 ```
 
@@ -174,4 +181,4 @@ Os testes usam **SQLite in-memory** (`TestConfig`) — não precisam de Postgres
 ## Links
 
 - **Front-end:** https://github.com/gustavoofranca/Lumina-influence-AI-FE
-- **Plano completo (B0→B12):** [`claude.md`](claude.md)
+- **Decisões de arquitetura:** [`docs/adr/`](docs/adr/)
