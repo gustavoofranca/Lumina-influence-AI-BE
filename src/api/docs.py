@@ -14,16 +14,17 @@ from src.schemas.analysis import AIAnalysisOut, PostOut
 from src.schemas.campaign import CampaignCreateIn, CampaignOut
 from src.schemas.influencer import InfluencerCreateIn, InfluencerOut
 from src.schemas.plan import PlanOut
-from src.schemas.report import ReportCreateIn, ReportOut
-from src.schemas.social_account import SocialAccountOut
-from src.schemas.user import UserOut
+from src.schemas.report import ReportCreateIn, ReportOut, ReportPreviewIn
+from src.schemas.social_account import SocialAccountCreateIn, SocialAccountOut
+from src.schemas.user import UserCreateIn, UserOut
 
 bp = Blueprint("docs", __name__, url_prefix="/api/v1")
 
 _MODELS = [
     PlanOut, AgencyOut, UserOut, InfluencerOut, InfluencerCreateIn,
     SocialAccountOut, CampaignOut, CampaignCreateIn, PostOut, AIAnalysisOut,
-    ReportOut, ReportCreateIn,
+    ReportOut, ReportCreateIn, ReportPreviewIn,
+    UserCreateIn, SocialAccountCreateIn,
 ]
 
 
@@ -55,7 +56,13 @@ def _ok(schema_name: str, *, is_list: bool = False) -> dict:
     }
 
 
-def _crud_paths(resource: str, out: str, create_in: str | None, tag: str) -> dict:
+def _crud_paths(resource: str, out: str, create_in: str | None, tag: str,
+                *, mutable: bool = True) -> dict:
+    """Paths do CRUD de um recurso.
+
+    `mutable=False` para recurso somente-leitura: documentar PATCH e DELETE que
+    não existem engana quem integra tanto quanto omitir rota que existe.
+    """
     base = f"/api/v1/{resource}"
     item = base + "/{id}"
     paths = {
@@ -66,12 +73,16 @@ def _crud_paths(resource: str, out: str, create_in: str | None, tag: str) -> dic
         item: {
             "get": {"tags": [tag], "summary": f"Detalhe de {resource}",
                     "security": [{"bearerAuth": []}], "responses": _ok(out)},
-            "patch": {"tags": [tag], "summary": f"Atualiza {resource}",
-                      "security": [{"bearerAuth": []}], "responses": _ok(out)},
-            "delete": {"tags": [tag], "summary": f"Remove {resource}",
-                       "security": [{"bearerAuth": []}], "responses": {"204": {"description": "No Content"}}},
         },
     }
+    if mutable:
+        paths[item]["patch"] = {
+            "tags": [tag], "summary": f"Atualiza {resource}",
+            "security": [{"bearerAuth": []}], "responses": _ok(out)}
+        paths[item]["delete"] = {
+            "tags": [tag], "summary": f"Remove {resource}",
+            "security": [{"bearerAuth": []}],
+            "responses": {"204": {"description": "No Content"}}}
     if create_in:
         paths[base]["post"] = {
             "tags": [tag], "summary": f"Cria {resource}", "security": [{"bearerAuth": []}],
@@ -148,6 +159,68 @@ def build_openapi() -> dict:
                     "security": [{"bearerAuth": []}],
                     "responses": {"200": {"description": "PDF", "content": {"application/pdf": {}}}}},
         },
+        "/api/v1/auth/google/callback": {
+            "get": {"tags": ["Auth"], "summary": "Callback do OAuth Google (redirect do navegador)",
+                    "description": "Troca o `code` por tokens e redireciona ao front com o par de "
+                                   "JWT no fragmento da URL. Não é chamado pelo cliente da API.",
+                    "parameters": [
+                        {"name": "code", "in": "query", "required": True, "schema": {"type": "string"}},
+                        {"name": "state", "in": "query", "required": True, "schema": {"type": "string"}},
+                    ],
+                    "responses": {"302": {"description": "Redirect ao front-end"},
+                                  "200": {"description": "Par de tokens, quando não há redirect configurado"}}},
+        },
+        "/api/v1/auth/microsoft/login": {
+            "get": {"tags": ["Auth"], "summary": "Inicia OAuth Microsoft (redirect)",
+                    "responses": {"302": {"description": "Redirect à Microsoft"}}},
+        },
+        "/api/v1/auth/microsoft/callback": {
+            "get": {"tags": ["Auth"], "summary": "Callback do OAuth Microsoft (redirect do navegador)",
+                    "parameters": [
+                        {"name": "code", "in": "query", "required": True, "schema": {"type": "string"}},
+                        {"name": "state", "in": "query", "required": True, "schema": {"type": "string"}},
+                    ],
+                    "responses": {"302": {"description": "Redirect ao front-end"},
+                                  "200": {"description": "Par de tokens, quando não há redirect configurado"}}},
+        },
+        "/api/v1/auth/logout": {
+            "post": {"tags": ["Auth"], "summary": "Encerra a sessão do lado do cliente",
+                     "description": "JWT é stateless (ADR-001): o servidor não revoga nada. "
+                                    "Responde 204 e o cliente descarta os dois tokens.",
+                     "security": [{"bearerAuth": []}],
+                     "responses": {"204": {"description": "No Content"}}},
+        },
+        "/api/v1/agencies/{id}/usage": {
+            "get": {"tags": ["Agencies"], "summary": "Consumo da agência frente aos limites do plano",
+                    "security": [{"bearerAuth": []}],
+                    "responses": {"200": {"description": "Uso corrente e limites contratados"}}},
+        },
+        "/api/v1/posts/{id}": {
+            "get": {"tags": ["AI"], "summary": "Detalhe do post",
+                    "security": [{"bearerAuth": []}], "responses": _ok("PostOut")},
+        },
+        "/api/v1/reports/preview": {
+            "post": {"tags": ["Reports"],
+                     "summary": "Prévia do relatório — mesmo conteúdo do PDF, sem gravar",
+                     "security": [{"bearerAuth": []}],
+                     "requestBody": {"required": True, "content": {"application/json": {
+                         "schema": _ref("ReportPreviewIn")}}},
+                     "responses": {"200": {"description": "Contexto do relatório"}}},
+        },
+        "/api/v1/integrations/{platform}/callback": {
+            "get": {"tags": ["Integrations"],
+                    "summary": "Callback do OAuth da plataforma (redirect do navegador)",
+                    "parameters": [
+                        {"name": "code", "in": "query", "required": True, "schema": {"type": "string"}},
+                        {"name": "state", "in": "query", "required": True, "schema": {"type": "string"}},
+                    ],
+                    "responses": {"302": {"description": "Redirect ao front-end"}}},
+        },
+        "/api/v1/integrations/{platform}/disconnect/{id}": {
+            "post": {"tags": ["Integrations"], "summary": "Desvincula a conta social da plataforma",
+                     "security": [{"bearerAuth": []}],
+                     "responses": {"200": {"description": "Conta desvinculada"}}},
+        },
         "/api/v1/integrations/{platform}/connect": {
             "get": {"tags": ["Integrations"], "summary": "URL de OAuth da plataforma",
                     "security": [{"bearerAuth": []}],
@@ -158,13 +231,14 @@ def build_openapi() -> dict:
     }
 
     # CRUD genéricos
-    paths.update(_crud_paths("plans", "PlanOut", None, "Plans"))
-    paths.update(_crud_paths("users", "UserOut", None, "Users"))
+    paths.update(_crud_paths("plans", "PlanOut", None, "Plans", mutable=False))
+    paths.update(_crud_paths("users", "UserOut", "UserCreateIn", "Users"))
     paths.update(_crud_paths("agencies", "AgencyOut", None, "Agencies"))
     paths.update(_crud_paths("influencers", "InfluencerOut", "InfluencerCreateIn", "Influencers"))
-    paths.update(_crud_paths("social-accounts", "SocialAccountOut", None, "Integrations"))
+    paths.update(_crud_paths("social-accounts", "SocialAccountOut", "SocialAccountCreateIn",
+                             "Integrations"))
     paths.update(_crud_paths("campaigns", "CampaignOut", "CampaignCreateIn", "Campaigns"))
-    paths.update(_crud_paths("reports", "ReportOut", "ReportCreateIn", "Reports"))
+    paths.update(_crud_paths("reports", "ReportOut", "ReportCreateIn", "Reports", mutable=False))
 
     return {
         "openapi": "3.1.0",

@@ -1,6 +1,7 @@
 """Testes da B12 — rate limit, OpenAPI/Swagger."""
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timezone
 
 import pytest
@@ -165,3 +166,55 @@ def test_dev_login_desligado_fora_de_desenvolvimento(config_cls, monkeypatch):
     """O atalho emite JWT de admin sem OAuth — variável de ambiente não pode religá-lo."""
     monkeypatch.setenv("DEV_LOGIN_ENABLED", "true")
     assert config_cls.DEV_LOGIN_ENABLED is False
+
+
+# Rotas que ficam fora da spec de propósito. `/docs` e `/openapi.json` são a
+# própria infraestrutura da documentação; `dev-login` é atalho de ambiente de
+# desenvolvimento e não faz parte do contrato público da API.
+ROTAS_FORA_DA_SPEC = {
+    ("get", "/api/v1/docs"),
+    ("get", "/api/v1/openapi.json"),
+    ("post", "/api/v1/auth/dev-login"),
+}
+
+
+def _rotas_reais(app) -> set[tuple[str, str]]:
+    """(método, path) de cada rota real, com o parâmetro normalizado para {id}."""
+    rotas = set()
+    for regra in app.url_map.iter_rules():
+        if regra.endpoint.startswith("static"):
+            continue
+        path = re.sub(r"<[^:>]*:?([^>]*)>", "{id}", str(regra))
+        for metodo in regra.methods:
+            if metodo in {"GET", "POST", "PATCH", "PUT", "DELETE"}:
+                rotas.add((metodo.lower(), path))
+    return rotas
+
+
+def test_toda_rota_esta_na_spec_openapi(client, app):
+    """Rota fora do Swagger é rota que o front descobre lendo o código.
+
+    Este teste falha quando alguém adiciona um endpoint e esquece a spec — que
+    foi exatamente como 14 rotas ficaram de fora sem ninguém perceber.
+    """
+    spec = client.get("/api/v1/openapi.json").get_json()
+    documentadas = {
+        (metodo, re.sub(r"\{[^}]*\}", "{id}", path))
+        for path, ops in spec["paths"].items()
+        for metodo in ops
+        if metodo in {"get", "post", "patch", "put", "delete"}
+    }
+    faltando = _rotas_reais(app) - documentadas - ROTAS_FORA_DA_SPEC
+    assert not faltando, f"rotas sem documentação na spec: {sorted(faltando)}"
+
+
+def test_spec_nao_documenta_rota_inexistente(client, app):
+    """O caminho inverso: spec que promete endpoint que não existe engana quem integra."""
+    spec = client.get("/api/v1/openapi.json").get_json()
+    documentadas = {
+        (metodo, re.sub(r"\{[^}]*\}", "{id}", path))
+        for path, ops in spec["paths"].items()
+        for metodo in ops
+        if metodo in {"get", "post", "patch", "put", "delete"}
+    }
+    assert not documentadas - _rotas_reais(app)
