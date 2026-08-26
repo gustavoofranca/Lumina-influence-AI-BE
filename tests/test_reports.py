@@ -321,3 +321,61 @@ def test_previa_e_pdf_saem_do_mesmo_conteudo(client, ctx, app):
         assert kpi["label"] in html
     for bucket in previa["growth"]:
         assert bucket["organic_fmt"] in html
+
+
+# ==========================================================================
+# Período sem posts — ausência de dado não pode virar desempenho zero
+# ==========================================================================
+def _previa_sem_posts(client, ctx):
+    payload = _create_payload(ctx.camp_id, sections=list(report_service.SECTION_KEYS))
+    payload["period_start"] = "2020-01-01"
+    payload["period_end"] = "2020-12-31"
+    return client.post(
+        "/api/v1/reports/preview", headers=ctx.h_admin, json=payload
+    ).get_json()["data"]
+
+
+def test_contexto_marca_quando_o_periodo_nao_tem_post(client, ctx):
+    """Sem essa marca, quem renderiza não distingue zero medido de nada medido."""
+    assert _previa_sem_posts(client, ctx)["summary"]["has_data"] is False
+
+
+def test_contexto_marca_periodo_com_post(client, ctx):
+    payload = _create_payload(ctx.camp_id, sections=list(report_service.SECTION_KEYS))
+    hoje = date.today()
+    payload["period_start"] = (hoje - timedelta(days=7)).isoformat()
+    payload["period_end"] = (hoje + timedelta(days=1)).isoformat()
+    previa = client.post(
+        "/api/v1/reports/preview", headers=ctx.h_admin, json=payload
+    ).get_json()["data"]
+    assert previa["summary"]["has_data"] is True
+
+
+def test_sumario_sem_posts_nao_afirma_percentual(client, ctx, app):
+    """`0.0% do alcance foi orgânico` afirma uma medição que não aconteceu."""
+    previa = _previa_sem_posts(client, ctx)
+    with app.app_context():
+        html = report_service._template.render(**previa)
+    assert "do alcance foi orgânico" not in html
+    assert "não há dados de performance para auditar" in html
+
+
+def test_kpis_sem_posts_saem_sem_valor(client, ctx, app):
+    """Só os KPIs que dependem de post: a contagem de criadores continua sendo fato."""
+    previa = _previa_sem_posts(client, ctx)
+    with app.app_context():
+        html = report_service._template.render(**previa)
+
+    dependentes = [k for k in previa["kpis"] if k["depends_on_posts"]]
+    assert len(dependentes) == 3
+    assert all(k["label"] != "Criadores" for k in dependentes)
+    assert html.count(">—<") == len(dependentes)
+
+
+def test_tabelas_sem_posts_trazem_estado_vazio(client, ctx, app):
+    """Linha de zeros por criador lê como desempenho nulo; cabeçalho solto lê como bug."""
+    previa = _previa_sem_posts(client, ctx)
+    with app.app_context():
+        html = report_service._template.render(**previa)
+    assert "não há dados para comparar" in html
+    assert "Nenhum post publicado no período" in html

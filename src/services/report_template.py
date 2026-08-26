@@ -89,10 +89,17 @@ REPORT_HTML = """\
 
 <div class="section-wrap" style="margin-top: 14px;">
   <h2 class="section">Sumário Executivo</h2>
+  {% if summary.has_data %}
   <p class="desc">Esta auditoria cobre <b>{{ summary.influencer_count }} criadores</b> da campanha
   <b>{{ campaign.brand_name }}</b>. Em média, <b>{{ summary.avg_organic_pct }}%</b> do alcance foi
   orgânico e o índice de sentimento ficou em <b>{{ summary.avg_sentiment_pct }}%</b>.
   Alcance total auditado: <b>{{ summary.total_reach_fmt }}</b> em <b>{{ summary.posts_count }}</b> posts.</p>
+  {% else %}
+  <p class="desc">A campanha <b>{{ campaign.brand_name }}</b> tem
+  <b>{{ summary.influencer_count }} criadores</b> vinculados, mas nenhum post publicado no
+  período selecionado — <b>não há dados de performance para auditar</b>. Os indicadores
+  abaixo aparecem sem valor por ausência de medição, não por desempenho nulo.</p>
+  {% endif %}
 </div>
 
 <!-- ================= SEÇÕES ================= -->
@@ -106,7 +113,7 @@ REPORT_HTML = """\
       <td width="25%" style="padding:3px;">
         <div class="kpi-box">
           <div class="kpi-label">{{ k.label }}</div>
-          <div class="kpi-value">{{ k.value }}</div>
+          <div class="kpi-value">{% if k.depends_on_posts and not summary.has_data %}—{% else %}{{ k.value }}{% endif %}</div>
           {% if k.change is not none %}<div class="{{ 'pos' if k.change >= 0 else 'neg' }}" style="font-size:8pt;">
             {{ '+' if k.change >= 0 else '' }}{{ k.change }}%</div>{% endif %}
         </div>
@@ -121,6 +128,8 @@ REPORT_HTML = """\
       <tbody>
       {% for row in growth %}
         <tr><td>{{ row.x }}</td><td class="num">{{ row.organic_fmt }}</td><td class="num">{{ row.paid_fmt }}</td></tr>
+      {% else %}
+        <tr><td colspan="3" class="muted">Nenhum post publicado no período.</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -133,6 +142,7 @@ REPORT_HTML = """\
         <th class="num">Engaj.</th><th class="num">Sentim.</th><th class="num">Score IA</th>
       </tr></thead>
       <tbody>
+      {% if summary.has_data %}
       {% for inf in benchmark %}
         <tr>
           <td><b>{{ inf.display_name }}</b></td>
@@ -143,6 +153,10 @@ REPORT_HTML = """\
           <td class="num score">{{ inf.ai_score }}</td>
         </tr>
       {% endfor %}
+      {% else %}
+        <tr><td colspan="6" class="muted">Nenhum post publicado no período —
+          não há dados para comparar os criadores.</td></tr>
+      {% endif %}
       </tbody>
     </table>
 

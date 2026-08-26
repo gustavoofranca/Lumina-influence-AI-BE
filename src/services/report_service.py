@@ -80,21 +80,34 @@ def build_report_context(
     total_reach = sum(r["total_reach"] for r in rows)
     posts_count = _count_campaign_posts(campaign.id, period_start, period_end)
 
+    # Sem post no período não há o que medir. A distinção precisa viajar no
+    # contexto: quem renderiza não tem como separar "medimos zero" de "não
+    # medimos" olhando só para os números. Mesmo princípio da ADR-002.
+    has_data = posts_count > 0
+
     summary = {
         "influencer_count": len(rows),
         "avg_organic_pct": round(sum(org_vals) / len(org_vals), 1),
         "avg_sentiment_pct": round(sum(sent_vals) / len(sent_vals), 1),
         "total_reach_fmt": _fmt_compact(total_reach),
         "posts_count": posts_count,
+        "has_data": has_data,
     }
 
     # KPIs da campanha
     avg_eng = round(sum(r["engagement_rate"] for r in rows) / max(len(rows), 1), 2)
+    # `depends_on_posts` diz quais cartões perdem o sentido num período sem
+    # post. A contagem de criadores não é um deles: é fato do elenco da
+    # campanha, não medição do período.
     kpis = [
-        {"label": "Criadores", "value": str(len(rows)), "change": None},
-        {"label": "Alcance Total", "value": _fmt_compact(total_reach), "change": None},
-        {"label": "Engajamento Médio", "value": f"{avg_eng}%", "change": None},
-        {"label": "Sentimento Médio", "value": f"{summary['avg_sentiment_pct']}%", "change": None},
+        {"label": "Criadores", "value": str(len(rows)), "change": None,
+         "depends_on_posts": False},
+        {"label": "Alcance Total", "value": _fmt_compact(total_reach), "change": None,
+         "depends_on_posts": True},
+        {"label": "Engajamento Médio", "value": f"{avg_eng}%", "change": None,
+         "depends_on_posts": True},
+        {"label": "Sentimento Médio", "value": f"{summary['avg_sentiment_pct']}%",
+         "change": None, "depends_on_posts": True},
     ]
 
     # Growth (orgânico vs pago por bucket) — só dos posts da campanha
