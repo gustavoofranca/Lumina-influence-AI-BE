@@ -28,3 +28,8 @@ pytest-cov>=5.0
 bandit>=1.9
 pip-audit>=2.10
 locust>=2.31
+
+# Servidor WSGI de produção. O container de desenvolvimento continua subindo
+# com `flask run`; gunicorn existe para medir carga sobre múltiplos processos —
+# o servidor de dev atende num processo só e o GIL limita a vazão a um núcleo.
+gunicorn>=23.0

@@ -103,9 +103,15 @@ curl http://localhost:5000/api/v1/health
 | Limpar seed | `flask seed clear` |
 | Listar jobs | `flask jobs list` |
 | Rodar job manual | `flask jobs run <name>` |
-| Servidor | `flask run` |
+| Servidor (desenvolvimento) | `flask run` |
+| Servidor (WSGI, carga/produção) | `gunicorn -w 4 -b 0.0.0.0:5000 wsgi:app` |
 
 > **Jobs:** o scheduler só inicia com `flask run` (servindo). Comandos CLI não o disparam. Desabilite com `LUMINA_DISABLE_SCHEDULER=1`.
+>
+> **Atenção sob gunicorn:** cada worker cria a própria instância do APScheduler, então
+> todo job roda uma vez por worker. Com o free tier do Gemini (20 requisições/dia) isso
+> esgota a cota em minutos. Mantenha `LUMINA_DISABLE_SCHEDULER=1` e dispare os jobs sob
+> demanda até que os agendamentos saiam do processo web — ver `docs/testes/carga.md`.
 
 ---
 

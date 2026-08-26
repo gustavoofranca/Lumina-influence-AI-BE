@@ -105,29 +105,104 @@ Os 3,2 s restantes contra o Supabase são as 13 consultas remanescentes vezes a
 latência da região. Reduzi-las mais exige consolidar agregações em SQL, o que é
 outra ordem de trabalho.
 
-## Limite do arnês
+## Sobre servidor WSGI — por que a primeira rodada não bastava
 
-Os números de **vazão** medem o servidor de desenvolvimento do Flask, não a
-arquitetura: um processo, um núcleo, sem paralelismo real por causa do GIL. O
-`Dockerfile` diz explicitamente "não use em produção", e não há `gunicorn` nem
-`waitress` no `requirements.txt`, embora `wsgi.py` e `config.py` já os
-antecipem.
+Os números acima medem o servidor de desenvolvimento do Flask: um processo, um
+núcleo, sem paralelismo real por causa do GIL. Vazão medida assim descreve o
+Werkzeug, não a arquitetura. Os de **latência** não sofrem disso — com 1 usuário
+não há fila, e foi assim que o N+1 apareceu.
 
-Os números de **latência** não sofrem dessa limitação: com 1 usuário não há
-fila, e foi assim que o N+1 apareceu.
+O `gunicorn` foi então adicionado ao `requirements.txt` e as medições refeitas
+sobre ele. O contêiner de desenvolvimento continua subindo com `flask run`.
 
-Para que a vazão signifique alguma coisa, o teste precisa rodar sobre um
-servidor WSGI com múltiplos processos. Como o gargalo medido é CPU num processo
-único, a expectativa é que a vazão escale aproximadamente com o número de
-workers.
+### Vazão por número de workers (50 usuários simultâneos)
+
+| Workers | Vazão | p50 | p95 | p99 |
+|---|---|---|---|---|
+| 1 | 21,02 req/s | 880 ms | 1.400 ms | 1.600 ms |
+| 2 | 29,92 req/s | 120 ms | 450 ms | 560 ms |
+| 4 | 31,48 req/s | 64 ms | 180 ms | 360 ms |
+| 8 | 31,89 req/s | 65 ms | 130 ms | 260 ms |
+
+A latência despenca de 880 ms para 64 ms entre 1 e 4 workers. A vazão, porém,
+estaciona em ~32 req/s — e **isso é limite do teste, não do servidor**: 50
+usuários com pausa de 1 a 2 segundos geram no máximo `50 ÷ 1,5 ≈ 33 req/s`. A
+partir de 4 workers o sistema deixou de estar saturado e passou a apenas
+acompanhar a demanda oferecida.
+
+### Ponto de saturação real (4 workers)
+
+Empurrando a concorrência até a degradação:
+
+| Usuários | Vazão | p50 | p95 | p99 | Falhas |
+|---|---|---|---|---|---|
+| 50 | 31,83 req/s | 65 ms | 140 ms | 690 ms | 0 |
+| 150 | 43,13 req/s | 1.900 ms | 2.600 ms | 2.800 ms | 0 |
+| 300 | 43,23 req/s | 5.200 ms | 5.800 ms | 5.900 ms | 0 |
+| 600 | 38,02 req/s | 12.000 ms | 13.000 ms | 13.000 ms | 0 |
+
+**Saturação em ~43 req/s.** Entre 150 e 300 usuários a vazão não sobe mais e a
+latência cresce proporcionalmente à fila; em 600 a vazão começa a cair, sinal de
+congestionamento. Nenhuma requisição falhou em nenhum patamar — o sistema
+degrada em tempo de resposta, não em erro, que é o comportamento desejável.
+
+Durante a saturação o contêiner ficou em ~290% de CPU (de 400% possíveis com 4
+workers) e os processos do PostgreSQL entre 16% e 25%. A escalada de 1 para 4
+workers rendeu ~2×, não 4×: os workers passam parte do tempo esperando o banco,
+não calculando. Vale registrar que neste arnês o tráfego até o PostgreSQL passa
+pelo gateway do host, o que acrescenta um custo que não existiria num
+`docker compose` único.
+
+### Ganho acumulado
+
+| | Vazão | p95 |
+|---|---|---|
+| Servidor de dev, antes da correção do N+1 | 9,5 req/s | 6.000 ms |
+| Servidor de dev, depois da correção | 23,2 req/s | 1.200 ms |
+| gunicorn, 4 workers | 43,2 req/s | 2.600 ms (em 150 usuários) |
+
+Quatro vezes e meia a vazão inicial. Metade veio de remover round trips, metade
+de usar processos em vez de um só.
+
+## Achado — o scheduler não sobrevive a múltiplos workers
+
+Subir a aplicação sob gunicorn expôs um problema que o servidor de
+desenvolvimento escondia. Com 4 workers e o scheduler habilitado:
+
+```
+workers do gunicorn:               4
+schedulers iniciados:              4
+registros de run_pending_analyses: 4
+```
+
+Cada worker é um processo e cria sua própria instância do APScheduler. **Todo
+job agendado passa a rodar uma vez por worker.**
+
+Isso é grave num ponto específico: `run_pending_analyses` roda a cada 30 minutos
+consumindo cota do Gemini, e o free tier permite 20 requisições por dia. Com 4
+workers, o consumo quadruplica — a cota diária se esgota em minutos.
+
+Não é defeito introduzido pelo gunicorn: é uma consequência de manter o
+agendador em processo (`APScheduler in-process`, decisão da B7) num deploy com
+mais de um processo. As saídas usuais são rodar os jobs num processo dedicado,
+fora do servidor web, ou dar ao agendador um lock compartilhado. **A decisão
+está em aberto.**
+
+Enquanto isso, `LUMINA_DISABLE_SCHEDULER=1` continua no `.env` e os jobs são
+disparados sob demanda com `flask jobs run <nome>`.
 
 ## Como reproduzir
 
 ```bash
 pip install -r requirements.txt
 
+# aplicação sob servidor WSGI de produção
+LUMINA_DISABLE_SCHEDULER=1 gunicorn -w 4 -b 0.0.0.0:5000 wsgi:app
+
 locust -f docs/testes/locustfile.py --host http://localhost:5000 \
-       DashboardUser --headless -u 50 -r 10 -t 90s     # baseline
+       DashboardUser --headless -u 50 -r 25 -t 50s     # baseline
 locust -f docs/testes/locustfile.py --host http://localhost:5000 \
-       NavegacaoUser --headless -u 50 -r 10 -t 5m      # stress
+       DashboardUser --headless -u 300 -r 100 -t 50s   # saturação
+locust -f docs/testes/locustfile.py --host http://localhost:5000 \
+       NavegacaoUser --headless -u 150 -r 50 -t 5m     # stress, tráfego misto
 ```
