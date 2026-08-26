@@ -383,3 +383,31 @@ def test_historico_de_criador_de_outra_agencia_404(client, seeded, app):
 
     r = client.get(f"/api/v1/influencers/{alheio_id}/analyses", headers=seeded.header)
     assert r.status_code == 404
+
+
+def test_engajamento_sem_post_no_periodo_vem_nulo(client, seeded, app):
+    """Zero por cento afirma engajamento medido; a ausência de post não mediu nada.
+
+    ROI e CAC já devolvem null nessa situação, por decisão da ADR-002. O
+    engajamento devolvia 0, e a tela mostrava "0%" ao lado de dois travessões —
+    o mesmo dado ausente contado de duas formas diferentes.
+    """
+    r = client.get("/api/v1/dashboard/overview?period=7d", headers=seeded.header)
+    kpis_com_dados = r.get_json()["data"]["kpis"]
+    assert kpis_com_dados["engagement_rate"]["value_pct"] is not None
+
+    from src.models import Agency, Post
+    from src.services import dashboard_service
+
+    with app.app_context():
+        agencia = db.session.scalar(select(Agency))
+        # Sem nenhum post no período, não há o que medir.
+        for p in db.session.scalars(select(Post)).all():
+            db.session.delete(p)
+        db.session.commit()
+        kpis = dashboard_service.overview(agencia.id, period="30d")["kpis"]
+
+    assert kpis["engagement_rate"]["value_pct"] is None
+    assert kpis["engagement_rate"]["change"] is None
+    # A contagem de criadores é fato do elenco, não medição do período.
+    assert kpis["active_influencers"]["value"] >= 0

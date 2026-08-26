@@ -84,8 +84,10 @@ def overview(agency_id: uuid.UUID, *, period: str = "30d", campaign_id: uuid.UUI
         agency_id, campaign_id, window_start=since_curr, window_end=now
     )
 
-    eng_curr = M.engagement_rate(posts_curr)
-    eng_prev = M.engagement_rate(posts_prev)
+    # Sem post no período não há engajamento medido — e zero afirmaria que houve
+    # medição e deu zero. Mesmo tratamento que ROI e CAC já recebem na ADR-002.
+    eng_curr = M.engagement_rate(posts_curr) if posts_curr else None
+    eng_prev = M.engagement_rate(posts_prev) if posts_prev else None
     roi_curr = M.roi_proxy(posts_curr, cost)
     roi_prev = M.roi_proxy(posts_prev, cost)
     cac_curr = M.cac_proxy_cents(posts_curr, cost)
