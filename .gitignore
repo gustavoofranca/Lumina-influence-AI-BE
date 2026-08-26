@@ -54,6 +54,7 @@ next.txt
 # docs/ é pessoal, mas as ADRs e os relatórios de teste são exigidos pelo
 # projeto e vão versionados.
 docs/*
+!docs/README.md
 !docs/adr/
 !docs/security/
 !docs/testes/
