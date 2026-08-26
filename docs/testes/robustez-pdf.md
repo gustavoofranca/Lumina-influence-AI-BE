@@ -80,12 +80,12 @@ Cinco testes cobrem o comportamento nos dois sentidos — com e sem post no
 período —, e o relatório com dados foi conferido para garantir que os números
 continuam saindo iguais.
 
-**Fica aberto, e depende de decisão:** a seção "Diagnóstico de IA" continua
-sendo exibida num período sem posts, porque agrega as análises do criador sem
-filtrar por período. Não é obviamente errado — o diagnóstico é sobre o criador,
-não sobre a janela —, mas convive mal com um relatório que acabou de declarar
-não ter dado no período. Resolver exige decidir se o diagnóstico é do período
-ou do criador.
+**Também corrigido:** a seção "Diagnóstico de IA" e as "Recomendações"
+continuavam sendo exibidas num período sem posts, porque agregam as análises do
+criador sem filtrar por janela. Um relatório que acabou de declarar não ter dado
+no período não pode, três páginas depois, diagnosticar esse mesmo período. As
+duas seções passam a trazer estado vazio, coerentes com o resto do documento. O
+relatório é period-scoped: é a capa que promete um intervalo.
 
 ## Achado 2 — emoji vira quadrado preto
 
@@ -94,9 +94,14 @@ esses glifos, e não há fallback. Nenhum outro símbolo testado falhou — apen
 emoji.
 
 Severidade baixa: exige que alguém digite emoji no título do relatório. Mas é
-plausível, já que o título é campo livre preenchido pela agência. As saídas
-possíveis são embarcar uma fonte com cobertura de emoji (peso no PDF) ou
-remover/transliterar emoji do título antes de renderizar.
+plausível, já que o título é campo livre preenchido pela agência.
+
+**Corrigido.** Embarcar uma fonte com cobertura de emoji pesaria em todo PDF
+gerado, para atender um caso raro. O caractere passa a ser removido antes da
+renderização — mas **nunca em silêncio**: `strip_unsupported_glyphs` registra em
+log um aviso com o nome Unicode de cada caractere retirado, para o problema não
+se esconder de quem gerou o documento. Acentuação e símbolos tipográficos, que
+têm glifo, seguem intocados — há teste para os dois casos.
 
 ## Observação de método
 

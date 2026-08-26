@@ -162,7 +162,11 @@ REPORT_HTML = """\
 
   {% elif section == 'diagnostic' %}
     <h2 class="section">Diagnóstico de IA</h2>
-    {% for d in diagnostic %}
+    {% if not summary.has_data %}
+      <p class="muted">Nenhum post publicado no período — não há diagnóstico a
+      apresentar para esta janela.</p>
+    {% endif %}
+    {% for d in diagnostic %}{% if summary.has_data %}
       <div class="card">
         <table width="100%"><tr>
           <td><b>{{ d.display_name }}</b> <span class="muted">— {{ d.niche }}</span></td>
@@ -170,15 +174,19 @@ REPORT_HTML = """\
         </tr></table>
         <p class="muted" style="margin:4px 0 0 0;">{{ d.note }}</p>
       </div>
-    {% endfor %}
+    {% endif %}{% endfor %}
 
   {% elif section == 'recommendations' %}
     <h2 class="section">Recomendações</h2>
+    {% if summary.has_data %}
     <ol class="recs">
       {% for r in recommendations %}
         <li><span class="title">{{ r.title }}</span><br/><span class="muted">{{ r.description }}</span></li>
       {% endfor %}
     </ol>
+    {% else %}
+      <p class="muted">Sem posts no período, não há base para recomendar ações.</p>
+    {% endif %}
   {% endif %}
 
   </div>

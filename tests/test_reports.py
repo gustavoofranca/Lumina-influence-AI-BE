@@ -379,3 +379,33 @@ def test_tabelas_sem_posts_trazem_estado_vazio(client, ctx, app):
         html = report_service._template.render(**previa)
     assert "não há dados para comparar" in html
     assert "Nenhum post publicado no período" in html
+
+
+def test_emoji_sai_do_pdf_e_vai_para_o_log(caplog):
+    """Emoji não tem glifo na fonte embarcada e viraria um quadrado preto.
+
+    Remover resolve o visual, mas remover calado esconde o problema de quem
+    gerou o documento — daí o aviso em log com o nome do caractere.
+    """
+    import logging
+
+    from src.utils.pdf_generator import strip_unsupported_glyphs
+
+    with caplog.at_level(logging.WARNING):
+        saida = strip_unsupported_glyphs("<h1>Campanha de verão 🚀 e resultados 📈</h1>")
+
+    assert "🚀" not in saida and "📈" not in saida
+    assert "Campanha de verão" in saida
+    assert "ROCKET" in caplog.text
+
+
+def test_texto_sem_emoji_passa_intacto_e_sem_aviso(caplog):
+    """Acentuação e símbolos tipográficos têm glifo — não podem ser tocados."""
+    import logging
+
+    from src.utils.pdf_generator import strip_unsupported_glyphs
+
+    original = "<h1>Análise de Coerência — Ação &amp; Reputação: “aspas”, ç, ã, ñ</h1>"
+    with caplog.at_level(logging.WARNING):
+        assert strip_unsupported_glyphs(original) == original
+    assert caplog.text == ""
