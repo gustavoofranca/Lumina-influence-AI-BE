@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 ANALYZE_ENDPOINT = "POST /api/v1/posts/:id/analyze"
 _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE | re.MULTILINE)
 
-# --- Defesas contra prompt injection indireta (CLAUDE.md 5.7) ---
+# --- Defesas contra prompt injection indireta ---
 # Legendas e comentários vêm de redes sociais: são entrada não confiável e podem
 # conter instruções endereçadas ao modelo. Delimitamos esse material e mandamos
 # o modelo tratá-lo como dado.
@@ -219,7 +219,7 @@ def parse_analysis_payload(text: str) -> dict:
 def _generate_valid_analysis(call) -> tuple[dict, object]:
     """Chama o modelo e valida a saída, re-tentando quando ela vem fora do schema.
 
-    A resposta do modelo é tratada como entrada não confiável (CLAUDE.md 5.7):
+    A resposta do modelo é tratada como entrada não confiável:
     só é aceita depois de passar pelo parser. Apenas falha de schema justifica
     nova tentativa — erro de cota ou de transporte sobe na hora, porque insistir
     gastaria orçamento sem chance de sucesso.

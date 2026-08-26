@@ -1,4 +1,4 @@
-"""Testes das defesas contra prompt injection indireta (CLAUDE.md 5.7).
+"""Testes das defesas contra prompt injection indireta.
 
 Legendas e comentários vêm de redes sociais e são entrada não confiável: podem
 carregar instruções destinadas ao modelo. As três defesas exigidas são:
@@ -247,7 +247,7 @@ def test_nao_persiste_analise_quando_todas_as_tentativas_falham(post_ctx):
 
 
 def test_erro_de_cota_nao_dispara_nova_tentativa(post_ctx):
-    """Re-tentar em cota estourada gastaria orçamento à toa (CLAUDE.md 5.6)."""
+    """Re-tentar em cota estourada gastaria orçamento à toa."""
     fake, chamadas = _raising_client(GeminiQuotaError("cota"))
     with pytest.raises(GeminiQuotaError):
         svc.analyze_post(post_ctx.post, agency_id=post_ctx.agency_id, client=fake())

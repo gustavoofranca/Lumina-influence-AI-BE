@@ -134,7 +134,7 @@ def test_swagger_ui_served(client):
 
 
 # ==========================================================================
-# Cabeçalhos de segurança (CLAUDE.md 5.9)
+# Cabeçalhos de segurança
 # ==========================================================================
 def test_resposta_traz_cabecalhos_de_seguranca(client):
     r = client.get("/api/v1/health")
