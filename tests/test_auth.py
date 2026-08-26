@@ -347,3 +347,63 @@ def test_google_callback_devolve_os_tokens_no_fragmento_da_url(
         assert "refresh_token" in parse_qs(destino.fragment)
     finally:
         app.config["AUTH_SUCCESS_REDIRECT"] = None
+
+
+# --------------------------------------------------------------------------
+# Agência recém-criada — o front precisa saber para pedir o nome
+# --------------------------------------------------------------------------
+def test_login_de_email_novo_marca_a_agencia_como_recem_criada(
+    client, clean_db, fake_google, monkeypatch, app
+):
+    """Só este momento sabe que a agência nasceu agora.
+
+    Sem a marca, o placeholder "Minha Agência" fica para sempre — não há como
+    distinguir depois uma agência nova de uma que o dono decidiu não renomear.
+    """
+    r = client.get("/api/v1/auth/google/login")
+    state = parse_qs(urlparse(r.headers["Location"]).query)["state"][0]
+    _patch_userinfo(monkeypatch, sub="g-novo", email="novo@teste.com", name="Novo")
+
+    data = client.get(
+        f"/api/v1/auth/google/callback?code=fake-code&state={state}"
+    ).get_json()["data"]
+    assert data["new_agency"] is True
+    assert data["agency"]["name"] == "Minha Agência"
+
+
+def test_login_de_email_existente_nao_marca_agencia_nova(
+    client, clean_db, fake_google, monkeypatch, app
+):
+    with app.app_context():
+        agency = Agency(name="Agência do Gustavo")
+        db.session.add(User(
+            email="ja@existe.com", name="Já Existe", oauth_provider=OAuthProvider.GOOGLE,
+            oauth_id="seed-1", role=UserRole.ADMIN, agency=agency))
+        db.session.commit()
+
+    r = client.get("/api/v1/auth/google/login")
+    state = parse_qs(urlparse(r.headers["Location"]).query)["state"][0]
+    _patch_userinfo(monkeypatch, sub="g-existe", email="ja@existe.com", name="Já Existe")
+
+    data = client.get(
+        f"/api/v1/auth/google/callback?code=fake-code&state={state}"
+    ).get_json()["data"]
+    assert data["new_agency"] is False
+    assert data["agency"]["name"] == "Agência do Gustavo"
+
+
+def test_marca_de_agencia_nova_viaja_no_fragmento_do_redirect(
+    client, clean_db, fake_google, monkeypatch, app
+):
+    """Com redirect configurado, a marca precisa chegar ao front junto dos tokens."""
+    app.config["AUTH_SUCCESS_REDIRECT"] = "http://localhost:5173/auth/callback"
+    try:
+        r = client.get("/api/v1/auth/google/login")
+        state = parse_qs(urlparse(r.headers["Location"]).query)["state"][0]
+        _patch_userinfo(monkeypatch, sub="g-frag2", email="frag2@teste.com", name="F")
+
+        r = client.get(f"/api/v1/auth/google/callback?code=fake-code&state={state}")
+        fragmento = parse_qs(urlparse(r.headers["Location"]).fragment)
+        assert fragmento["new_agency"] == ["1"]
+    finally:
+        app.config["AUTH_SUCCESS_REDIRECT"] = None

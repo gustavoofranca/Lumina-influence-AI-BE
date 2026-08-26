@@ -81,8 +81,12 @@ def find_or_create_user_from_oauth(
     email: str,
     name: str,
     avatar_url: str | None = None,
-) -> User:
+) -> tuple[User, bool]:
     """Localiza usuário por email; cria agência+admin se for primeira vez.
+
+    Devolve `(usuário, agência_criada)`. O segundo item diz se este login
+    acabou de criar uma agência — é o que permite ao front pedir o nome dela em
+    vez de deixar o placeholder para sempre.
 
     Política decidida na B3:
     - Email já existe (pode ser do seed da B2 ou login anterior) → atualiza oauth_id real
@@ -104,7 +108,7 @@ def find_or_create_user_from_oauth(
             user.name = name
         db.session.commit()
         logger.info("Login: usuário existente %s via %s", user.email, provider.value)
-        return user
+        return user, False
 
     # Email novo → cria agência + user admin
     agency = Agency(name=DEFAULT_AGENCY_NAME, plan=None)
@@ -121,7 +125,7 @@ def find_or_create_user_from_oauth(
     db.session.add(user)
     db.session.commit()
     logger.info("Signup: novo usuário %s + agência %s", user.email, agency.id)
-    return user
+    return user, True
 
 
 # --------------------------------------------------------------------------

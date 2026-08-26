@@ -61,20 +61,28 @@ def _build_login_response(user) -> dict:
     return payload.model_dump(mode="json")
 
 
-def _login_result(user):
-    """Resposta de sucesso do login: redireciona pro front (SPA) ou retorna JSON (API)."""
+def _login_result(user, *, agencia_criada: bool = False):
+    """Resposta de sucesso do login: redireciona pro front (SPA) ou retorna JSON (API).
+
+    `agencia_criada` viaja junto porque só este momento sabe que a agência
+    nasceu agora: o front usa a marca para pedir o nome dela antes de seguir.
+    """
     from urllib.parse import urlencode
 
     redirect_base = current_app.config.get("AUTH_SUCCESS_REDIRECT")
     tokens = issue_token_pair(user)
     if redirect_base:
         # Tokens no fragmento (#) — não vão pro servidor nem ficam em logs/histórico.
-        frag = urlencode({
+        campos = {
             "access_token": tokens["access_token"],
             "refresh_token": tokens["refresh_token"],
-        })
-        return redirect(f"{redirect_base}#{frag}")
-    return jsonify({"data": _build_login_response(user)})
+        }
+        if agencia_criada:
+            campos["new_agency"] = "1"
+        return redirect(f"{redirect_base}#{urlencode(campos)}")
+    payload = _build_login_response(user)
+    payload["new_agency"] = agencia_criada
+    return jsonify({"data": payload})
 
 
 # --------------------------------------------------------------------------
@@ -109,14 +117,14 @@ def google_callback():
     access_token = token_resp["access_token"]
     user_info = client.fetch_user_info(access_token)
 
-    user = find_or_create_user_from_oauth(
+    user, agencia_criada = find_or_create_user_from_oauth(
         provider=OAuthProviderEnum.GOOGLE,
         oauth_id=user_info.oauth_id,
         email=user_info.email,
         name=user_info.name,
         avatar_url=user_info.avatar_url,
     )
-    return _login_result(user)
+    return _login_result(user, agencia_criada=agencia_criada)
 
 
 # --------------------------------------------------------------------------
@@ -151,14 +159,14 @@ def microsoft_callback():
     access_token = token_resp["access_token"]
     user_info = client.fetch_user_info(access_token)
 
-    user = find_or_create_user_from_oauth(
+    user, agencia_criada = find_or_create_user_from_oauth(
         provider=OAuthProviderEnum.MICROSOFT,
         oauth_id=user_info.oauth_id,
         email=user_info.email,
         name=user_info.name,
         avatar_url=user_info.avatar_url,
     )
-    return _login_result(user)
+    return _login_result(user, agencia_criada=agencia_criada)
 
 
 # --------------------------------------------------------------------------

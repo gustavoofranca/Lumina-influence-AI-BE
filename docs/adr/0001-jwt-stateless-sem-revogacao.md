@@ -2,6 +2,8 @@
 
 - **Status:** aceito
 - **Data:** 2026-08-25
+- **Revisado em:** 2026-08-26 — armazenamento do token no cliente (ver
+  "Revisão: sessionStorage", ao final)
 
 ## Contexto
 
@@ -36,8 +38,8 @@ JWT stateless. O access token tem TTL curto e o refresh token, TTL longo.
 `POST /auth/logout` responde `204` e não invalida nada no servidor — o cliente
 descarta os dois tokens.
 
-O front-end guarda o access token apenas em memória, nunca em `localStorage` ou
-`sessionStorage`, o que faz o fechamento da aba encerrar a sessão de fato.
+O front-end guarda o access token em `sessionStorage` — nunca em
+`localStorage` —, o que faz o fechamento da aba encerrar a sessão de fato.
 
 ## Consequências
 
@@ -48,3 +50,32 @@ O front-end guarda o access token apenas em memória, nunca em `localStorage` ou
 - Trocar a senha não derruba sessões, porque não há sessão a derrubar. O login
   é OAuth, então não existe senha própria a trocar.
 - A API escala horizontalmente sem store compartilhado de sessão.
+
+## Revisão: sessionStorage (2026-08-26)
+
+A decisão original mandava guardar o access token **apenas em memória**,
+excluindo `localStorage` e `sessionStorage`. A consequência prática apareceu no
+uso: **qualquer F5 desloga o usuário**, porque recarregar a página descarta a
+memória do JavaScript.
+
+A restrição era mais forte que a justificativa que a sustentava. O que a decisão
+precisa garantir é que **fechar a aba encerre a sessão** — é isso que limita a
+janela de um token que não pode ser revogado. `sessionStorage` entrega
+exatamente essa propriedade: o conteúdo vive enquanto a aba viver e é descartado
+quando ela fecha, sem sobreviver entre sessões do navegador. `localStorage`, sim,
+quebraria a premissa, porque persiste indefinidamente.
+
+**Decisão revisada:** o access token passa a ser guardado em `sessionStorage`.
+`localStorage` continua vedado.
+
+Consequências que mudam:
+
+- Recarregar a página deixa de encerrar a sessão.
+- O token fica legível por JavaScript da própria origem, como já ficava em
+  memória — um XSS que execute na página tem acesso nos dois casos. O
+  `sessionStorage` não piora esse cenário; o que o pioraria seria persistir
+  entre sessões.
+- Abas diferentes têm sessões independentes, porque `sessionStorage` é por aba.
+
+O que não muda: o TTL curto do access token continua sendo o limite de exposição,
+e o logout continua sendo responsabilidade do cliente.
