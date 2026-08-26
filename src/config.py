@@ -130,6 +130,7 @@ class TestConfig(Config):
 class StagingConfig(Config):
     ENV = "staging"
     DEBUG = False
+    DEV_LOGIN_ENABLED = False  # atalho de login vale só em dev e nos testes
 
     @classmethod
     def from_env(cls) -> "StagingConfig":

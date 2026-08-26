@@ -6,6 +6,7 @@ from datetime import date, datetime, timezone
 import pytest
 from sqlalchemy import select
 
+from src.config import ProdConfig, StagingConfig
 from src.extensions import db
 from src.models import (
     Agency,
@@ -157,3 +158,10 @@ def test_hsts_ausente_em_conexao_nao_segura(client):
 def test_hsts_presente_em_conexao_segura(client):
     r = client.get("/api/v1/health", base_url="https://lumina.local")
     assert "max-age=" in r.headers["Strict-Transport-Security"]
+
+
+@pytest.mark.parametrize("config_cls", [StagingConfig, ProdConfig])
+def test_dev_login_desligado_fora_de_desenvolvimento(config_cls, monkeypatch):
+    """O atalho emite JWT de admin sem OAuth — variável de ambiente não pode religá-lo."""
+    monkeypatch.setenv("DEV_LOGIN_ENABLED", "true")
+    assert config_cls.DEV_LOGIN_ENABLED is False
