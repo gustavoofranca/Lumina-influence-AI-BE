@@ -20,7 +20,9 @@ como reproduzir.
 | 6 | Documentação visual da arquitetura | 4 diagramas em Mermaid, versionados com o código | [`arquitetura/README.md`](arquitetura/README.md) |
 
 Decisões de projeto tomadas durante a bateria estão registradas como ADR em
-[`adr/`](adr/).
+[`adr/`](adr/). O limite de coleta que a B8 expôs — a divisão entre alcance
+orgânico e pago não é concedida pelas APIs sem programa comercial — está na
+[ADR-005](adr/0005-alcance-organico-e-pago-vem-do-seed.md).
 
 ## O que cada frente encontrou
 

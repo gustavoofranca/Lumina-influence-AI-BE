@@ -159,11 +159,17 @@ class YouTubeAdapter(SocialAdapter):
                     video_url=f"https://youtube.com/watch?v={item['id']}",
                     thumbnail_url=(snip.get("thumbnails", {}).get("high", {}) or {}).get("url"),
                     reach_total=views,
+                    # viewCount é o total de exibições e não separa origem paga:
+                    # isso exigiria cruzar com Google Ads, atrás de conta
+                    # comercial. As colunas são NOT NULL, então a divisão fica em
+                    # orgânico=total e pago=0 por decisão registrada na ADR-005,
+                    # que também obriga a declarar o limite ao apresentar o dado.
                     reach_organic=views,
                     reach_paid=0,
                     impressions=views,
                     likes=int(stats.get("likeCount", 0)),
                     comments_count=int(stats.get("commentCount", 0)),
+                    # A Data API v3 não expõe compartilhamento nem salvamento.
                     shares=0,
                     saves=0,
                 )
