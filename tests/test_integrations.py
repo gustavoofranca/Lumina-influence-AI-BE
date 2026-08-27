@@ -14,8 +14,10 @@ from src.integrations.base import (
     NormalizedComment,
     NormalizedPost,
     OAuthTokenBundle,
+    PlatformNotConfiguredError,
     ProfileMetrics,
     TokenRevokedError,
+    raise_for_social_status,
 )
 from src.models import (
     Agency,
@@ -405,3 +407,75 @@ def test_callback_redireciona_para_a_tela_do_criador(client, ctx, app, monkeypat
         f"http://localhost:5173/app/influenciadores/{ctx.inf_id}"
     )
     assert "conectado=youtube" in r.headers["Location"]
+
+
+# ==========================================================================
+# Credencial do app errada não é token do usuário revogado
+# ==========================================================================
+class _Resp:
+    """Resposta mínima no formato que `raise_for_social_status` consome."""
+
+    def __init__(self, status_code, text):
+        self.status_code = status_code
+        self.text = text
+
+
+def test_invalid_client_vira_erro_de_configuracao_nao_token_revogado():
+    """`invalid_client` é secret do app errado, não token do usuário.
+
+    A distinção não é cosmética: `sync_influencer` apaga os tokens da conta ao
+    ver TokenRevokedError. Classificar erro de configuração como revogação
+    destruiria a conexão válida do criador por causa de um `.env` errado.
+    """
+    body = '{"error": "invalid_client", "error_description": "The provided client secret is invalid."}'
+
+    with pytest.raises(PlatformNotConfiguredError) as exc:
+        raise_for_social_status(_Resp(401, body), platform="youtube")
+
+    assert exc.value.code == "platform_not_configured"
+    assert exc.value.status_code == 503
+
+
+def test_invalid_grant_continua_sendo_token_revogado():
+    """`invalid_grant` é o refresh revogado pelo usuário — reconexão é o caminho."""
+    body = '{"error": "invalid_grant", "error_description": "Token has been expired or revoked."}'
+
+    with pytest.raises(TokenRevokedError):
+        raise_for_social_status(_Resp(400, body), platform="youtube")
+
+
+def test_401_sem_marcador_de_credencial_continua_token_revogado():
+    """O caso comum de 401 (token do usuário inválido) não pode mudar de classe."""
+    with pytest.raises(TokenRevokedError):
+        raise_for_social_status(_Resp(401, '{"error": {"message": "Invalid Credentials"}}'),
+                                platform="youtube")
+
+
+def test_sync_com_credencial_errada_preserva_o_token_do_criador(app, ctx, monkeypatch):
+    """Erro de configuração não pode zerar o token guardado da conta."""
+    class CredencialErrada(FakeAdapter):
+        def refresh(self, refresh_token):
+            raise PlatformNotConfiguredError("youtube: credencial do app inválida")
+
+        def fetch_recent_posts(self, access_token, limit=10):
+            raise PlatformNotConfiguredError("youtube: credencial do app inválida")
+
+    with app.app_context():
+        account = db.session.scalar(
+            select(SocialAccount).where(SocialAccount.influencer_id == uuid.UUID(ctx.inf_id))
+        )
+        account.access_token_encrypted = encrypt_token("acc-valido")
+        account.refresh_token_encrypted = encrypt_token("ref-valido")
+        account.token_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        db.session.commit()
+        influencer = db.session.get(Influencer, uuid.UUID(ctx.inf_id))
+
+        with pytest.raises(PlatformNotConfiguredError):
+            isvc.sync_influencer(influencer, adapter_factory=lambda p: CredencialErrada())
+
+        db.session.rollback()
+        account = db.session.scalar(
+            select(SocialAccount).where(SocialAccount.influencer_id == uuid.UUID(ctx.inf_id))
+        )
+        assert account.access_token_encrypted is not None
+        assert decrypt_token(account.access_token_encrypted) == "acc-valido"

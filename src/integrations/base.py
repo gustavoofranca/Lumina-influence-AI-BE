@@ -7,6 +7,7 @@ sistema consome sem conhecer detalhes de cada API.
 from __future__ import annotations
 
 import abc
+import re
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -42,6 +43,20 @@ class PrivateAccountError(SocialApiError):
     code = "platform_account_private"
 
 
+# Erros que o servidor OAuth devolve quando a credencial *do app* está errada.
+# Chegam como 400 ou 401, os mesmos status de token do usuário inválido, e a
+# distinção só existe no corpo. Confundir os dois é caro: `sync_influencer`
+# apaga os tokens da conta ao ver TokenRevokedError, então um `.env` com secret
+# errado destruiria a conexão válida do criador.
+CREDENCIAL_DO_APP = ("invalid_client", "unauthorized_client")
+
+
+def _erro_oauth(body: str) -> str | None:
+    """Extrai o campo `error` do corpo OAuth, que nem sempre é JSON válido."""
+    m = re.search(r'"error"\s*:\s*"([a-z_]+)"', body)
+    return m.group(1) if m else None
+
+
 def raise_for_social_status(resp, *, platform: str) -> None:
     """Mapeia status HTTP comuns das APIs sociais pra erros tipados."""
     if resp.status_code == 200:
@@ -49,6 +64,17 @@ def raise_for_social_status(resp, *, platform: str) -> None:
     body = resp.text[:400]
     if resp.status_code == 429:
         raise RateLimitError(f"{platform}: rate limit (429)", details={"body": body})
+    erro_oauth = _erro_oauth(body)
+    if erro_oauth in CREDENCIAL_DO_APP:
+        raise PlatformNotConfiguredError(
+            f"{platform}: credencial do app rejeitada ({erro_oauth})",
+            details={"body": body},
+        )
+    if erro_oauth == "invalid_grant":
+        raise TokenRevokedError(
+            f"{platform}: autorização expirada ou revogada (invalid_grant)",
+            details={"body": body},
+        )
     if resp.status_code == 401:
         raise TokenRevokedError(f"{platform}: token revogado/expirado (401)", details={"body": body})
     if resp.status_code == 403:
