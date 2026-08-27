@@ -321,8 +321,15 @@ def _ingest_comments(adapter, token, post: Post, platform_post_id: str) -> None:
         comments: list[NormalizedComment] = adapter.fetch_post_comments(
             token, platform_post_id, limit=15
         )
-    except Exception as exc:  # comentários são best-effort
-        logger.debug("Falha ao buscar comentários (%s): %s", platform_post_id, exc)
+    except Exception as exc:
+        # Comentários seguem best-effort — a falha não derruba o sync do post —,
+        # mas em `debug` ela passava invisível, e o sentimento da análise depende
+        # deles: um criador conectado ficava sem base de comentário sem que nada
+        # o dissesse. Ver ADR-005 sobre o que a coleta real alcança.
+        logger.warning(
+            "Comentários não coletados em %s/%s: %s: %s",
+            post.social_account_id, platform_post_id, type(exc).__name__, exc,
+        )
         return
     for nc in comments:
         db.session.add(

@@ -15,6 +15,7 @@ from src.integrations.base import (
     NormalizedPost,
     OAuthTokenBundle,
     PlatformNotConfiguredError,
+    PrivateAccountError,
     ProfileMetrics,
     TokenRevokedError,
     raise_for_social_status,
@@ -479,3 +480,33 @@ def test_sync_com_credencial_errada_preserva_o_token_do_criador(app, ctx, monkey
         )
         assert account.access_token_encrypted is not None
         assert decrypt_token(account.access_token_encrypted) == "acc-valido"
+
+
+def test_falha_ao_coletar_comentario_vira_aviso_no_log(app, ctx, monkeypatch, caplog):
+    """Coleta de comentário é best-effort, mas não pode falhar em silêncio.
+
+    O sentimento da análise depende dos comentários: sem aviso, um criador
+    conectado fica sem base e nada na operação denuncia a causa.
+    """
+    class SemEscopoDeComentario(FakeAdapter):
+        def fetch_post_comments(self, access_token, platform_post_id, limit=15):
+            raise PrivateAccountError("youtube: acesso negado (403)")
+
+    with app.app_context():
+        account = db.session.scalar(
+            select(SocialAccount).where(SocialAccount.influencer_id == uuid.UUID(ctx.inf_id))
+        )
+        account.access_token_encrypted = encrypt_token("acc-valido")
+        account.token_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        db.session.commit()
+        influencer = db.session.get(Influencer, uuid.UUID(ctx.inf_id))
+
+        with caplog.at_level("WARNING", logger="src.services.integration_service"):
+            resultado = isvc.sync_influencer(
+                influencer,
+                adapter_factory=lambda p: SemEscopoDeComentario(posts=[_np("yt-sem-comentario")]),
+            )
+
+    sincronizadas = [c for c in resultado["accounts"] if c.get("status") == "synced"]
+    assert sincronizadas, "o sync do post não pode ser derrubado pela falha de comentário"
+    assert any("Comentários não coletados" in r.getMessage() for r in caplog.records)
