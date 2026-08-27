@@ -521,3 +521,51 @@ def test_criador_sem_analise_nao_afirma_audiencia_organica(client, seeded, app):
 
     assert data["audience_integrity"] is None
     assert data["neural_confidence"] == []
+
+
+def test_analise_devolve_a_transcricao_quando_existe(client, seeded, app):
+    """A transcrição estava no banco e não chegava à tela.
+
+    111 das análises do seed têm `transcript_text`, mas o payload de
+    /influencers/:id/analysis não trazia o campo — o componente de transcrição
+    do front mostrava estado vazio para dado que existia.
+    """
+    from src.models import AIAnalysis, SocialAccount
+
+    with app.app_context():
+        # Zera as transcrições e planta uma só, para saber qual deve voltar —
+        # o seed já traz várias, e a mais recente venceria por acaso.
+        todas = db.session.scalars(select(AIAnalysis)).all()
+        for a in todas:
+            a.transcript_text = None
+        alvo = todas[0]
+        alvo.transcript_text = "Testei por semanas e a diferença é absurda."
+        alvo.key_phrases = ["diferença absurda"]
+        post = db.session.get(Post, alvo.post_id)
+        conta = db.session.get(SocialAccount, post.social_account_id)
+        db.session.commit()
+        inf_id = str(conta.influencer_id)
+
+    r = client.get(f"/api/v1/influencers/{inf_id}/analysis", headers=seeded.header)
+    assert r.status_code == 200
+    transcript = r.get_json()["data"]["transcript"]
+
+    assert transcript is not None
+    assert transcript["text"].startswith("Testei por semanas")
+    assert transcript["key_phrases"] == ["diferença absurda"]
+    assert transcript["analyzed_at"]
+
+
+def test_analise_sem_transcricao_devolve_nulo(client, seeded, app):
+    """Análise só de texto não transcreve nada — e nulo é diferente de vazio."""
+    from src.models import AIAnalysis
+
+    with app.app_context():
+        influencer = db.session.scalar(select(Influencer))
+        for a in db.session.scalars(select(AIAnalysis)).all():
+            a.transcript_text = None
+        db.session.commit()
+        inf_id = str(influencer.id)
+
+    r = client.get(f"/api/v1/influencers/{inf_id}/analysis", headers=seeded.header)
+    assert r.get_json()["data"]["transcript"] is None

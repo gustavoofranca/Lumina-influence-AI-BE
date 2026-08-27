@@ -397,6 +397,19 @@ def influencer_analysis(influencer: Influencer) -> dict:
     ]
     neural = [{"key": k, "value": v} for k, v in neural_bruto if v is not None]
 
+    # Transcrição da análise mais recente que tenha uma. Nem toda análise
+    # transcreve: só as multimodais, que leem o áudio do vídeo. As demais
+    # analisam legenda e comentários, e não têm o que transcrever.
+    transcript = None
+    for a in analyses:
+        if a.transcript_text:
+            transcript = {
+                "text": a.transcript_text,
+                "analyzed_at": a.analyzed_at.isoformat(),
+                "key_phrases": a.key_phrases or [],
+            }
+            break
+
     # Recomendações da análise mais recente
     recommendations = analyses[0].recommendations if analyses and analyses[0].recommendations else []
     latest_analysis_id = str(analyses[0].id) if analyses else None
@@ -419,6 +432,7 @@ def influencer_analysis(influencer: Influencer) -> dict:
         "reach_split": split,
         "sentiment_clusters": clusters,
         "keywords": keywords,
+        "transcript": transcript,
         "audience_integrity": audience_integrity,
         "neural_confidence": neural,
         "recommendations": recommendations,
