@@ -20,9 +20,8 @@ como reproduzir.
 | 6 | Documentação visual da arquitetura | 4 diagramas em Mermaid, versionados com o código | [`arquitetura/README.md`](arquitetura/README.md) |
 | 7 | Integração social contra conta real (B8) | canal de YouTube vinculado por OAuth, 10 posts e comentário real coletados; limite de alcance pago declarado | [`testes/integracao-social.md`](testes/integracao-social.md) |
 
-As capturas de tela do produto em funcionamento, com legendas prontas para a
-escrita, estão no repositório do front-end em
-`Lumina-Influence-AI-FE/docs/capturas/`.
+As capturas de tela do produto em funcionamento, com legenda pronta para a
+escrita, estão em [`capturas/`](capturas/).
 
 Decisões de projeto tomadas durante a bateria estão registradas como ADR em
 [`adr/`](adr/). O limite de coleta que a B8 expôs — a divisão entre alcance

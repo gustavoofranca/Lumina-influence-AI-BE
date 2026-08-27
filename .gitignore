@@ -59,6 +59,7 @@ docs/*
 !docs/security/
 !docs/testes/
 !docs/arquitetura/
+!docs/capturas/
 
 # Flask
 instance/
