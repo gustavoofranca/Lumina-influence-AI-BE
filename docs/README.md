@@ -6,7 +6,7 @@ Cada linha da tabela abaixo tem um relatório próprio com método, dados brutos
 como reproduzir.
 
 - **Período de execução:** 25 a 27 de agosto de 2026
-- **Suíte do back-end ao fim da bateria:** 226 testes, 85% de cobertura de `src/`
+- **Suíte do back-end ao fim da bateria:** 230 testes, 85% de cobertura de `src/`
 
 ## Resultado por frente
 
@@ -18,7 +18,7 @@ como reproduzir.
 | 4 | Carga e saturação | satura em ~43 req/s, **zero falhas até 600 usuários**; ganho acumulado de 4,5× | [`testes/carga.md`](testes/carga.md) |
 | 5 | Robustez da geração de PDF | 11 cenários adversos, nenhum arquivo corrompido | [`testes/robustez-pdf.md`](testes/robustez-pdf.md) |
 | 6 | Documentação visual da arquitetura | 4 diagramas em Mermaid, versionados com o código | [`arquitetura/README.md`](arquitetura/README.md) |
-| 7 | Integração social contra conta real (B8) | canal de YouTube vinculado por OAuth e 10 posts coletados; dois limites declarados | [`testes/integracao-social.md`](testes/integracao-social.md) |
+| 7 | Integração social contra conta real (B8) | canal de YouTube vinculado por OAuth, 10 posts e comentário real coletados; limite de alcance pago declarado | [`testes/integracao-social.md`](testes/integracao-social.md) |
 
 Decisões de projeto tomadas durante a bateria estão registradas como ADR em
 [`adr/`](adr/). O limite de coleta que a B8 expôs — a divisão entre alcance

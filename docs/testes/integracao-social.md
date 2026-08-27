@@ -13,7 +13,7 @@
 | Sync traz posts da plataforma | **atingido** | `sync_influencer` em `mode: real`, 10 posts criados, período de 16/07/2021 a 11/11/2022 |
 | Métricas vindas da API | **atingido** | 130 exibições, 1 curtida e 1 comentário somados — conferem com o canal |
 | Orgânico e pago separados | **não atingido, por limite de acesso** | ver [ADR-005](../adr/0005-alcance-organico-e-pago-vem-do-seed.md) |
-| Comentários ingeridos | **aguardando reconexão da conta** | exigiu ampliar o escopo para `youtube.force-ssl`; o token atual foi emitido sem ele. Ver [ADR-006](../adr/0006-escopo-de-escrita-para-ler-comentario.md) |
+| Comentários ingeridos | **atingido** | exigiu ampliar o escopo para `youtube.force-ssl` e reconectar a conta; o comentário real do canal foi gravado. Ver [ADR-006](../adr/0006-escopo-de-escrita-para-ler-comentario.md) |
 
 O que a coleta real trouxe por post: identificador na plataforma, título,
 data de publicação, URL do vídeo, miniatura, exibições, curtidas e contagem de
@@ -60,32 +60,49 @@ anúncios. Decisão registrada na [ADR-005](../adr/0005-alcance-organico-e-pago-
 a divisão exibida pelo sistema é dado de seed, nas três plataformas, e isso
 precisa ser declarado ao apresentar a métrica.
 
-**Comentários.** O canal tem um comentário e a ingestão trouxe zero. A causa foi
-`403 insufficient authentication scopes`: `commentThreads.list` exige o escopo
-`youtube.force-ssl`, e o app pedia apenas `youtube.readonly`. O `force-ssl` é
-escopo de leitura **e escrita** — permite editar e apagar vídeos, avaliações,
-comentários e legendas do canal. A permissão foi aceita, com o sistema não
-exercendo escrita alguma e a lista de escopos travada por teste; a justificativa
-está na [ADR-006](../adr/0006-escopo-de-escrita-para-ler-comentario.md). A
-coleta em si ainda não foi medida com o escopo novo: o token do canal foi
-emitido para a lista antiga, e a conta precisa ser desconectada e reconectada
-antes de a evidência existir.
-
-A falha era invisível: a exceção era registrada em `debug` e engolida como
-best-effort, então um criador conectado ficava sem base de comentário — que é o
-que alimenta o sentimento da análise — sem nada denunciar a causa. Passou a
-`logger.warning` nomeando conta, post e motivo, com teste fixando o
-comportamento.
-
 **Instagram e TikTok.** Continuam em `platform_not_configured`: exigem callback
 em HTTPS público, o que a demonstração local não oferece.
+
+## Comentários: dois defeitos em série
+
+O canal tem um comentário e a primeira ingestão trouxe zero. Foram duas causas
+sobrepostas, e a segunda só apareceu depois de resolver a primeira.
+
+As duas passaram despercebidas pelo mesmo motivo: a exceção era registrada em
+`debug` e engolida como best-effort, então um criador conectado ficava sem base
+de comentário sem nada denunciar a causa. O aviso virou `logger.warning`
+nomeando conta, post e motivo — e foi ele que expôs a segunda causa.
+
+**Escopo.** `commentThreads.list` respondeu `403 insufficient authentication
+scopes`. O recurso exige `youtube.force-ssl`, e o app pedia apenas
+`youtube.readonly`. O `force-ssl` concede leitura **e escrita** — editar e
+apagar vídeos, avaliações, comentários e legendas. A permissão foi aceita com a
+justificativa registrada na
+[ADR-006](../adr/0006-escopo-de-escrita-para-ler-comentario.md): o sistema não
+exerce escrita alguma, e a lista de escopos ficou travada por teste, incluindo a
+ausência de `youtube.upload`.
+
+**Ingestão só na criação.** Com o escopo novo e a conta reconectada, o sync
+seguiu trazendo zero comentários: `_ingest_comments` era chamado apenas no ramo
+que cria o post. Um post já coletado ficava com a amostra congelada no primeiro
+sync — e como o sentimento da análise vem dos comentários, a leitura
+envelheceria sem que nada mudasse na tela. A coleta passou a rodar também nos
+posts atualizados, pulando o que já está gravado pelo `platform_comment_id`.
+Depois disso, o comentário real do canal foi gravado.
+
+**O que o aviso novo revelou no caminho:** um dos dez vídeos devolve 403 porque
+o criador **desativou comentários** nele. É estado normal, não falha — sai como
+`info`, enquanto escopo faltando e token revogado seguem em `warning`, para que
+o log não grite por escolha do criador.
+
 
 ## Como reproduzir
 
 Pré-requisitos no projeto do Google Cloud, hoje chamado **Google Auth Platform**:
 YouTube Data API v3 e YouTube Analytics API ativadas na Biblioteca; escopos
 `youtube.readonly`, `yt-analytics.readonly` e `youtube.force-ssl` em
-**Data Access**; a conta que vai
+**Data Access** — ampliar o escopo não altera token já emitido, então a conta
+precisa ser reconectada; a conta que vai
 consentir cadastrada em **Audience → Test users** enquanto o app estiver em
 *Testing*; e a URI exata
 `http://localhost:5000/api/v1/integrations/youtube/callback` registrada em

@@ -614,3 +614,99 @@ def test_conta_desconectada_preserva_handle_e_historico(client, ctx, app, monkey
         f"/api/v1/influencers/{ctx.inf_id}/posts", headers=headers
     ).get_json()["data"]
     assert len(posts_depois) == posts_antes, "desconectar não pode levar o histórico junto"
+
+
+def test_sync_coleta_comentario_de_post_que_ja_existia(client, ctx, app, monkeypatch):
+    """Comentário novo em post antigo precisa entrar — e não duplicar.
+
+    A ingestão só rodava no ramo de criação, então um post coletado uma vez
+    ficava com a amostra de comentários congelada no primeiro sync. Como o
+    sentimento da análise vem dos comentários, a leitura envelhecia sem que
+    nada mudasse na tela.
+    """
+    monkeypatch.setattr(isvc, "get_adapter", lambda platform: FakeAdapter(posts=[_np("yt-1")]))
+
+    with app.app_context():
+        state = isvc.mint_state(
+            influencer_id=uuid.UUID(ctx.inf_id), platform=Platform.YOUTUBE,
+            agency_id=ctx.agency_id,
+        )
+    client.get(f"/api/v1/integrations/youtube/callback?code=abc&state={state}")
+
+    with app.app_context():
+        influencer = db.session.get(Influencer, uuid.UUID(ctx.inf_id))
+        isvc.sync_influencer(
+            influencer,
+            adapter_factory=lambda p: FakeAdapter(posts=[_np("yt-1")]),
+            simulate_if_no_token=False,
+        )
+
+    def comentarios():
+        with app.app_context():
+            post = db.session.scalar(select(Post).where(Post.platform_post_id == "yt-1"))
+            return db.session.scalars(
+                select(Comment).where(Comment.post_id == post.id)
+            ).all()
+
+    assert len(comentarios()) == 1, "o primeiro sync traz a amostra do post novo"
+
+    # Segundo sync: o post já existe e a plataforma tem um comentário a mais.
+    class ComDoisComentarios(FakeAdapter):
+        def fetch_post_comments(self, access_token, platform_post_id, limit=15):
+            base = super().fetch_post_comments(access_token, platform_post_id, limit)
+            return base + [
+                NormalizedComment(
+                    platform_comment_id=f"{platform_post_id}-c2", content="comentário novo",
+                    author_handle="outro", posted_at=datetime.now(timezone.utc), like_count=1,
+                )
+            ]
+
+    with app.app_context():
+        influencer = db.session.get(Influencer, uuid.UUID(ctx.inf_id))
+        resultado = isvc.sync_influencer(
+            influencer,
+            adapter_factory=lambda p: ComDoisComentarios(posts=[_np("yt-1")]),
+            simulate_if_no_token=False,
+        )
+
+    # Há duas contas de YouTube: a do seed, sem token, e a que o callback criou.
+    conta = next(c for c in resultado["accounts"] if c.get("mode") == "real")
+    assert conta["posts_updated"] == 1 and conta["posts_created"] == 0
+
+    finais = comentarios()
+    assert len(finais) == 2, "o comentário novo entra"
+    ids = [c.platform_comment_id for c in finais]
+    assert len(ids) == len(set(ids)), "e o que já existia não duplica"
+
+
+def test_comentario_desativado_no_post_nao_vira_alerta(app, ctx, monkeypatch, caplog):
+    """Criador que desliga comentários é estado normal, não falha de coleta.
+
+    Se isso saísse como `warning`, o log gritaria por escolha do criador e o
+    aviso que importa — escopo faltando, token revogado — se perderia no meio.
+    """
+    class ComentariosDesativados(FakeAdapter):
+        def fetch_post_comments(self, access_token, platform_post_id, limit=15):
+            raise PrivateAccountError(
+                "youtube: acesso negado (403)",
+                details={"body": '{"error": {"message": "The video has disabled comments."}}'},
+            )
+
+    with app.app_context():
+        account = db.session.scalar(
+            select(SocialAccount).where(SocialAccount.influencer_id == uuid.UUID(ctx.inf_id))
+        )
+        account.access_token_encrypted = encrypt_token("acc-valido")
+        account.token_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        db.session.commit()
+        influencer = db.session.get(Influencer, uuid.UUID(ctx.inf_id))
+
+        with caplog.at_level("INFO", logger="src.services.integration_service"):
+            isvc.sync_influencer(
+                influencer,
+                adapter_factory=lambda p: ComentariosDesativados(posts=[_np("yt-off")]),
+            )
+
+    relevantes = [r for r in caplog.records if "Comentários não coletados" in r.getMessage()]
+    assert relevantes, "o motivo continua registrado"
+    assert all(r.levelname == "INFO" for r in relevantes)

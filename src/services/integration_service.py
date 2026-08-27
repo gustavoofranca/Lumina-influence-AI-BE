@@ -290,10 +290,14 @@ def _real_sync(account: SocialAccount, adapter: SocialAdapter, token: str) -> di
             db.session.add(post)
             db.session.flush()
             created += 1
-            _ingest_comments(adapter, token, post, np.platform_post_id)
         else:
+            post = existing
             _apply_metrics(existing, np)
             updated += 1
+        # Também nos posts que já existiam: a amostra de comentários é o que
+        # alimenta o sentimento, e coletá-la só na criação a congelaria no
+        # primeiro sync.
+        _ingest_comments(adapter, token, post, np.platform_post_id)
 
     account.last_synced_at = datetime.now(timezone.utc)
     return {"status": "synced", "mode": "real", "posts_created": created, "posts_updated": updated}
@@ -326,12 +330,25 @@ def _ingest_comments(adapter, token, post: Post, platform_post_id: str) -> None:
         # mas em `debug` ela passava invisível, e o sentimento da análise depende
         # deles: um criador conectado ficava sem base de comentário sem que nada
         # o dissesse. Ver ADR-005 sobre o que a coleta real alcança.
-        logger.warning(
+        #
+        # Comentário desativado no post é escolha do criador, não defeito: vira
+        # `info`, senão o log grita por um estado normal e o aviso que importa
+        # (escopo faltando, token revogado) se perde no meio.
+        corpo = str(getattr(exc, "details", {}).get("body", ""))
+        nivel = logger.info if "disabled comments" in corpo else logger.warning
+        nivel(
             "Comentários não coletados em %s/%s: %s: %s",
             post.social_account_id, platform_post_id, type(exc).__name__, exc,
         )
         return
+    ja_gravados = set(
+        db.session.scalars(
+            select(Comment.platform_comment_id).where(Comment.post_id == post.id)
+        ).all()
+    )
     for nc in comments:
+        if nc.platform_comment_id in ja_gravados:
+            continue
         db.session.add(
             Comment(
                 post_id=post.id,
