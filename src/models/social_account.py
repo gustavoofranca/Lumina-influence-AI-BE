@@ -62,6 +62,17 @@ class SocialAccount(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
 
+    @property
+    def connected(self) -> bool:
+        """Há token guardado para coletar da plataforma.
+
+        Desconectar apaga os tokens e preserva a conta, para não levar junto o
+        histórico de posts. Sem esta distinção no payload, a interface trata
+        como conectada qualquer conta que exista — inclusive as do seed, que
+        nunca passaram por OAuth.
+        """
+        return self.access_token_encrypted is not None
+
     influencer: Mapped["Influencer"] = relationship(back_populates="social_accounts")
     posts: Mapped[list["Post"]] = relationship(
         back_populates="social_account", cascade="all, delete-orphan"

@@ -533,3 +533,84 @@ def test_url_de_autorizacao_pede_o_escopo_que_le_comentario(app):
     assert "https://www.googleapis.com/auth/youtube.readonly" in escopos
     assert "https://www.googleapis.com/auth/yt-analytics.readonly" in escopos
     assert "https://www.googleapis.com/auth/youtube.upload" not in escopos
+
+
+# ==========================================================================
+# A API precisa dizer se a conta tem token — a tela decide o botão por isso
+# ==========================================================================
+def test_payload_da_conta_diz_se_ela_esta_conectada(client, ctx, app, monkeypatch):
+    """Sem esse campo, a interface chama de conectada qualquer conta que exista.
+
+    Desconectar apaga o token mas preserva a conta, para não perder o histórico
+    de posts. A tela então continuava mostrando "Desconectar" depois de
+    desconectar — o botão nunca refletiu o estado real.
+    """
+    monkeypatch.setattr(isvc, "get_adapter", lambda platform: FakeAdapter())
+    headers = ctx.h_admin
+
+    def contas():
+        r = client.get(f"/api/v1/influencers/{ctx.inf_id}", headers=headers)
+        assert r.status_code == 200
+        return {c["id"]: c for c in r.get_json()["data"]["social_accounts"]}
+
+    # A conta do seed nunca passou por OAuth: existe, mas não está conectada.
+    assert contas()[ctx.sa_id]["connected"] is False
+
+    with app.app_context():
+        state = isvc.mint_state(
+            influencer_id=uuid.UUID(ctx.inf_id), platform=Platform.YOUTUBE,
+            agency_id=ctx.agency_id,
+        )
+    client.get(f"/api/v1/integrations/youtube/callback?code=abc&state={state}")
+
+    conectadas = [c for c in contas().values() if c["connected"]]
+    assert len(conectadas) == 1
+    conectada = conectadas[0]
+
+    r = client.post(
+        f"/api/v1/integrations/youtube/disconnect/{conectada['id']}", headers=headers
+    )
+    assert r.status_code == 200
+    assert contas()[conectada["id"]]["connected"] is False, "o botão da tela depende disso"
+
+
+def test_conta_desconectada_preserva_handle_e_historico(client, ctx, app, monkeypatch):
+    """Desvincular não é apagar: handle, seguidores e posts continuam na tela.
+
+    O token é criado pelo próprio fluxo de callback, e não escrito direto no
+    banco: fora de um request, a escrita não é enxergada pela sessão que atende
+    o POST, e o teste passaria a medir o isolamento em vez do comportamento.
+    """
+    monkeypatch.setattr(isvc, "get_adapter", lambda platform: FakeAdapter(posts=[_np("yt-1")]))
+    headers = ctx.h_admin
+
+    with app.app_context():
+        state = isvc.mint_state(
+            influencer_id=uuid.UUID(ctx.inf_id), platform=Platform.YOUTUBE,
+            agency_id=ctx.agency_id,
+        )
+    client.get(f"/api/v1/integrations/youtube/callback?code=abc&state={state}")
+
+    def contas():
+        r = client.get(f"/api/v1/influencers/{ctx.inf_id}", headers=headers)
+        return {c["id"]: c for c in r.get_json()["data"]["social_accounts"]}
+
+    antes = next(c for c in contas().values() if c["connected"])
+    posts_antes = len(client.get(
+        f"/api/v1/influencers/{ctx.inf_id}/posts", headers=headers
+    ).get_json()["data"])
+
+    r = client.post(
+        f"/api/v1/integrations/youtube/disconnect/{antes['id']}", headers=headers
+    )
+    assert r.status_code == 200, r.get_json()
+
+    depois = contas()[antes["id"]]
+    assert depois["connected"] is False
+    assert depois["handle"] == antes["handle"]
+    assert depois["follower_count"] == antes["follower_count"]
+
+    posts_depois = client.get(
+        f"/api/v1/influencers/{ctx.inf_id}/posts", headers=headers
+    ).get_json()["data"]
+    assert len(posts_depois) == posts_antes, "desconectar não pode levar o histórico junto"

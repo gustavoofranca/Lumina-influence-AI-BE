@@ -20,6 +20,9 @@ class SocialAccountOut(BaseModel):
     platform_user_id: Optional[str] = None
     follower_count: int
     token_expires_at: Optional[datetime] = None
+    # Deriva da presença do token, não da existência da conta: a conta sobrevive
+    # à desconexão para preservar os posts já coletados.
+    connected: bool
     last_synced_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
