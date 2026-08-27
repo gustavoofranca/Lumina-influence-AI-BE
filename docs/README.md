@@ -5,8 +5,8 @@ apresentação anterior: segurança, carga e documentação visual da arquitetur
 Cada linha da tabela abaixo tem um relatório próprio com método, dados brutos e
 como reproduzir.
 
-- **Período de execução:** 25 a 26 de agosto de 2026
-- **Suíte do back-end ao fim da bateria:** 204 testes, 85% de cobertura de `src/`
+- **Período de execução:** 25 a 27 de agosto de 2026
+- **Suíte do back-end ao fim da bateria:** 216 testes, 85% de cobertura de `src/`
 
 ## Resultado por frente
 
@@ -14,7 +14,7 @@ como reproduzir.
 |---|---|---|---|
 | 1 | Análise estática e dependências | 0 achados Medium/High em 6.436 linhas; 8 → 4 vulnerabilidades de dependência, nenhuma alcançável | [`security/analise-estatica.md`](security/analise-estatica.md) |
 | 2 | Controle de acesso (IDOR) | 26 endpoints e 6 listagens sondados com identidade de outra agência; **zero vazamento** | [`security/idor.md`](security/idor.md) |
-| 3 | Prompt injection contra o modelo real | **pendente** — bloqueado por cota do free tier | — |
+| 3 | Prompt injection contra o modelo real | 7 famílias de ataque, **7 resistiram**; schema íntegro em todas | [`security/prompt-injection.md`](security/prompt-injection.md) |
 | 4 | Carga e saturação | satura em ~43 req/s, **zero falhas até 600 usuários**; ganho acumulado de 4,5× | [`testes/carga.md`](testes/carga.md) |
 | 5 | Robustez da geração de PDF | 11 cenários adversos, nenhum arquivo corrompido | [`testes/robustez-pdf.md`](testes/robustez-pdf.md) |
 | 6 | Documentação visual da arquitetura | 4 diagramas em Mermaid, versionados com o código | [`arquitetura/README.md`](arquitetura/README.md) |
@@ -54,25 +54,27 @@ caiu de 880 ms para 64 ms.
 Acentuação e glifos passam; emoji não, e passou a ser removido antes da
 renderização com aviso em log nomeando cada caractere.
 
-## Item 3 — por que ficou pendente
+**Prompt injection (item 3).** As sete famílias de ataque resistiram. O achado
+de método veio de um falso positivo: a primeira execução acusou obediência
+porque o marcador da carga aparecia em `key_phrases` — o campo que extrai
+frases do conteúdo, sendo que a carga *é* o conteúdo. Repetir a execução
+mostrou que a resposta do modelo varia entre rodadas idênticas, o que significa
+que teste sobre modelo generativo exige repetição para não produzir achado
+inexistente.
 
-O teste de prompt injection contra o Gemini real não foi executado. O free tier
-do modelo concede **20 requisições por dia, por projeto e por modelo**
+## O que a cota do free tier ainda impede
+
+O free tier concede **20 requisições por dia, por projeto e por modelo**
 (`quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier`) — não é limite
-por minuto, e esperar não resolve. O job `run_pending_analyses` consumia a cota
-sozinho nas primeiras horas do dia, o que motivou desligar o agendador por
-padrão (`LUMINA_DISABLE_SCHEDULER=1`).
+por minuto, e esperar não resolve. Foi o que atrasou o item 3 em um dia, e é o
+que motivou desligar o agendador por padrão (`LUMINA_DISABLE_SCHEDULER=1`),
+já que `run_pending_analyses` consumia a cota sozinho nas primeiras horas.
 
-A mesma restrição impede o teste de carga sobre `POST /posts/:id/analyze` e o
-requisito de p95 ≤ 60 s medido contra o modelo real: 20 requisições diárias não
-sustentam bateria de carga nenhuma. O que existe hoje é a medição isolada — a
+A mesma restrição impede o teste de **carga** sobre `POST /posts/:id/analyze` e
+o requisito de p95 ≤ 60 s medido contra o modelo real: 20 requisições diárias
+não sustentam bateria de carga nenhuma. O que existe é a medição isolada — a
 análise real leva ~25 s contra o banco local e ~50 s contra o gerenciado, dentro
 do requisito mas com margem estreita.
-
-O roteiro do teste está pronto: 7 cargas adversas plantadas na legenda e nos
-comentários de um post sintético, verificando três coisas por carga — se a
-resposta continuou dentro do schema, se algum campo carrega marcador da carga (o
-modelo obedeceu) e se as instruções de sistema vazaram para dentro da resposta.
 
 ## Achados de segurança corrigidos durante a bateria
 
