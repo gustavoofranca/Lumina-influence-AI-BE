@@ -25,6 +25,7 @@ from src.models import (
 from src.services import dashboard_service
 from src.services import metric_service as M
 from src.services.report_template import REPORT_HTML
+from src.utils.brand import marca_data_uri
 from src.utils.errors import NotFoundError, ValidationError
 from src.utils.pdf_generator import render_pdf
 
@@ -191,6 +192,7 @@ def build_report_context(
 
     return {
         "report_title": title,
+        "brand_mark": marca_data_uri(),
         "campaign": {
             "brand_name": campaign.brand_name,
             "title": campaign.title,

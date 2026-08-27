@@ -22,7 +22,8 @@ REPORT_HTML = """\
   }
   body { font-family: Helvetica, Arial, sans-serif; color: #0F172A; font-size: 10pt; }
   .brandbar { border-bottom: 2px solid #7C3AED; padding-bottom: 6px; margin-bottom: 14px; }
-  .brandbar .logo { color: #7C3AED; font-size: 13pt; font-weight: bold; }
+  .brandbar .logo { color: #0F172A; font-size: 13pt; font-weight: bold; }
+  .brandbar .logo img { height: 22px; }
   .brandbar .brand { color: #64748B; font-size: 8pt; text-transform: uppercase; letter-spacing: 1px; }
   .eyebrow { color: #7C3AED; font-size: 8pt; font-weight: bold; text-transform: uppercase; letter-spacing: 2px; }
   h1.cover { font-size: 26pt; font-weight: bold; margin: 6px 0 4px 0; color: #0F172A; }
@@ -62,7 +63,7 @@ REPORT_HTML = """\
 <!-- ================= CAPA + SUMÁRIO ================= -->
 <div class="brandbar">
   <table width="100%"><tr>
-    <td class="logo">▲ Lumina Influence AI</td>
+    <td class="logo">{% if brand_mark %}<img src="{{ brand_mark }}" alt="" />&nbsp;{% endif %}Lumina Influence AI</td>
     <td align="right" class="brand">{{ campaign.brand_name }}</td>
   </tr></table>
 </div>
