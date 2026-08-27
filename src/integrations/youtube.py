@@ -30,6 +30,11 @@ DATA = "https://www.googleapis.com/youtube/v3"
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.readonly",
     "https://www.googleapis.com/auth/yt-analytics.readonly",
+    # force-ssl é o único escopo que autoriza `commentThreads.list`: com apenas
+    # readonly a chamada volta 403 insufficient authentication scopes, e sem
+    # comentário a análise de sentimento de conta real fica sem base. Ele
+    # concede escrita que o sistema não exerce — ver ADR-006.
+    "https://www.googleapis.com/auth/youtube.force-ssl",
 ]
 TIMEOUT = 15
 

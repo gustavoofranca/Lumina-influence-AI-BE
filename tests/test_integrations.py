@@ -510,3 +510,26 @@ def test_falha_ao_coletar_comentario_vira_aviso_no_log(app, ctx, monkeypatch, ca
     sincronizadas = [c for c in resultado["accounts"] if c.get("status") == "synced"]
     assert sincronizadas, "o sync do post não pode ser derrubado pela falha de comentário"
     assert any("Comentários não coletados" in r.getMessage() for r in caplog.records)
+
+
+def test_url_de_autorizacao_pede_o_escopo_que_le_comentario(app):
+    """Sem `force-ssl` a coleta de comentário volta 403 e o sentimento fica sem base.
+
+    O escopo é sensível — concede escrita que o sistema não exerce (ADR-006) —,
+    então sua presença fica travada por teste, e não por memória de quem
+    configurou o console.
+    """
+    from src.integrations.youtube import YouTubeAdapter
+
+    with app.app_context():
+        app.config["GOOGLE_CLIENT_ID"] = "cid-teste"
+        app.config["GOOGLE_CLIENT_SECRET"] = "secret-teste"
+        url = YouTubeAdapter().build_auth_url(
+            state="st", redirect_uri="http://localhost:5000/cb"
+        )
+
+    escopos = parse_qs(urlparse(url).query)["scope"][0].split(" ")
+    assert "https://www.googleapis.com/auth/youtube.force-ssl" in escopos
+    assert "https://www.googleapis.com/auth/youtube.readonly" in escopos
+    assert "https://www.googleapis.com/auth/yt-analytics.readonly" in escopos
+    assert "https://www.googleapis.com/auth/youtube.upload" not in escopos

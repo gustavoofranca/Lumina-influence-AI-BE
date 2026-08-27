@@ -6,7 +6,7 @@ Cada linha da tabela abaixo tem um relatório próprio com método, dados brutos
 como reproduzir.
 
 - **Período de execução:** 25 a 27 de agosto de 2026
-- **Suíte do back-end ao fim da bateria:** 225 testes, 85% de cobertura de `src/`
+- **Suíte do back-end ao fim da bateria:** 226 testes, 85% de cobertura de `src/`
 
 ## Resultado por frente
 

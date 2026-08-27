@@ -13,7 +13,7 @@
 | Sync traz posts da plataforma | **atingido** | `sync_influencer` em `mode: real`, 10 posts criados, período de 16/07/2021 a 11/11/2022 |
 | Métricas vindas da API | **atingido** | 130 exibições, 1 curtida e 1 comentário somados — conferem com o canal |
 | Orgânico e pago separados | **não atingido, por limite de acesso** | ver [ADR-005](../adr/0005-alcance-organico-e-pago-vem-do-seed.md) |
-| Comentários ingeridos | **não atingido, por escopo** | ver "O que ficou de fora", abaixo |
+| Comentários ingeridos | **aguardando reconexão da conta** | exigiu ampliar o escopo para `youtube.force-ssl`; o token atual foi emitido sem ele. Ver [ADR-006](../adr/0006-escopo-de-escrita-para-ler-comentario.md) |
 
 O que a coleta real trouxe por post: identificador na plataforma, título,
 data de publicação, URL do vídeo, miniatura, exibições, curtidas e contagem de
@@ -62,10 +62,14 @@ precisa ser declarado ao apresentar a métrica.
 
 **Comentários.** O canal tem um comentário e a ingestão trouxe zero. A causa foi
 `403 insufficient authentication scopes`: `commentThreads.list` exige o escopo
-`youtube.force-ssl`, e o app pede apenas `youtube.readonly`. O `force-ssl` é
+`youtube.force-ssl`, e o app pedia apenas `youtube.readonly`. O `force-ssl` é
 escopo de leitura **e escrita** — permite editar e apagar vídeos, avaliações,
-comentários e legendas do canal. Pedir permissão de escrita num sistema que só
-audita é decisão de produto, não de implementação, e está em aberto.
+comentários e legendas do canal. A permissão foi aceita, com o sistema não
+exercendo escrita alguma e a lista de escopos travada por teste; a justificativa
+está na [ADR-006](../adr/0006-escopo-de-escrita-para-ler-comentario.md). A
+coleta em si ainda não foi medida com o escopo novo: o token do canal foi
+emitido para a lista antiga, e a conta precisa ser desconectada e reconectada
+antes de a evidência existir.
 
 A falha era invisível: a exceção era registrada em `debug` e engolida como
 best-effort, então um criador conectado ficava sem base de comentário — que é o
@@ -80,7 +84,8 @@ em HTTPS público, o que a demonstração local não oferece.
 
 Pré-requisitos no projeto do Google Cloud, hoje chamado **Google Auth Platform**:
 YouTube Data API v3 e YouTube Analytics API ativadas na Biblioteca; escopos
-`youtube.readonly` e `yt-analytics.readonly` em **Data Access**; a conta que vai
+`youtube.readonly`, `yt-analytics.readonly` e `youtube.force-ssl` em
+**Data Access**; a conta que vai
 consentir cadastrada em **Audience → Test users** enquanto o app estiver em
 *Testing*; e a URI exata
 `http://localhost:5000/api/v1/integrations/youtube/callback` registrada em
