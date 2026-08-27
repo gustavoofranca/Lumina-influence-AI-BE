@@ -587,3 +587,18 @@ def test_analise_devolve_a_trajetoria_de_crescimento_do_criador(client, seeded, 
     total_serie = sum(b["organic"] + b["paid"] for b in growth)
     reach = r.get_json()["data"]["reach_split"]["total"]
     assert total_serie <= reach
+
+
+def test_pills_do_diagnostico_carregam_o_valor_que_as_justifica(client, seeded):
+    """Sem o valor no payload, o rótulo escrevia um número fixo.
+
+    "85% Positive Sentiment" aparecia para qualquer criador, contradizendo o
+    índice de sentimento que a própria tela dele mostrava.
+    """
+    r = client.get("/api/v1/dashboard/overview", headers=seeded.header)
+    destaque = r.get_json()["data"]["featured_diagnosis"]
+
+    assert destaque["pills"], "o seed tem análise com pelo menos uma pill"
+    for pill in destaque["pills"]:
+        assert "value_pct" in pill, f"pill {pill['key']} sem o número que a justifica"
+        assert isinstance(pill["value_pct"], (int, float))

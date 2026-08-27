@@ -145,13 +145,28 @@ def featured_diagnosis(agency_id: uuid.UUID) -> dict | None:
     sa = db.session.get(SocialAccount, post.social_account_id)
     influencer = db.session.get(Influencer, sa.influencer_id)
 
+    # Cada pill leva o número que a justifica. Sem isso a interface precisava
+    # escrever o valor no rótulo, e escrevia um fixo: "85% Positive Sentiment"
+    # aparecia para qualquer criador, inclusive os de sentimento 66%.
     pills = []
     if post.retention_rate is not None and post.retention_rate >= 0.6:
-        pills.append({"key": "high_retention", "variant": "success"})
+        pills.append({
+            "key": "high_retention",
+            "variant": "success",
+            "value_pct": round(post.retention_rate * 100, 1),
+        })
     if analysis.sentiment_label and analysis.sentiment_label.value == "positive":
-        pills.append({"key": "positive_sentiment", "variant": "success"})
+        pills.append({
+            "key": "positive_sentiment",
+            "variant": "success",
+            "value_pct": M.sentiment_to_pct(analysis.sentiment_score),
+        })
     if analysis.bot_probability is not None and analysis.bot_probability >= 15:
-        pills.append({"key": "bot_alert", "variant": "danger"})
+        pills.append({
+            "key": "bot_alert",
+            "variant": "danger",
+            "value_pct": round(analysis.bot_probability, 1),
+        })
 
     return {
         "influencer_id": str(influencer.id),
