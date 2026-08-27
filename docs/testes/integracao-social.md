@@ -96,6 +96,33 @@ o criador **desativou comentários** nele. É estado normal, não falha — sai 
 o log não grite por escolha do criador.
 
 
+## O ciclo completo, com dado real de ponta a ponta
+
+Com a conta conectada, o sistema foi levado até o fim do seu propósito: análise
+de IA sobre um post verdadeiro do canal, com o comentário verdadeiro que a
+plataforma devolveu.
+
+| Medida | Valor |
+|---|---|
+| Tempo da análise (`POST /posts/:id/analyze`, contra o banco gerenciado) | **30,7 s** — dentro do requisito de p95 ≤ 60 s |
+| Modelo | `gemini-3.6-flash` |
+| Coerência com a marca | **0** |
+| Probabilidade de bot | 65% |
+| Sentimento | neutro (100% neutro na distribuição) |
+
+O resultado é a melhor evidência de que a análise reage ao conteúdo, e não a um
+mock: a criadora está cadastrada no nicho **Beauty & Skincare**, e o canal
+conectado publica gameplay. O modelo devolveu coerência de marca **zero** e duas
+recomendações de alta prioridade — "realinhar perfil e nicho do influenciador",
+justificada com "o conteúdo postado e os comentários tratam de games […],
+totalmente irrelevantes para o nicho de Beauty & Skincare", e moderação de
+comentários. As `key_phrases` extraídas vieram do título do vídeo e do
+comentário real, não do seed.
+
+Vale notar a distinção da [ADR-003](../adr/0003-ausencia-de-dado-nunca-vira-zero.md)
+funcionando na direção oposta: aqui o zero de coerência é **medido**, e por isso
+é exibido como zero. O que a ADR proíbe é o zero que substitui a ausência.
+
 ## Como reproduzir
 
 Pré-requisitos no projeto do Google Cloud, hoje chamado **Google Auth Platform**:
