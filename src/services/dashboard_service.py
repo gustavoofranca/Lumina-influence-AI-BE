@@ -430,6 +430,10 @@ def influencer_analysis(influencer: Influencer) -> dict:
         },
         "engagement_rate": eng,
         "reach_split": split,
+        # Mesma série do dashboard, restrita aos posts deste criador. A aba
+        # Visão Geral já tinha o gráfico montado e mostrava estado vazio
+        # dizendo que a API não servia isto.
+        "growth_trajectory": M.growth_trajectory(posts, "90d"),
         "sentiment_clusters": clusters,
         "keywords": keywords,
         "transcript": transcript,

@@ -569,3 +569,21 @@ def test_analise_sem_transcricao_devolve_nulo(client, seeded, app):
 
     r = client.get(f"/api/v1/influencers/{inf_id}/analysis", headers=seeded.header)
     assert r.get_json()["data"]["transcript"] is None
+
+
+def test_analise_devolve_a_trajetoria_de_crescimento_do_criador(client, seeded, app):
+    """A aba Visão Geral tinha o gráfico pronto e dizia que a API não servia isto."""
+    with app.app_context():
+        inf_id = str(db.session.scalar(select(Influencer)).id)
+
+    r = client.get(f"/api/v1/influencers/{inf_id}/analysis", headers=seeded.header)
+    growth = r.get_json()["data"]["growth_trajectory"]
+
+    assert isinstance(growth, list) and growth, "o criador do seed tem posts"
+    for bucket in growth:
+        assert {"x", "organic", "paid"} <= set(bucket)
+    # É a série deste criador, não a da agência: o alcance somado não pode
+    # passar do alcance total dele.
+    total_serie = sum(b["organic"] + b["paid"] for b in growth)
+    reach = r.get_json()["data"]["reach_split"]["total"]
+    assert total_serie <= reach
