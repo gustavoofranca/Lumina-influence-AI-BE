@@ -19,6 +19,7 @@ como reproduzir.
 | 5 | Robustez da geração de PDF | 11 cenários adversos, nenhum arquivo corrompido | [`testes/robustez-pdf.md`](testes/robustez-pdf.md) |
 | 6 | Documentação visual da arquitetura | 4 diagramas em Mermaid, versionados com o código | [`arquitetura/README.md`](arquitetura/README.md) |
 | 7 | Integração social contra conta real (B8) | canal de YouTube vinculado por OAuth, 10 posts e comentário real coletados; limite de alcance pago declarado | [`testes/integracao-social.md`](testes/integracao-social.md) |
+| 8 | Verificação de interface pré-entrega | 6 verificações sobre a interface em funcionamento; a última execução achou 1 tela que não renderizava | [`testes/verificacao-pre-entrega.md`](testes/verificacao-pre-entrega.md) |
 
 As capturas de tela do produto em funcionamento, com legenda pronta para a
 escrita, estão em [`capturas/`](capturas/).
