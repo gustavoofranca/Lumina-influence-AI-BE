@@ -13,7 +13,7 @@ criador e as 6 seções de configurações, nos dois temas e nos dois idiomas.
 | # | Verificação | O que achou historicamente | 27/08 | 28/08 |
 |---|---|---|---|---|
 | 1 | Tela que não renderiza | `/app/configuracoes/equipe` **em branco** — `refetch` fora de escopo derrubava também Plano e Preferências | 1 defeito, corrigido | 0 em 22 rotas |
-| 2 | Contraste WCAG AA | `text-muted` reprovando por 0,05 no tema claro | 0 falhas | 0 falhas |
+| 2 | Contraste WCAG AA | `text-muted` reprovando por 0,05 no tema claro | 0 falhas | 0 falhas **no texto medido** — os 10 rótulos de eixo em SVG, a 2,4:1, escaparam pelo limite do método (ver abaixo) |
 | 3 | Vazamento de largura em 390px | 4 telas estourando a viewport por falta de `min-w-0` | 0 estouros | 0 em 13 rotas |
 | 4 | Botão sem ação atrás | 7 botões mortos, entre eles "Gerar Relatório" e "Abrir auditoria" | 0 | 0 (12 achados, todos na página de showcase) |
 | 5 | Texto fora do i18n | "Entrar com Google" em português na tela em inglês; idioma que não persistia | 0 | **2 defeitos, corrigidos** |
