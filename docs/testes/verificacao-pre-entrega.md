@@ -201,5 +201,5 @@ Enter.
   [`integracao-social.md`](integracao-social.md) e
   [`robustez-pdf.md`](robustez-pdf.md).
 - **Carga e concorrência**: [`carga.md`](carga.md).
-- **Regressão de regra de negócio**: é o papel da suíte do back-end, com 362
+- **Regressão de regra de negócio**: é o papel da suíte do back-end, com 374
   testes.

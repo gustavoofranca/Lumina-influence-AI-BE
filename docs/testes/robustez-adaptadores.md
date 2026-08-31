@@ -225,3 +225,49 @@ Com isso, **os cinco adaptadores de integração estão em 100%**. O saldo das d
 últimas rodadas é de **seis defeitos reais** em código que teste de rota
 atravessava sem tocar — e nenhum deles apareceria em ambiente local, porque
 todos dependem de uma resposta que só a plataforma real produz.
+
+## Sexta rodada: a assimetria entre os dois provedores de login
+
+`src/api/auth.py` estava em 80%, e as linhas descobertas eram **a rota inteira
+de login e de callback da Microsoft**. O Google tinha quatro garantias no nível
+de rota; a Microsoft, nenhuma.
+
+Não apareceu defeito novo — mas a assimetria é o achado. Foi exatamente ela que
+deixou passar o `KeyError` do userinfo do Google descrito na segunda rodada: o
+que não é exercido em nível nenhum é o que quebra em produção. As quatro
+garantias passam a valer para os dois provedores, mais uma que não existia em
+nenhum: **o state de um provedor é recusado no callback do outro.**
+
+Junto entraram dois pontos que a submissão à Meta tornou críticos:
+`OAUTH_REDIRECT_BASE` sobrepondo o host da requisição — é o que evita
+`redirect_uri_mismatch` atrás de proxy, e é a configuração que precisa virar
+HTTPS público — e o `dev-login` recusando quando a chave está desligada, em vez
+de existir só porque o blueprint foi registrado.
+
+`auth.py`: **80% → 99%**. Suíte: **374 testes, 95%**.
+
+## O defeito que a documentação publicada expôs
+
+Vale registrar separado porque não veio de teste nenhum, e é o mais instrutivo
+do dia.
+
+Ao escrever a **página de exclusão de dados** — documento que o usuário lê como
+compromisso e que o revisor da Meta confere — descrevi três caminhos de exclusão
+sem antes ler o código. Os três estavam errados:
+
+| O que o texto afirmava | O que o código faz |
+|---|---|
+| desconectar apaga as publicações coletadas | `disconnect_account` limpa só os tokens; preservar o histórico é decisão deliberada, registrada no próprio modelo |
+| "excluir criador" e "excluir conta" são caminhos na interface | os endpoints existem; a interface **não os expõe** |
+| o cartão fica numa aba "Contas conectadas" | fica na aba Visão Geral |
+
+É o mesmo padrão do projeto inteiro — **afirmar sobre dado que ninguém
+verificou** — na sua forma mais cara, porque documento publicado não tem teste
+que o contradiga. A correção foi dupla: o texto passou a descrever só o que
+existe, e o comportamento de desconexão ganhou **teste que o fixa como
+contrato**, com o motivo escrito na docstring: mudá-lo sem revisar a política
+publicada tornaria a política falsa.
+
+**A lição de método:** documentação que descreve comportamento é código sem
+teste. Ou se verifica contra a implementação antes de publicar, ou se prende a
+implementação com um teste que cite o documento.

@@ -7,7 +7,7 @@ como reproduzir.
 
 - **Período de execução:** 25 a 27 de agosto de 2026
 - **Suíte do back-end ao fim da bateria:** 230 testes, 85% de cobertura de `src/`
-- **Suíte do back-end em 31/08, após a frente de robustez:** 362 testes, 94%
+- **Suíte do back-end em 31/08, após a frente de robustez:** 374 testes, 95%
 - **Suíte de interface:** 42 testes ponta a ponta em Playwright
 
 ## Resultado por frente
@@ -22,7 +22,7 @@ como reproduzir.
 | 6 | Documentação visual da arquitetura | 4 diagramas em Mermaid, versionados com o código | [`arquitetura/README.md`](arquitetura/README.md) |
 | 7 | Integração social contra conta real (B8) | canal de YouTube vinculado por OAuth, 10 posts e comentário real coletados; limite de alcance pago declarado | [`testes/integracao-social.md`](testes/integracao-social.md) |
 | 8 | Verificação de interface pré-entrega | 6 verificações sobre a interface em funcionamento; a última execução achou 1 tela que não renderizava | [`testes/verificacao-pre-entrega.md`](testes/verificacao-pre-entrega.md) |
-| 9 | Robustez das bordas | 133 cenários sobre integrações, login e filtros de listagem; **8 defeitos achados e corrigidos**; os 5 adaptadores em 100% | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
+| 9 | Robustez das bordas | 133 cenários sobre integrações, login e filtros de listagem; **9 defeitos achados e corrigidos**; os 5 adaptadores em 100% | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
 | 10 | Testes ponta a ponta da interface | 42 testes em Playwright cobrindo rotas, login, estado de erro, conta social, relatório, tema, idioma, foco e páginas legais | [`testes/e2e-front.md`](testes/e2e-front.md) |
 | 11 | Preparação do App Review da Meta | 7 requisitos de código cumpridos; 3 defeitos que causariam rejeição, corrigidos | [`meta-app-review.md`](meta-app-review.md) |
 
