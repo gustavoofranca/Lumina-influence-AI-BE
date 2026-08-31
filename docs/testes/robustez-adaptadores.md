@@ -55,7 +55,7 @@ Três contratos foram escolhidos por consequência, não por linha descoberta:
 | `influencer_service.py` | 83% | **100%** |
 | Suíte inteira | 230 testes, 86% | **317 testes, 92%** |
 
-(a quarta rodada, abaixo, levou a suíte a 342 testes e 93%)
+(as rodadas 4 e 5, abaixo, levaram a suíte a 362 testes e 94%)
 
 Nos três primeiros módulos, nenhum defeito novo apareceu: eles se comportaram
 como o código prometia em todos os 56 cenários. O ganho é de regressão — o
@@ -179,3 +179,49 @@ são invisíveis até falharem em produção.
 
 Medir com `--cov=src/integrations/gemini.py` devolve `module-not-imported` e
 zera o número: o alvo precisa ser `--cov=src`, filtrando a saída.
+
+## Quinta rodada: o adaptador do TikTok
+
+Último módulo de integração sem cobertura própria — estava em 41%. Mesmo
+método, e de novo **três defeitos reais**, todos invisíveis sem token de
+verdade:
+
+**O erro que chega dentro de um 200.** O TikTok responde `200` mesmo quando
+falha: o corpo **sempre** traz um objeto `error`, e `code == "ok"` é o único
+valor que significa sucesso. O adaptador conferia apenas o status HTTP. Na
+prática, token revogado, cota estourada ou escopo faltando devolviam
+`data: {}` — que virava lista vazia, e a tela dizia **"criador sem post"**.
+
+É a mesma família de novo, na variante mais traiçoeira: não é ausência lida
+como zero, é **falha lida como ausência**, com a agravante de o HTTP dizer que
+deu tudo certo. A leitura do corpo passou a mapear os códigos conhecidos para
+os erros tipados que o resto do sistema já trata — inclusive `TokenRevokedError`,
+que é o que dispara a limpeza do token e o pedido de reconexão.
+
+**O handle que não era o handle.** `handle` recebia `display_name`, o nome livre
+que o criador troca quando quer; o `@` do perfil é `username`, que a Display API
+também devolve. Como o handle compõe a chave única
+`(influencer_id, platform, handle)`, **uma troca de nome de exibição nasceria
+como conta duplicada**, com o histórico partido em duas.
+
+**A página entregue como arquivo de vídeo.** `video_url` recebia `share_url`,
+que é a página do TikTok — HTML, não vídeo. O `HttpVideoFetcher` baixaria a
+página, gravaria com sufixo `.mp4` e a entregaria ao analisador multimodal. A
+Display API **não expõe arquivo baixável**; o campo passou a ficar nulo, e a
+análise de vídeo recusa explicitamente em vez de analisar uma página.
+
+Esse terceiro motivou uma guarda no próprio downloader: content-type de texto,
+JSON ou XML deixa de ser aceito. A lista é **de exclusão, não de permissão** —
+CDN de vídeo costuma servir `application/octet-stream`, e uma lista de
+permitidos recusaria download legítimo.
+
+| Módulo | Antes | Depois |
+|---|---|---|
+| `tiktok.py` | 41% | **100%** |
+| `media.py` | 100% | **100%** (2 cenários novos) |
+| Suíte inteira | 342 testes, 93% | **362 testes, 94%** |
+
+Com isso, **os cinco adaptadores de integração estão em 100%**. O saldo das duas
+últimas rodadas é de **seis defeitos reais** em código que teste de rota
+atravessava sem tocar — e nenhum deles apareceria em ambiente local, porque
+todos dependem de uma resposta que só a plataforma real produz.

@@ -18,8 +18,8 @@ linha cita o arquivo onde estão o método e os dados brutos.
 
 | Afirmação | Número | Como foi obtido | Evidência |
 |---|---|---|---|
-| O back-end tem cobertura automatizada | **342 testes, 93%** de `src/` | `pytest --cov=src` | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
-| A camada que fala com serviços externos é coberta | `instagram.py`, `gemini.py`, `youtube.py` e `media.py` a **100%**; `google_oauth` 96%; `microsoft_oauth` 91% | 113 cenários com dublês, sem rede | idem |
+| O back-end tem cobertura automatizada | **362 testes, 94%** de `src/` | `pytest --cov=src` | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
+| A camada que fala com serviços externos é coberta | **os 5 adaptadores a 100%** (`instagram`, `tiktok`, `youtube`, `gemini`, `media`); `google_oauth` 96%; `microsoft_oauth` 91% | 133 cenários com dublês, sem rede | idem |
 | A interface tem teste ponta a ponta | **42 testes**, 3,2 min | Playwright sobre a aplicação em funcionamento | [`testes/e2e-front.md`](testes/e2e-front.md) |
 | A interface é verificada além do teste automatizado | **7 verificações**, com defeito real registrado em cada uma | bateria manual sobre 22 rotas, 2 temas, 2 idiomas | [`testes/verificacao-pre-entrega.md`](testes/verificacao-pre-entrega.md) |
 
@@ -49,7 +49,7 @@ linha cita o arquivo onde estão o método e os dados brutos.
 | O sistema coleta de plataforma real via OAuth | canal de YouTube vinculado, **10 posts** e **1 comentário** ingeridos; 130 exibições conferem com o canal | fluxo completo de OAuth e sync em `mode: real` | [`testes/integracao-social.md`](testes/integracao-social.md) |
 | A análise de IA roda sobre conteúdo verdadeiro | análise completa em **30,7 s** sobre os posts coletados | `gemini-3.6-flash` | idem |
 | A exportação em PDF resiste a entrada adversa | **11 cenários**, nenhum arquivo corrompido, truncado ou ilegível | geração pelo caminho real de produção | [`testes/robustez-pdf.md`](testes/robustez-pdf.md) |
-| O adaptador do Instagram está conforme a API vigente | **3 defeitos** que impediriam a coleta, corrigidos; **100%** de cobertura | leitura do código contra a documentação da Graph API v25.0, na preparação do App Review | [`meta-app-review.md`](meta-app-review.md) |
+| Os adaptadores estão conformes às APIs vigentes | **6 defeitos** que impediriam ou falseariam a coleta, corrigidos; Instagram e TikTok de 0% e 41% para **100%** | leitura do código contra a documentação da Graph API v25.0 e da TikTok Display API v2 | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
 
 ## Limites que o texto precisa declarar
 
