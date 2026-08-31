@@ -268,6 +268,34 @@ def test_disconnect_clears_tokens(client, ctx):
     assert acc.refresh_token_encrypted is None
 
 
+def test_disconnect_preserva_o_historico_ja_coletado(client, ctx):
+    """Desconectar interrompe a coleta e preserva os posts — de propósito.
+
+    É uma decisão de produto: desligar a coleta não deve apagar o trabalho de
+    análise junto. E é uma decisão **publicada** — a Política de Privacidade e a
+    página de exclusão de dados afirmam exatamente isto ao usuário, então mudar
+    o comportamento sem revisar aqueles textos os tornaria falsos.
+
+    Para apagar o histórico existe caminho próprio, por pedido do titular.
+    """
+    acc = db.session.get(SocialAccount, uuid.UUID(ctx.sa_id))
+    acc.access_token_encrypted = encrypt_token("tok")
+    db.session.commit()
+    antes = db.session.scalars(
+        select(Post).where(Post.social_account_id == acc.id)
+    ).all()
+    assert antes, "o seed precisa ter posts para este teste medir algo"
+
+    r = client.post(f"/api/v1/integrations/youtube/disconnect/{ctx.sa_id}", headers=ctx.h_admin)
+    assert r.status_code == 200
+
+    db.session.expire_all()
+    depois = db.session.scalars(
+        select(Post).where(Post.social_account_id == uuid.UUID(ctx.sa_id))
+    ).all()
+    assert len(depois) == len(antes)
+
+
 # ==========================================================================
 # Sync
 # ==========================================================================
