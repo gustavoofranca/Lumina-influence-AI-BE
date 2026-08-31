@@ -88,6 +88,9 @@ por minuto, e esperar não resolve. Foi o que atrasou o item 3 em um dia, e é o
 que motivou desligar o agendador por padrão (`LUMINA_DISABLE_SCHEDULER=1`),
 já que `run_pending_analyses` consumia a cota sozinho nas primeiras horas.
 
+O custo de sair dessa cota foi medido a partir de `api_usage_logs` e está em
+[`cota-e-custo-gemini.md`](cota-e-custo-gemini.md): o limite nunca foi de preço.
+
 A mesma restrição impede o teste de **carga** sobre `POST /posts/:id/analyze` e
 o requisito de p95 ≤ 60 s medido contra o modelo real: 20 requisições diárias
 não sustentam bateria de carga nenhuma. O que existe é a medição isolada — a
