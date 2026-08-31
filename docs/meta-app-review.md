@@ -151,9 +151,18 @@ callback recebe um `signed_request` com o **ID do usuário do Facebook**, e a
 Lumina não guarda esse identificador — ela guarda o ID do perfil profissional do
 Instagram. Implementar o callback exigiria uma coluna nova e uma migration para
 gravar uma identidade que o produto não usa para mais nada. A página de
-instruções cumpre o requisito, descreve caminhos de exclusão que **existem e
-funcionam** na plataforma, e não introduz dado pessoal novo. Se um dia o
+instruções cumpre o requisito e não introduz dado pessoal novo. Se um dia o
 Facebook Login virar também o login da aplicação, a decisão muda.
+
+**A página descreve apenas caminhos que existem.** A primeira versão dela
+afirmava três coisas falsas — que desconectar apaga as publicações, e que
+"excluir criador" e "excluir conta" eram caminhos na interface. Os endpoints de
+exclusão existem, mas **a interface não os expõe**, e a desconexão preserva o
+histórico de propósito. O texto foi corrigido para descrever o que existe
+(desconectar na plataforma, revogar pela própria rede social) e encaminhar a
+exclusão do que já foi coletado ao pedido por e-mail, que é caminho aceito tanto
+pela Meta quanto pela LGPD. Um revisor que siga as instruções precisa chegar
+onde elas dizem.
 
 **Marketing API fora da submissão.** Ela é o que separaria alcance orgânico de
 pago (ver [ADR-005](adr/0005-alcance-organico-e-pago-vem-do-seed.md)), mas é
