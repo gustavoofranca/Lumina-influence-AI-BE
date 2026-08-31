@@ -18,9 +18,9 @@ linha cita o arquivo onde estão o método e os dados brutos.
 
 | Afirmação | Número | Como foi obtido | Evidência |
 |---|---|---|---|
-| O back-end tem cobertura automatizada | **317 testes, 92%** de `src/` | `pytest --cov=src` | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
-| A camada que fala com serviços externos é coberta | `gemini.py`, `youtube.py` e `media.py` a **100%**; `google_oauth` 96%; `microsoft_oauth` 91% | 88 cenários com dublês, sem rede | idem |
-| A interface tem teste ponta a ponta | **32 testes**, 2,7 min | Playwright sobre a aplicação em funcionamento | [`testes/e2e-front.md`](testes/e2e-front.md) |
+| O back-end tem cobertura automatizada | **342 testes, 93%** de `src/` | `pytest --cov=src` | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
+| A camada que fala com serviços externos é coberta | `instagram.py`, `gemini.py`, `youtube.py` e `media.py` a **100%**; `google_oauth` 96%; `microsoft_oauth` 91% | 113 cenários com dublês, sem rede | idem |
+| A interface tem teste ponta a ponta | **42 testes**, 3,2 min | Playwright sobre a aplicação em funcionamento | [`testes/e2e-front.md`](testes/e2e-front.md) |
 | A interface é verificada além do teste automatizado | **7 verificações**, com defeito real registrado em cada uma | bateria manual sobre 22 rotas, 2 temas, 2 idiomas | [`testes/verificacao-pre-entrega.md`](testes/verificacao-pre-entrega.md) |
 
 ## Segurança
@@ -49,6 +49,7 @@ linha cita o arquivo onde estão o método e os dados brutos.
 | O sistema coleta de plataforma real via OAuth | canal de YouTube vinculado, **10 posts** e **1 comentário** ingeridos; 130 exibições conferem com o canal | fluxo completo de OAuth e sync em `mode: real` | [`testes/integracao-social.md`](testes/integracao-social.md) |
 | A análise de IA roda sobre conteúdo verdadeiro | análise completa em **30,7 s** sobre os posts coletados | `gemini-3.6-flash` | idem |
 | A exportação em PDF resiste a entrada adversa | **11 cenários**, nenhum arquivo corrompido, truncado ou ilegível | geração pelo caminho real de produção | [`testes/robustez-pdf.md`](testes/robustez-pdf.md) |
+| O adaptador do Instagram está conforme a API vigente | **3 defeitos** que impediriam a coleta, corrigidos; **100%** de cobertura | leitura do código contra a documentação da Graph API v25.0, na preparação do App Review | [`meta-app-review.md`](meta-app-review.md) |
 
 ## Limites que o texto precisa declarar
 
@@ -58,7 +59,8 @@ declarados.
 
 | Limite | Por quê | Onde está a decisão |
 |---|---|---|
-| Só **1 das 3 plataformas** foi conectada de fato | Instagram e TikTok exigem HTTPS público e App Review, com prazo indeterminado | [ADR-005](adr/0005-alcance-organico-e-pago-vem-do-seed.md) |
+| Só **1 das 3 plataformas** foi conectada de fato | Instagram e TikTok exigem HTTPS público e App Review; a submissão à Meta está preparada e depende de domínio público e verificação de negócio | [`meta-app-review.md`](meta-app-review.md) |
+| O adaptador do Instagram **não foi validado contra a rede real** | não há App Review aprovado; o que existe é conformidade com a documentação e 25 testes com dublê | [ADR-007](adr/0007-instagram-com-facebook-login-e-views.md) |
 | A separação entre alcance **orgânico e pago vem do seed** | nenhuma API concede essa métrica sem programa comercial; a Data API v3 do YouTube não separa origem | idem |
 | Não há teste de carga sobre o endpoint de análise | o free tier do Gemini dá **20 requisições por dia**; medir p95 com carga esgotaria a cota | [`testes/carga.md`](testes/carga.md) |
 | A vazão medida é de um servidor com 4 workers | número de arquitetura, não de produto; o platô inicial de 32 req/s era teto do **gerador de carga**, não do servidor | idem |
@@ -79,6 +81,11 @@ que confirmaram o esperado, e sim as que expuseram limite do próprio método.**
   porque mede `color` e o SVG usa `fill`.
 - Um marcador de injeção de prompt apareceu na resposta do modelo e quase virou
   achado: estava no campo que **cita** o conteúdo analisado. Citar não é obedecer.
+- Ler o código contra a **documentação vigente** achou três defeitos que nenhum
+  teste local pegaria: os três só falham com um token real, e um deles só
+  falharia **depois** do App Review aprovado. Cobertura não substitui conferir a
+  API contra a fonte — o módulo tinha teste de rota passando e 0% de cobertura
+  própria.
 - A resposta do modelo **varia entre execuções idênticas**: a mesma carga
   repetida 3× produziu o marcador em 1. Teste sobre modelo generativo exige
   repetição.

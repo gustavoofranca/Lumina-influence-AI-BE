@@ -7,8 +7,8 @@ como reproduzir.
 
 - **Período de execução:** 25 a 27 de agosto de 2026
 - **Suíte do back-end ao fim da bateria:** 230 testes, 85% de cobertura de `src/`
-- **Suíte do back-end em 31/08, após a frente de robustez:** 317 testes, 92%
-- **Suíte de interface:** 32 testes ponta a ponta em Playwright
+- **Suíte do back-end em 31/08, após a frente de robustez:** 342 testes, 93%
+- **Suíte de interface:** 42 testes ponta a ponta em Playwright
 
 ## Resultado por frente
 
@@ -22,8 +22,9 @@ como reproduzir.
 | 6 | Documentação visual da arquitetura | 4 diagramas em Mermaid, versionados com o código | [`arquitetura/README.md`](arquitetura/README.md) |
 | 7 | Integração social contra conta real (B8) | canal de YouTube vinculado por OAuth, 10 posts e comentário real coletados; limite de alcance pago declarado | [`testes/integracao-social.md`](testes/integracao-social.md) |
 | 8 | Verificação de interface pré-entrega | 6 verificações sobre a interface em funcionamento; a última execução achou 1 tela que não renderizava | [`testes/verificacao-pre-entrega.md`](testes/verificacao-pre-entrega.md) |
-| 9 | Robustez das bordas | 88 cenários sobre integrações, login e filtros de listagem; 2 defeitos achados e corrigidos | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
-| 10 | Testes ponta a ponta da interface | 32 testes em Playwright cobrindo rotas, login, estado de erro, conta social, relatório, tema, idioma e foco | [`testes/e2e-front.md`](testes/e2e-front.md) |
+| 9 | Robustez das bordas | 113 cenários sobre integrações, login e filtros de listagem; **5 defeitos achados e corrigidos** | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
+| 10 | Testes ponta a ponta da interface | 42 testes em Playwright cobrindo rotas, login, estado de erro, conta social, relatório, tema, idioma, foco e páginas legais | [`testes/e2e-front.md`](testes/e2e-front.md) |
+| 11 | Preparação do App Review da Meta | 7 requisitos de código cumpridos; 3 defeitos que causariam rejeição, corrigidos | [`meta-app-review.md`](meta-app-review.md) |
 
 Para escrever: [`resultados-consolidados.md`](resultados-consolidados.md) reúne
 cada número medido, o método que o produziu e o relatório de origem — mais os
@@ -35,7 +36,9 @@ escrita, estão em [`capturas/`](capturas/).
 Decisões de projeto tomadas durante a bateria estão registradas como ADR em
 [`adr/`](adr/). O limite de coleta que a B8 expôs — a divisão entre alcance
 orgânico e pago não é concedida pelas APIs sem programa comercial — está na
-[ADR-005](adr/0005-alcance-organico-e-pago-vem-do-seed.md).
+[ADR-005](adr/0005-alcance-organico-e-pago-vem-do-seed.md); a escolha de
+configuração, versão e métrica do Instagram, na
+[ADR-007](adr/0007-instagram-com-facebook-login-e-views.md).
 
 ## O que cada frente encontrou
 
@@ -108,6 +111,17 @@ do requisito mas com margem estreita.
   são a própria documentação, e `POST /auth/dev-login`, atalho de
   desenvolvimento que não deve ser anunciado. As outras 53 estão documentadas.
 
+**App Review da Meta (item 11).** Preparar a submissão obrigou a ler o adaptador
+do Instagram contra a documentação vigente, e achou três defeitos que nenhum
+teste local pegaria — todos dependem de um token real. O mais grave: o código
+pedia `impressions`, removida da API em abril de 2025, que hoje devolve **erro**
+e derrubaria a coleta inteira do criador conectado. Os outros dois foram falar
+com o nó errado da Graph (`/me`, que num token de Facebook é a pessoa e não o
+perfil do Instagram) e um escopo faltando, que só falharia **depois** da
+aprovação. Junto entraram as três páginas públicas que o revisor abre antes de
+olhar o app — política de privacidade, termos e exclusão de dados, nos dois
+idiomas —, cujos links no rodapé apontavam para `#`.
+
 ## Um padrão que atravessou o projeto inteiro
 
 Vale registrar porque não é achado de uma frente só: **ausência de dado
@@ -117,6 +131,16 @@ caindo em `?? 0` quando o detalhe não trazia métricas, coluna "última anális
 exibindo "31 de dez." porque `new Date(null)` cai no epoch sem lançar erro, e KPI
 de engajamento mostrando `0%` ao lado de indicadores em `—`.
 
+Depois apareceu em mais três formas: **ausência de resposta** lida como ausência
+de dado (quatro telas afirmando "nenhum registro" com a API fora do ar),
+**ausência tratada como exclusão** (criador sem conta social sumindo do filtro de
+seguidores, porque a soma era `INNER JOIN`) e, em 31/08, **conta não vinculada
+lida como criador sem publicação** — o Instagram devolvia lista vazia para conta
+pessoal, e o resto do sistema não tem como distinguir "não publicou" de "não
+temos acesso".
+
 Num trabalho sobre auditoria de dado, exibir número inventado como se fosse real
 é o pior defeito possível. A regra está na [ADR-002](adr/0002-kpis-financeiros-como-proxies.md):
-sem dado, o back-end devolve `null` e a interface mostra ausência.
+sem dado, o back-end devolve `null` e a interface mostra ausência. A variante da
+borda é a mesma coisa: **quando o sistema não sabe, ele precisa dizer que não
+sabe** — daí o `AccountNotLinkedError` em vez da lista vazia.

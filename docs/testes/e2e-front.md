@@ -4,7 +4,7 @@ Executado pela primeira vez em 31 de agosto de 2026. Fecha a etapa 2 do plano
 de robustez: até aqui, **os 317 testes da suíte eram todos do back-end** e o
 front não tinha ferramenta de teste nenhuma.
 
-- **Ferramenta:** Playwright, 32 testes, 2,7 min por execução completa.
+- **Ferramenta:** Playwright, 42 testes, 3,2 min por execução completa.
 - **Onde:** `Lumina-Influence-AI-FE/e2e/`, com `package.json` próprio.
 - **Como rodar:** `cd Lumina-Influence-AI-FE/e2e && npm install && npm test`,
   com a stack de pé.
@@ -21,7 +21,7 @@ O primeiro arquivo da suíte automatiza exatamente essa varredura.
 
 | Arquivo | Testes | O que trava |
 |---|---|---|
-| `rotas.spec.js` | 18 | toda rota renderiza com texto em `main` e console limpo, incluindo as de detalhe com id real |
+| `rotas.spec.js` | 21 | toda rota renderiza com texto em `main` e console limpo, incluindo as de detalhe com id real |
 | `login.spec.js` | 3 | entrada pelo atalho de desenvolvimento, rota protegida sem sessão, e a ADR-001 — sessão sobrevive ao F5, não à aba nova |
 | `estado-de-erro.spec.js` | 3 | falha de carregamento aparece como erro com "tentar de novo", **nunca** como "nenhuma análise no histórico" ou campanha sem participante |
 | `conta-social.spec.js` | 2 | o estado "conectada" vem do campo `connected` do payload, não da existência do registro |
@@ -29,8 +29,15 @@ O primeiro arquivo da suíte automatiza exatamente essa varredura.
 | `tema-e-idioma.spec.js` | 2 | as duas preferências sobrevivem a recarregar e a navegar por URL |
 | `modal.spec.js` | 1 | o modal leva o foco para dentro, prende o Tab e devolve ao gatilho ao fechar |
 | `teclado.spec.js` | 1 | as abas andam por setas, Home e End, e ocupam uma só parada de tabulação |
+| `paginas-legais.spec.js` | 7 | política, termos e exclusão de dados existem em URL própria, nos dois idiomas, e o rodapé leva até elas |
 
-Os dois últimos travam o que revisão de olho não vê: foco. Os três primeiros
+`paginas-legais.spec.js` entrou em 31/08, junto da preparação para o App Review
+da Meta: as três páginas são a primeira coisa que o revisor abre, e antes disso
+os links do rodapé apontavam para `#`. O teste não mede aparência — mede que a
+URL existe, que o texto chegou (o documento vem inteiro do i18n, e chave errada
+renderiza a chave), que a versão em inglês existe e que o rodapé chega lá.
+
+Os dois anteriores travam o que revisão de olho não vê: foco. Os três primeiros
 travam defeitos que **já aconteceram**: a tela em branco, o
 estado de erro lido como ausência (corrigido em 31/08) e a conta social cujo
 "Desconectar" devolvia 200 sem mudar a tela.

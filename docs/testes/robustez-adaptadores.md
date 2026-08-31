@@ -55,6 +55,8 @@ Três contratos foram escolhidos por consequência, não por linha descoberta:
 | `influencer_service.py` | 83% | **100%** |
 | Suíte inteira | 230 testes, 86% | **317 testes, 92%** |
 
+(a quarta rodada, abaixo, levou a suíte a 342 testes e 93%)
+
 Nos três primeiros módulos, nenhum defeito novo apareceu: eles se comportaram
 como o código prometia em todos os 56 cenários. O ganho é de regressão — o
 mapeamento de alcance, em particular, agora tem um teste que falha em voz alta
@@ -105,6 +107,50 @@ filtra para conjunto vazio em vez de estourar 500.
 
 `campaign_service` e `influencer_service` ficaram em **100%**; a suíte, em
 **317 testes e 92%**.
+
+## Quarta rodada: o adaptador do Instagram
+
+Mesmo método, agora sobre o único adaptador que nunca foi exercido contra a rede
+real — e o de pior cobertura que restava: **0%**. O gatilho foi a preparação da
+submissão ao App Review da Meta, que obrigou a ler o código linha a linha contra
+a documentação vigente da Graph API.
+
+**Três defeitos reais, e nenhum deles apareceria em ambiente local**, porque os
+três só se manifestam quando existe um token de verdade:
+
+| Defeito | O que aconteceria em produção |
+|---|---|
+| Pedia a métrica `impressions`, removida da API em 21/04/2025 | erro — não zero — para toda mídia posterior a 02/07/2024, derrubando a coleta inteira junto com alcance, curtidas e salvamentos |
+| Falava com `/me` para perfil e mídia | `/me` num token de usuário do Facebook é a pessoa, não o perfil do Instagram: `followers_count` e `media` não existem nesse nó |
+| Faltava o escopo `pages_read_engagement` | a listagem de Páginas funciona e a leitura da Página escolhida devolve 403 |
+
+O terceiro é o mais traiçoeiro: só apareceria **depois** do App Review aprovado,
+quando corrigir custa outra fila de revisão.
+
+Junto vieram dois acertos de modelagem. Conta pessoal do Instagram — que
+autoriza e não devolve nada — virava lista vazia, que o resto do sistema leria
+como "o criador não publicou"; agora levanta `AccountNotLinkedError` (422). E
+`media_type` chama Reel e vídeo de feed igualmente de `VIDEO`: quem separa é
+`media_product_type`, e o benchmarking compara por tipo de post.
+
+O raciocínio completo — por que a v25.0, por que a configuração com Facebook
+Login, por que `views` — está na
+[ADR-007](../adr/0007-instagram-com-facebook-login-e-views.md).
+
+| Módulo | Antes | Depois |
+|---|---|---|
+| `instagram.py` | 0% | **100%** (25 testes) |
+| Suíte inteira | 317 testes, 92% | **342 testes, 93%** |
+
+Três testes existem só para impedir a volta de cada defeito: que `impressions`
+não aparece entre os campos pedidos, que `/me` não é consultado, e que os quatro
+escopos estão na URL de autorização. É a mesma lógica do teste que trava
+`reach_paid = 0` — o que se protege não é a linha, é a decisão.
+
+**O que esta rodada não prova:** nenhuma chamada foi feita contra a rede real,
+porque não há App Review aprovado. O que existe é conformidade com a
+documentação vigente. A validação de verdade é o primeiro sync com o app em
+modo Live, e o plano dela está em [`../meta-app-review.md`](../meta-app-review.md).
 
 ## Três pontos que o teste fixou como contrato
 
