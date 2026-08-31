@@ -1,6 +1,6 @@
 # Bateria de verificação pré-entrega
 
-Seis verificações que rodam sobre a interface em funcionamento, não sobre o
+Sete verificações que rodam sobre a interface em funcionamento, não sobre o
 código. Existem porque cada uma delas **já achou defeito que build, teste
 unitário e revisão de olho não pegaram** — a coluna "o que achou" registra o
 caso real que justificou incluir a verificação.
@@ -18,6 +18,7 @@ criador e as 6 seções de configurações, nos dois temas e nos dois idiomas.
 | 4 | Botão sem ação atrás | 7 botões mortos, entre eles "Gerar Relatório" e "Abrir auditoria" | 0 | 0 (12 achados, todos na página de showcase) |
 | 5 | Texto fora do i18n | "Entrar com Google" em português na tela em inglês; idioma que não persistia | 0 | **2 defeitos, corrigidos** |
 | 6 | Teclado e foco | — | controles do header aprovados | sem controle novo nesta rodada |
+| 7 | Erro de carregamento lido como ausência | banner de erro com a tabela dizendo "nenhum criador" logo abaixo | — | **4 telas, corrigidas** |
 
 ### Os dois achados de 28/08
 
@@ -36,6 +37,36 @@ direto no JSX, sem passar por `t()`.
 Nenhum dos dois aparecia na varredura dinâmica: o primeiro porque "Latest" é
 inglês numa tela que estava em inglês, o segundo porque o termo é idêntico nos
 dois idiomas. **A varredura estática e a dinâmica não se substituem.**
+
+### O achado do item 7, em 28/08
+
+A verificação nova desta rodada, tirada da lista de "defeitos que se repetem e
+valem procurar por nome". O método: percorrer as chamadas do `useApi`
+procurando quem descarta o `error` da tupla, e confirmar cada suspeita
+interceptando `window.fetch` no navegador para rejeitar só aquele endpoint.
+
+Sete chamadas descartavam o erro. Com a API fora do ar, quatro telas passavam a
+**afirmar fatos sobre o dado que ninguém mediu**:
+
+| Tela | O que dizia com a API em erro |
+|---|---|
+| Criador → Histórico | "Nenhuma análise no histórico deste criador" — o criador tinha sete |
+| Criador → Posts | "Nenhum post analisado para este criador" |
+| Criador → Diagnóstico IA | "Indicadores indisponíveis — rode uma análise", mandando gastar cota do Gemini para resolver falha de rede |
+| Campanha e assistente de relatório | campanha sem participante; no assistente, "nenhum influenciador vinculado" ao lado da badge "3 criadores" |
+
+É a família do zero versus nulo da ADR-003, aplicada a recurso: **ausência de
+resposta apresentada como ausência de dado.** Corrigido em `7f00fcb` (FE), com
+o banner de erro **substituindo** o conteúdo que falhou — estado vazio embaixo
+de banner de erro é a mesma afirmação falsa, só que acompanhada.
+
+O filtro de campanhas do dashboard ficou de fora de propósito: falha ali deixa
+o seletor sem opção, o que não afirma nada sobre o dado.
+
+**Detalhe de método:** o `Skeleton` de carregamento não tem texto nenhum, então
+medir "0 caractere" numa área em carregamento parece tela quebrada. No passo 2
+do assistente de relatório a lista só aparece depois de ~5 s contra o Supabase.
+Espere o dado antes de concluir qualquer coisa.
 
 Os dois scripts do item 4 e da parte estática do item 5 ficaram versionados em
 [`scripts/`](scripts/) — rodar é `python3 scripts/botao_morto.py <caminho>/src`
