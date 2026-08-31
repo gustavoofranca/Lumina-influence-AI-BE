@@ -1,4 +1,4 @@
-"""Testes da camada de transporte das integrações: YouTube, Gemini e mídia.
+"""Testes da camada de transporte das integrações: Instagram, YouTube, Gemini e mídia.
 
 Estes três módulos eram os de menor cobertura da suíte porque todo teste até
 aqui os substituía por dublê: `test_integrations.py` usa um `FakeAdapter` e
@@ -17,9 +17,11 @@ from datetime import datetime, timezone
 
 import pytest
 
+import src.integrations.instagram as ig_mod
 import src.integrations.media as media_mod
 import src.integrations.youtube as yt_mod
 from src.integrations.base import (
+    AccountNotLinkedError,
     PlatformNotConfiguredError,
     PrivateAccountError,
     RateLimitError,
@@ -32,6 +34,7 @@ from src.integrations.gemini import (
     GeminiNotConfiguredError,
     GeminiQuotaError,
 )
+from src.integrations.instagram import InstagramAdapter
 from src.integrations.media import HttpVideoFetcher, VideoAsset, VideoFetchError
 from src.integrations.youtube import YouTubeAdapter
 from src.models import PostType
@@ -865,3 +868,305 @@ def test_troca_de_code_bem_sucedida_devolve_o_payload_do_provedor(app, monkeypat
     monkeypatch.setattr(goog.requests, "post", FakeHttp({"token": FakeResponse(json_body=corpo)}))
     with app.app_context():
         assert goog.GoogleOAuthClient().exchange_code(code="c", redirect_uri="http://cb") == corpo
+
+
+# ==========================================================================
+# Instagram — credenciais, escopos e troca de token
+# ==========================================================================
+IG_ID = "17841400000000000"
+
+
+def _paginas(*itens):
+    return FakeResponse(json_body={"data": list(itens)})
+
+
+def _pagina(*, id="pg-1", ig_id=IG_ID, token="tok-pagina"):
+    p = {"id": id, "name": "Página do Criador"}
+    if ig_id is not None:
+        p["instagram_business_account"] = {"id": ig_id}
+    if token is not None:
+        p["access_token"] = token
+    return p
+
+
+def test_instagram_sem_credencial_recusa_antes_de_chamar_a_rede(app, monkeypatch):
+    with app.app_context():
+        monkeypatch.setitem(app.config, "META_CLIENT_ID", None)
+        with pytest.raises(PlatformNotConfiguredError):
+            InstagramAdapter().build_auth_url(state="s", redirect_uri="http://cb")
+
+
+def test_instagram_pede_os_quatro_escopos_da_configuracao_com_facebook_login(app):
+    with app.app_context():
+        url = InstagramAdapter().build_auth_url(state="s", redirect_uri="http://cb")
+    # instagram_manage_insights só existe nesta configuração, e sem
+    # pages_read_engagement a leitura da Página encontrada volta 403.
+    for escopo in ("instagram_basic", "instagram_manage_insights",
+                   "pages_show_list", "pages_read_engagement"):
+        assert escopo in url
+
+
+def test_instagram_usa_versao_da_graph_ainda_suportada(app):
+    with app.app_context():
+        url = InstagramAdapter().build_auth_url(state="s", redirect_uri="http://cb")
+    assert ig_mod.API_VERSION in url
+    # A v21.0 expira em jan/2027 e é anterior à remoção de `impressions`.
+    assert ig_mod.API_VERSION not in ("v21.0", "v20.0")
+
+
+def test_instagram_troca_codigo_por_long_lived_sem_refresh_token(app, monkeypatch):
+    http = FakeHttp({"oauth/access_token": FakeResponse(
+        json_body={"access_token": "acc-1", "expires_in": 5183944})})
+    monkeypatch.setattr(ig_mod.requests, "get", http)
+    with app.app_context():
+        bundle = InstagramAdapter().exchange_code(code="c", redirect_uri="http://cb")
+    assert bundle.access_token == "acc-1"
+    assert bundle.refresh_token is None  # Meta não emite refresh token
+    assert bundle.expires_at > datetime.now(timezone.utc)
+
+
+def test_instagram_renova_pelo_fb_exchange_token(app, monkeypatch):
+    http = FakeHttp({"oauth/access_token": FakeResponse(json_body={"access_token": "acc-2"})})
+    monkeypatch.setattr(ig_mod.requests, "get", http)
+    with app.app_context():
+        bundle = InstagramAdapter().refresh("antigo")
+    assert bundle.access_token == "acc-2"
+    assert http.calls[0][1]["params"]["grant_type"] == "fb_exchange_token"
+
+
+# ==========================================================================
+# Instagram — descoberta da conta profissional
+# ==========================================================================
+def test_instagram_encontra_a_pagina_com_instagram_vinculado(app, monkeypatch):
+    http = FakeHttp({
+        "/me/accounts": _paginas(_pagina(id="sem-ig", ig_id=None), _pagina()),
+        f"/{IG_ID}": FakeResponse(json_body={
+            "id": IG_ID, "username": "criador", "followers_count": 4200}),
+    })
+    monkeypatch.setattr(ig_mod.requests, "get", http)
+    with app.app_context():
+        perfil = InstagramAdapter().fetch_profile_metrics("token-de-usuario")
+    assert perfil.handle == "criador"
+    assert perfil.follower_count == 4200
+    assert perfil.platform_user_id == IG_ID
+
+
+def test_instagram_perfil_usa_o_token_da_pagina_e_nao_o_do_usuario(app, monkeypatch):
+    # O token que sai do login é de usuário do Facebook; as rotas do Instagram
+    # só aceitam o token da Página. Trocar os dois é 403 em produção.
+    http = FakeHttp({
+        "/me/accounts": _paginas(_pagina()),
+        f"/{IG_ID}": FakeResponse(json_body={"id": IG_ID, "username": "c",
+                                             "followers_count": 1}),
+    })
+    monkeypatch.setattr(ig_mod.requests, "get", http)
+    with app.app_context():
+        InstagramAdapter().fetch_profile_metrics("token-de-usuario")
+    url_perfil, kwargs = http.calls[-1]
+    assert IG_ID in url_perfil
+    assert kwargs["params"]["access_token"] == "tok-pagina"
+
+
+def test_instagram_nunca_pergunta_o_perfil_ao_no_me(app, monkeypatch):
+    # `/me` num token de usuário do Facebook é a pessoa, não o perfil do
+    # Instagram: `followers_count` e `media` não existem nesse nó.
+    http = FakeHttp({
+        "/me/accounts": _paginas(_pagina()),
+        f"/{IG_ID}": FakeResponse(json_body={"id": IG_ID, "username": "c",
+                                             "followers_count": 1}),
+    })
+    monkeypatch.setattr(ig_mod.requests, "get", http)
+    with app.app_context():
+        InstagramAdapter().fetch_profile_metrics("t")
+    assert not any(url.endswith("/me") for url, _ in http.calls)
+
+
+def test_instagram_conta_pessoal_vira_erro_tipado_e_nao_perfil_vazio(app, monkeypatch):
+    http = FakeHttp({"/me/accounts": _paginas(_pagina(ig_id=None))})
+    monkeypatch.setattr(ig_mod.requests, "get", http)
+    with app.app_context():
+        with pytest.raises(AccountNotLinkedError):
+            InstagramAdapter().fetch_recent_posts("t")
+
+
+def test_instagram_sem_nenhuma_pagina_vira_erro_tipado(app, monkeypatch):
+    monkeypatch.setattr(ig_mod.requests, "get", FakeHttp({"/me/accounts": _paginas()}))
+    with app.app_context():
+        with pytest.raises(AccountNotLinkedError):
+            InstagramAdapter().fetch_recent_posts("t")
+
+
+def test_instagram_pagina_sem_token_e_escopo_faltando_e_nao_desvinculo(app, monkeypatch):
+    # Os dois casos pedem orientações opostas ao usuário: reconceder permissão
+    # versus vincular a conta a uma Página.
+    monkeypatch.setattr(ig_mod.requests, "get",
+                        FakeHttp({"/me/accounts": _paginas(_pagina(token=None))}))
+    with app.app_context():
+        with pytest.raises(PlatformNotConfiguredError):
+            InstagramAdapter().fetch_recent_posts("t")
+
+
+def test_instagram_descobre_a_conta_uma_vez_so_por_sync(app, monkeypatch):
+    # A mesma instância atende perfil, mídia e comentários de cada post; repetir
+    # a descoberta gastaria uma chamada por post do limite da Graph.
+    http = FakeHttp({
+        "/me/accounts": _paginas(_pagina()),
+        f"/{IG_ID}/media": FakeResponse(json_body={"data": []}),
+        f"/{IG_ID}": FakeResponse(json_body={"id": IG_ID, "username": "c",
+                                             "followers_count": 1}),
+    })
+    monkeypatch.setattr(ig_mod.requests, "get", http)
+    with app.app_context():
+        adapter = InstagramAdapter()
+        adapter.fetch_profile_metrics("t")
+        adapter.fetch_recent_posts("t")
+    assert sum(1 for url, _ in http.calls if "/me/accounts" in url) == 1
+
+
+# ==========================================================================
+# Instagram — normalização de mídia
+# ==========================================================================
+def _insights(**metricas):
+    return {"data": [{"name": n, "values": [{"value": v}]} for n, v in metricas.items()]}
+
+
+def _midia(*itens):
+    return FakeResponse(json_body={"data": list(itens)})
+
+
+def _com_conta(monkeypatch, midia):
+    http = FakeHttp({"/me/accounts": _paginas(_pagina()), f"/{IG_ID}/media": midia})
+    monkeypatch.setattr(ig_mod.requests, "get", http)
+    return http
+
+
+def test_instagram_pede_views_e_nunca_a_metrica_removida(app, monkeypatch):
+    # `impressions` foi removida na v22.0 e devolve erro para mídia posterior a
+    # 02/07/2024: pedi-la derruba a coleta inteira, não só a métrica.
+    http = _com_conta(monkeypatch, _midia())
+    with app.app_context():
+        InstagramAdapter().fetch_recent_posts("t")
+    campos = http.calls[-1][1]["params"]["fields"]
+    assert "views" in campos
+    assert "impressions" not in campos
+
+
+def test_instagram_normaliza_post_com_views_no_lugar_de_impressoes(app, monkeypatch):
+    _com_conta(monkeypatch, _midia({
+        "id": "m-1", "caption": "olá", "media_type": "IMAGE", "media_product_type": "FEED",
+        "timestamp": "2026-08-01T12:00:00+0000", "media_url": "http://img",
+        "like_count": 120, "comments_count": 8,
+        "insights": _insights(reach=3000, views=4500, saved=30, shares=12),
+    }))
+    with app.app_context():
+        post = InstagramAdapter().fetch_recent_posts("t")[0]
+    assert post.post_type is PostType.IMAGE
+    assert post.reach_total == 3000
+    assert post.impressions == 4500  # `views` alimenta o campo interno
+    assert post.likes == 120
+    assert post.saves == 30
+    assert post.shares == 12
+    assert post.video_url is None
+
+
+def test_instagram_declara_todo_alcance_como_organico(app, monkeypatch):
+    # Sem a Marketing API a Graph não separa pago; inventar a divisão aqui seria
+    # apresentar estimativa como medição (ADR-005).
+    _com_conta(monkeypatch, _midia({
+        "id": "m-1", "media_type": "IMAGE", "timestamp": "2026-08-01T12:00:00+0000",
+        "insights": _insights(reach=900),
+    }))
+    with app.app_context():
+        post = InstagramAdapter().fetch_recent_posts("t")[0]
+    assert post.reach_organic == 900
+    assert post.reach_paid == 0
+
+
+def test_instagram_separa_reel_de_video_de_feed(app, monkeypatch):
+    # `media_type` chama os dois de VIDEO; quem distingue é media_product_type,
+    # e o benchmarking compara por tipo de post.
+    _com_conta(monkeypatch, _midia(
+        {"id": "r", "media_type": "VIDEO", "media_product_type": "REELS",
+         "timestamp": "2026-08-01T12:00:00+0000", "media_url": "http://v1",
+         "insights": _insights(reach=1)},
+        {"id": "v", "media_type": "VIDEO", "media_product_type": "FEED",
+         "timestamp": "2026-08-01T12:00:00+0000", "media_url": "http://v2",
+         "insights": _insights(reach=1)},
+    ))
+    with app.app_context():
+        reel, video = InstagramAdapter().fetch_recent_posts("t")
+    assert reel.post_type is PostType.REEL
+    assert video.post_type is PostType.VIDEO
+    assert reel.video_url == "http://v1"  # o download multimodal depende disso
+
+
+def test_instagram_carrossel_vira_carousel(app, monkeypatch):
+    _com_conta(monkeypatch, _midia({
+        "id": "c", "media_type": "CAROUSEL_ALBUM", "media_product_type": "FEED",
+        "timestamp": "2026-08-01T12:00:00+0000", "insights": _insights(reach=1),
+    }))
+    with app.app_context():
+        assert InstagramAdapter().fetch_recent_posts("t")[0].post_type is PostType.CAROUSEL
+
+
+def test_instagram_insight_ausente_nao_quebra_a_coleta(app, monkeypatch):
+    # Mídia recém-publicada volta sem insights; o post ainda precisa entrar.
+    _com_conta(monkeypatch, _midia({"id": "m", "media_type": "IMAGE"}))
+    with app.app_context():
+        post = InstagramAdapter().fetch_recent_posts("t")[0]
+    assert post.reach_total == 0
+    assert post.impressions == 0
+
+
+def test_instagram_data_ilegivel_nao_derruba_a_coleta(app, monkeypatch):
+    _com_conta(monkeypatch, _midia({
+        "id": "m", "media_type": "IMAGE", "timestamp": "ontem",
+        "insights": _insights(reach=1),
+    }))
+    with app.app_context():
+        assert InstagramAdapter().fetch_recent_posts("t")[0].posted_at is not None
+
+
+@pytest.mark.parametrize("status, esperado", [
+    (429, RateLimitError),
+    (401, TokenRevokedError),
+    (403, PrivateAccountError),
+    (500, SocialApiError),
+])
+def test_instagram_traduz_erro_http_em_excecao_tipada(app, monkeypatch, status, esperado):
+    monkeypatch.setattr(ig_mod.requests, "get",
+                        FakeHttp({"/me/accounts": FakeResponse(status_code=status, text="{}")}))
+    with app.app_context():
+        with pytest.raises(esperado):
+            InstagramAdapter().fetch_recent_posts("t")
+
+
+# ==========================================================================
+# Instagram — insights e comentários por post
+# ==========================================================================
+def test_instagram_insights_de_post_usam_o_token_da_pagina(app, monkeypatch):
+    http = FakeHttp({
+        "/me/accounts": _paginas(_pagina()),
+        "/m-1/insights": FakeResponse(json_body=_insights(reach=10, views=20)),
+    })
+    monkeypatch.setattr(ig_mod.requests, "get", http)
+    with app.app_context():
+        dados = InstagramAdapter().fetch_post_insights("t", "m-1")
+    assert dados == {"reach": 10, "views": 20}
+    assert http.calls[-1][1]["params"]["access_token"] == "tok-pagina"
+    assert "impressions" not in http.calls[-1][1]["params"]["metric"]
+
+
+def test_instagram_normaliza_comentario(app, monkeypatch):
+    http = FakeHttp({
+        "/me/accounts": _paginas(_pagina()),
+        "/m-1/comments": FakeResponse(json_body={"data": [{
+            "id": "c-1", "text": "amei", "username": "fa",
+            "timestamp": "2026-08-02T10:00:00+0000", "like_count": 3}]}),
+    })
+    monkeypatch.setattr(ig_mod.requests, "get", http)
+    with app.app_context():
+        c = InstagramAdapter().fetch_post_comments("t", "m-1")[0]
+    assert c.content == "amei"
+    assert c.author_handle == "fa"
+    assert c.like_count == 3

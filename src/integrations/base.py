@@ -43,6 +43,19 @@ class PrivateAccountError(SocialApiError):
     code = "platform_account_private"
 
 
+class AccountNotLinkedError(SocialApiError):
+    """Autorização válida, mas sem o perfil que o adaptador precisa ler.
+
+    No Instagram é o caso mais comum de "conectei e não veio nada": o login é
+    do Facebook, e a conta profissional só aparece se estiver vinculada a uma
+    Página. Sem um erro próprio isso chegava como lista vazia, que o resto do
+    sistema leria como "o criador não publicou" — ausência virando fato.
+    """
+
+    status_code = 422
+    code = "platform_account_not_linked"
+
+
 # Erros que o servidor OAuth devolve quando a credencial *do app* está errada.
 # Chegam como 400 ou 401, os mesmos status de token do usuário inválido, e a
 # distinção só existe no corpo. Confundir os dois é caro: `sync_influencer`
