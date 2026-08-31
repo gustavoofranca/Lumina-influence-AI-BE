@@ -17,7 +17,7 @@ criador e as 6 seções de configurações, nos dois temas e nos dois idiomas.
 | 3 | Vazamento de largura em 390px | 4 telas estourando a viewport por falta de `min-w-0` | 0 estouros | 0 em 13 rotas |
 | 4 | Botão sem ação atrás | 7 botões mortos, entre eles "Gerar Relatório" e "Abrir auditoria" | 0 | 0 (12 achados, todos na página de showcase) |
 | 5 | Texto fora do i18n | "Entrar com Google" em português na tela em inglês; idioma que não persistia | 0 | **2 defeitos, corrigidos** |
-| 6 | Teclado e foco | — | controles do header aprovados | sem controle novo nesta rodada |
+| 6 | Teclado e foco | modal que prometia confinar o foco e não confinava; abas com `role="tab"` sem navegação por setas | controles do header aprovados | **rodada inteira: 4 defeitos, corrigidos** |
 | 7 | Erro de carregamento lido como ausência | banner de erro com a tabela dizendo "nenhum criador" logo abaixo | — | **4 telas, corrigidas** |
 
 ### Os dois achados de 28/08
@@ -67,6 +67,47 @@ o seletor sem opção, o que não afirma nada sobre o dado.
 medir "0 caractere" numa área em carregamento parece tela quebrada. No passo 2
 do assistente de relatório a lista só aparece depois de ~5 s contra o Supabase.
 Espere o dado antes de concluir qualquer coisa.
+
+### A verificação 6 rodada por inteiro (28/08)
+
+Era a única das sete que nunca tinha sido feita além dos controles do cabeçalho.
+Método: percorrer todo elemento focável de cada tela medindo quatro coisas —
+nome acessível, alcance por foco, anel de foco visível e alvo de toque de 24px
+(WCAG 2.5.8).
+
+**Resultado:** nome acessível e anel de foco passaram em tudo, no app e na
+landing. Os quatro defeitos foram:
+
+| Defeito | Consequência |
+|---|---|
+| `Modal` com `aria-modal="true"` sem confinar o foco | O Tab passeava pela página atrás do overlay: quatro formulários inalcançáveis por teclado |
+| `Tabs` com `role="tab"` sem setas nem foco itinerante | O papel promete navegação por setas; o leitor anuncia "use as setas" e elas não faziam nada |
+| `role="button"` no `<tr>` da tabela | Apagava a semântica de linha: sumia o "linha 3 de 12" e a leitura do cabeçalho junto da célula |
+| 8 alvos abaixo de 24px na landing, 2 no design system | Toque impreciso em tela pequena |
+
+Os dois primeiros ganharam teste ponta a ponta próprio, porque revisão de olho
+não vê foco.
+
+**Armadilha de medição:** âncora inline envolvendo botão mede a altura da linha,
+não a do botão. "Nova Campanha" aparecia como alvo de 20px e o alvo real é 40px.
+
+### Três pontos cegos das próprias verificações, achados em 28/08
+
+Uma varredura estática de código, feita em paralelo, achou defeito que as sete
+verificações não pegavam **por limite de método** — e vale mais registrar o
+limite que o defeito:
+
+1. **Contraste não enxerga SVG.** A verificação 2 percorre nós de texto lendo
+   `color`; texto de SVG usa `fill`. Os 10 rótulos de eixo dos gráficos saíam a
+   **2,4:1** no tema claro e passaram limpos em duas execuções. Ao medir
+   contraste, percorra também `svg text`.
+2. **Nada sem texto é medido.** O `Skeleton` usava cinza fixo e, no tema claro,
+   toda tela em carregamento virava uma grade de retângulos escuros. É
+   `aria-hidden` e não tem texto, então nenhuma das sete o alcançava. O que pega
+   é **capturar a tela no meio do carregamento**, segurando a resposta da API.
+3. **A varredura de i18n só olha JSX.** Texto dentro de handler
+   (`setToast({ message: 'Download iniciado' })`) não aparece entre `>texto<`
+   nem em atributo, e sobreviveu a duas auditorias de idioma.
 
 Os dois scripts do item 4 e da parte estática do item 5 ficaram versionados em
 [`scripts/`](scripts/) — rodar é `python3 scripts/botao_morto.py <caminho>/src`

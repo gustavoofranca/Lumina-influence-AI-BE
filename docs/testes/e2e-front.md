@@ -4,7 +4,7 @@ Executado pela primeira vez em 28 de agosto de 2026. Fecha a etapa 2 do plano
 de robustez: até aqui, **os 317 testes da suíte eram todos do back-end** e o
 front não tinha ferramenta de teste nenhuma.
 
-- **Ferramenta:** Playwright, 30 testes, 2,7 min por execução completa.
+- **Ferramenta:** Playwright, 32 testes, 2,7 min por execução completa.
 - **Onde:** `Lumina-Influence-AI-FE/e2e/`, com `package.json` próprio.
 - **Como rodar:** `cd Lumina-Influence-AI-FE/e2e && npm install && npm test`,
   com a stack de pé.
@@ -27,8 +27,11 @@ O primeiro arquivo da suíte automatiza exatamente essa varredura.
 | `conta-social.spec.js` | 2 | o estado "conectada" vem do campo `connected` do payload, não da existência do registro |
 | `relatorio.spec.js` | 2 | assistente do zero à pré-visualização, e a validação que barra o avanço sem campanha escolhida |
 | `tema-e-idioma.spec.js` | 2 | as duas preferências sobrevivem a recarregar e a navegar por URL |
+| `modal.spec.js` | 1 | o modal leva o foco para dentro, prende o Tab e devolve ao gatilho ao fechar |
+| `teclado.spec.js` | 1 | as abas andam por setas, Home e End, e ocupam uma só parada de tabulação |
 
-Os três primeiros travam defeitos que **já aconteceram**: a tela em branco, o
+Os dois últimos travam o que revisão de olho não vê: foco. Os três primeiros
+travam defeitos que **já aconteceram**: a tela em branco, o
 estado de erro lido como ausência (corrigido em 28/08) e a conta social cujo
 "Desconectar" devolvia 200 sem mudar a tela.
 
