@@ -88,11 +88,20 @@ class GoogleOAuthClient:
                 details={"status": r.status_code, "body": r.text[:500]},
             )
         data = r.json()
-        # Campos OIDC padrão: sub, email, name, picture
+        # Campos OIDC padrão: sub, email, name, picture. Os dois primeiros são
+        # a identidade em si — sem eles não há login, e o usuário pode não ter
+        # concedido o escopo. Ler direto da chave transformaria isso em
+        # KeyError e 500, escondendo a causa.
+        faltando = [campo for campo in ("sub", "email") if not data.get(campo)]
+        if faltando:
+            raise GoogleOAuthError(
+                "UserInfo do Google sem identidade",
+                details={"missing": faltando, "data_keys": list(data.keys())},
+            )
         return OAuthUserInfo(
             provider=PROVIDER,
             oauth_id=data["sub"],
             email=data["email"],
-            name=data.get("name") or data.get("email", "").split("@")[0],
+            name=data.get("name") or data["email"].split("@")[0],
             avatar_url=data.get("picture"),
         )

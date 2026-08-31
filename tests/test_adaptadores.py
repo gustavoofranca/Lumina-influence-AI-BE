@@ -670,3 +670,198 @@ def test_midia_cleanup_com_arquivo_travado_nao_estoura(monkeypatch, tmp_path):
 def test_gemini_expoe_o_modelo_que_atendeu(app, monkeypatch):
     # O modelo vai gravado na análise: trocar de versão precisa ficar rastreável.
     assert _cliente(app, monkeypatch).model == "gemini-3.6-flash"
+
+
+# ==========================================================================
+# OAuth de login — Google e Microsoft
+# ==========================================================================
+# O nível de rota já é coberto em `test_auth.py`, que substitui
+# `exchange_code`/`fetch_user_info` por dublê. O que fica descoberto — e é o
+# caminho mais crítico do produto, o login — é o transporte destes dois
+# clientes: o que eles fazem com resposta fora do feliz.
+def _sem_credencial(app, monkeypatch, chaves):
+    for chave in chaves:
+        monkeypatch.setitem(app.config, chave, None)
+
+
+def test_google_sem_credencial_recusa_na_construcao(app, monkeypatch):
+    from src.integrations.google_oauth import GoogleOAuthClient, GoogleOAuthError
+
+    with app.app_context():
+        _sem_credencial(app, monkeypatch, ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"])
+        with pytest.raises(GoogleOAuthError):
+            GoogleOAuthClient()
+
+
+def test_microsoft_sem_credencial_recusa_na_construcao(app, monkeypatch):
+    from src.integrations.microsoft_oauth import MicrosoftOAuthClient, MicrosoftOAuthError
+
+    with app.app_context():
+        _sem_credencial(app, monkeypatch, ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET"])
+        with pytest.raises(MicrosoftOAuthError):
+            MicrosoftOAuthClient()
+
+
+def test_google_url_de_login_pede_consentimento_offline(app):
+    from src.integrations.google_oauth import GoogleOAuthClient
+
+    with app.app_context():
+        url = GoogleOAuthClient().build_auth_url(state="s1", redirect_uri="http://localhost/cb")
+    assert "state=s1" in url and "response_type=code" in url
+    assert "access_type=offline" in url and "include_granted_scopes=true" in url
+    assert "scope=openid+email+profile" in url
+
+
+def test_microsoft_url_de_login_pede_o_escopo_do_graph(app):
+    from src.integrations.microsoft_oauth import MicrosoftOAuthClient
+
+    with app.app_context():
+        url = MicrosoftOAuthClient().build_auth_url(state="s1", redirect_uri="http://localhost/cb")
+    # Sem User.Read o Graph /me devolve 403 e o login termina sem identidade.
+    assert "User.Read" in url
+    assert "response_mode=query" in url
+
+
+def test_google_code_rejeitado_carrega_status_e_corpo(app, monkeypatch):
+    import src.integrations.google_oauth as goog
+
+    resp = FakeResponse(status_code=400, text='{"error":"invalid_grant"}')
+    monkeypatch.setattr(goog.requests, "post", FakeHttp({"token": resp}))
+    with app.app_context():
+        with pytest.raises(goog.GoogleOAuthError) as exc:
+            goog.GoogleOAuthClient().exchange_code(code="c", redirect_uri="http://cb")
+    assert exc.value.details["status"] == 400
+    assert "invalid_grant" in exc.value.details["body"]
+
+
+def test_google_rede_fora_vira_erro_tipado_e_nao_500(app, monkeypatch):
+    import src.integrations.google_oauth as goog
+
+    def _explode(*_a, **_kw):
+        raise goog.requests.RequestException("DNS falhou")
+
+    monkeypatch.setattr(goog.requests, "post", _explode)
+    with app.app_context():
+        with pytest.raises(goog.GoogleOAuthError):
+            goog.GoogleOAuthClient().exchange_code(code="c", redirect_uri="http://cb")
+
+
+def test_google_userinfo_normaliza_identidade(app, monkeypatch):
+    import src.integrations.google_oauth as goog
+
+    resp = FakeResponse(json_body={
+        "sub": "1122", "email": "ana@exemplo.com", "name": "Ana Paula",
+        "picture": "https://lh3.google/foto.jpg",
+    })
+    monkeypatch.setattr(goog.requests, "get", FakeHttp({"userinfo": resp}))
+    with app.app_context():
+        info = goog.GoogleOAuthClient().fetch_user_info("tok")
+    assert (info.provider, info.oauth_id, info.email) == ("google", "1122", "ana@exemplo.com")
+    assert info.name == "Ana Paula"
+    assert info.avatar_url == "https://lh3.google/foto.jpg"
+
+
+def test_google_sem_nome_cai_no_local_do_email(app, monkeypatch):
+    import src.integrations.google_oauth as goog
+
+    resp = FakeResponse(json_body={"sub": "1122", "email": "ana@exemplo.com"})
+    monkeypatch.setattr(goog.requests, "get", FakeHttp({"userinfo": resp}))
+    with app.app_context():
+        info = goog.GoogleOAuthClient().fetch_user_info("tok")
+    assert info.name == "ana"
+    assert info.avatar_url is None
+
+
+def test_google_userinfo_com_erro_vira_erro_tipado(app, monkeypatch):
+    import src.integrations.google_oauth as goog
+
+    monkeypatch.setattr(goog.requests, "get",
+                        FakeHttp({"userinfo": FakeResponse(status_code=401, text="expired")}))
+    with app.app_context():
+        with pytest.raises(goog.GoogleOAuthError) as exc:
+            goog.GoogleOAuthClient().fetch_user_info("tok")
+    assert exc.value.details["status"] == 401
+
+
+@pytest.mark.parametrize("payload", [{"email": "ana@exemplo.com"}, {"sub": "1122"}, {}])
+def test_google_userinfo_incompleto_vira_erro_tipado_e_nao_keyerror(app, monkeypatch, payload):
+    # Um userinfo sem `sub` ou sem `email` é resposta possível — basta o usuário
+    # não conceder o escopo. Sem tratamento vira KeyError e o login responde 500
+    # em vez do 502 que descreve o que aconteceu. O cliente da Microsoft já
+    # tratava o caso equivalente.
+    import src.integrations.google_oauth as goog
+
+    monkeypatch.setattr(goog.requests, "get", FakeHttp({"userinfo": FakeResponse(json_body=payload)}))
+    with app.app_context():
+        with pytest.raises(goog.GoogleOAuthError):
+            goog.GoogleOAuthClient().fetch_user_info("tok")
+
+
+def test_microsoft_prefere_mail_sobre_principal_name(app, monkeypatch):
+    import src.integrations.microsoft_oauth as ms
+
+    resp = FakeResponse(json_body={
+        "id": "aaa", "mail": "ana@empresa.com",
+        "userPrincipalName": "ana_empresa.com#EXT#@tenant.onmicrosoft.com",
+        "displayName": "Ana Paula",
+    })
+    monkeypatch.setattr(ms.requests, "get", FakeHttp({"graph.microsoft.com": resp}))
+    with app.app_context():
+        info = ms.MicrosoftOAuthClient().fetch_user_info("tok")
+    # O userPrincipalName de conta convidada não é endereço de e-mail válido.
+    assert info.email == "ana@empresa.com"
+    assert info.name == "Ana Paula"
+
+
+def test_microsoft_sem_mail_usa_o_principal_name(app, monkeypatch):
+    import src.integrations.microsoft_oauth as ms
+
+    resp = FakeResponse(json_body={"id": "aaa", "userPrincipalName": "ana@empresa.com"})
+    monkeypatch.setattr(ms.requests, "get", FakeHttp({"graph.microsoft.com": resp}))
+    with app.app_context():
+        info = ms.MicrosoftOAuthClient().fetch_user_info("tok")
+    assert info.email == "ana@empresa.com"
+    assert info.name == "ana"
+
+
+def test_microsoft_conta_sem_email_vira_erro_tipado(app, monkeypatch):
+    import src.integrations.microsoft_oauth as ms
+
+    resp = FakeResponse(json_body={"id": "aaa", "displayName": "Ana"})
+    monkeypatch.setattr(ms.requests, "get", FakeHttp({"graph.microsoft.com": resp}))
+    with app.app_context():
+        with pytest.raises(ms.MicrosoftOAuthError) as exc:
+            ms.MicrosoftOAuthClient().fetch_user_info("tok")
+    assert "data_keys" in exc.value.details
+
+
+def test_microsoft_code_rejeitado_vira_erro_tipado(app, monkeypatch):
+    import src.integrations.microsoft_oauth as ms
+
+    monkeypatch.setattr(ms.requests, "post",
+                        FakeHttp({"login.microsoftonline.com": FakeResponse(status_code=400, text="bad")}))
+    with app.app_context():
+        with pytest.raises(ms.MicrosoftOAuthError) as exc:
+            ms.MicrosoftOAuthClient().exchange_code(code="c", redirect_uri="http://cb")
+    assert exc.value.details["status"] == 400
+
+
+def test_microsoft_graph_fora_do_ar_vira_erro_tipado(app, monkeypatch):
+    import src.integrations.microsoft_oauth as ms
+
+    def _explode(*_a, **_kw):
+        raise ms.requests.RequestException("timeout")
+
+    monkeypatch.setattr(ms.requests, "get", _explode)
+    with app.app_context():
+        with pytest.raises(ms.MicrosoftOAuthError):
+            ms.MicrosoftOAuthClient().fetch_user_info("tok")
+
+
+def test_troca_de_code_bem_sucedida_devolve_o_payload_do_provedor(app, monkeypatch):
+    import src.integrations.google_oauth as goog
+
+    corpo = {"access_token": "at", "refresh_token": "rt", "id_token": "it", "expires_in": 3599}
+    monkeypatch.setattr(goog.requests, "post", FakeHttp({"token": FakeResponse(json_body=corpo)}))
+    with app.app_context():
+        assert goog.GoogleOAuthClient().exchange_code(code="c", redirect_uri="http://cb") == corpo

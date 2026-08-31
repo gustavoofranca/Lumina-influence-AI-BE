@@ -22,7 +22,7 @@ nenhum.
 
 ## Método
 
-Suíte nova em `tests/test_adaptadores.py`, com dublês que devolvem exatamente
+Suíte em `tests/test_adaptadores.py`, com dublês que devolvem exatamente
 os payloads que as APIs reais devolvem — nenhum teste toca a rede nem consome
 cota do Gemini. Para os erros do Gemini são usadas as **classes de exceção reais
 do SDK** (`google.genai.errors.ClientError` e `ServerError`), não imitações:
@@ -49,14 +49,34 @@ Três contratos foram escolhidos por consequência, não por linha descoberta:
 | `gemini.py` | 33% | **100%** |
 | `youtube.py` | 38% | **100%** |
 | `media.py` | 39% | **100%** |
-| Suíte inteira | 230 testes, 86% | **286 testes, 90%** |
+| `google_oauth.py` | 60% | **96%** |
+| `microsoft_oauth.py` | 44% | **91%** |
+| Suíte inteira | 230 testes, 86% | **304 testes, 91%** |
 
-Nenhum defeito novo apareceu: os três módulos se comportaram como o código
-prometia em todos os 56 cenários. O ganho é de regressão — o mapeamento de
-alcance, em particular, agora tem um teste que falha em voz alta se alguém
-transformar `reach_paid = 0` em estimativa sem passar pela ADR-005.
+Nos três primeiros módulos, nenhum defeito novo apareceu: eles se comportaram
+como o código prometia em todos os 56 cenários. O ganho é de regressão — o
+mapeamento de alcance, em particular, agora tem um teste que falha em voz alta
+se alguém transformar `reach_paid = 0` em estimativa sem passar pela ADR-005.
 
-## Dois pontos que o teste fixou como contrato
+## Segunda rodada: os clientes OAuth do login
+
+Mesma lógica, aplicada ao caminho mais crítico do produto. `test_auth.py` cobre
+o nível de rota substituindo `exchange_code` e `fetch_user_info` por dublê, de
+modo que o transporte dos dois clientes nunca era exercitado.
+
+**Aqui apareceu um defeito real.** `GoogleOAuthClient.fetch_user_info` lia
+`data["sub"]` e `data["email"]` direto do payload. Um userinfo sem esses campos
+é resposta possível — basta o usuário não conceder o escopo — e produzia
+`KeyError`, ou seja, **500 sem explicação em vez do 502 tipado** que descreve o
+que aconteceu. O cliente da Microsoft já tratava o caso equivalente (conta sem
+`mail` nem `userPrincipalName`), o que deixa claro que era esquecimento e não
+decisão. Corrigido validando os dois campos antes de montar a identidade, no
+mesmo formato do erro que a Microsoft já usava.
+
+É o mesmo padrão que atravessa o projeto, na versão de identidade: **ausência de
+dado externo tratada como se o dado estivesse lá.**
+
+## Três pontos que o teste fixou como contrato
 
 **O timeout do Gemini vai em milissegundos.** `GenerateContentConfig` recebe
 `http_options.timeout` na casa dos milissegundos; mandar os 90 segundos da
@@ -69,6 +89,12 @@ origem paga sem cruzar com o Google Ads, atrás de conta comercial. As colunas
 são `NOT NULL`, então a divisão fica orgânico = total e pago = 0, com o limite
 declarado ao apresentar o dado — ADR-005. Há teste dedicado a isso porque é o
 ponto do escopo em que a tentação de estimar é maior.
+
+**O login exige os escopos que ele usa.** A URL de autorização do Google pede
+`access_type=offline` — sem ele o Google devolve só o access token e a
+sincronização agendada morre em uma hora — e a da Microsoft pede `User.Read`,
+sem o qual o Graph `/me` responde 403 e o login termina sem identidade. Os dois
+são invisíveis até falharem em produção.
 
 ## Como reproduzir
 
