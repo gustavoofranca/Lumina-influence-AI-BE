@@ -1,7 +1,8 @@
-"""Testes do fluxo OAuth + JWT.
+"""Testes do fluxo OAuth + JWT, nos dois provedores.
 
-Estratégia: mockar GoogleOAuthClient.exchange_code/fetch_user_info via monkeypatch.
-Não testamos endpoints reais do Google — isso é validado manualmente.
+Estratégia: mockar `exchange_code`/`fetch_user_info` de cada cliente via
+monkeypatch. Os endpoints reais do Google e da Microsoft não são chamados aqui
+— o transporte deles tem suíte própria em `test_adaptadores.py`.
 """
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ from sqlalchemy import select
 from src.extensions import db
 from src.integrations.base_oauth import OAuthUserInfo
 from src.integrations.google_oauth import GoogleOAuthClient
+from src.integrations.microsoft_oauth import MicrosoftOAuthClient
 from src.models import Agency, OAuthState, User, UserRole
 from src.models._enums import OAuthProvider
 from src.utils.jwt_utils import encode_token, issue_token_pair
@@ -407,3 +409,146 @@ def test_marca_de_agencia_nova_viaja_no_fragmento_do_redirect(
         assert fragmento["new_agency"] == ["1"]
     finally:
         app.config["AUTH_SUCCESS_REDIRECT"] = None
+
+
+# --------------------------------------------------------------------------
+# Microsoft — o provedor que existia sem teste de rota
+# --------------------------------------------------------------------------
+# O Google tinha a rota coberta e a Microsoft não. Foi essa mesma assimetria que
+# deixou passar o `KeyError` do userinfo do Google: o que não é exercido em
+# nenhum nível é o que quebra em produção. As quatro garantias do Google —
+# state persistido, state inválido recusado, usuário criado e erro do provedor
+# tratado — passam a valer para os dois.
+@pytest.fixture()
+def fake_microsoft(monkeypatch):
+    def _exchange(self, *, code, redirect_uri):
+        return {"access_token": "fake-ms-access"}
+
+    monkeypatch.setattr(MicrosoftOAuthClient, "exchange_code", _exchange)
+    return monkeypatch
+
+
+def _patch_ms_userinfo(monkeypatch, *, oid, email, name):
+    def _info(self, access_token):
+        return OAuthUserInfo(
+            provider="microsoft", oauth_id=oid, email=email, name=name, avatar_url=None
+        )
+
+    monkeypatch.setattr(MicrosoftOAuthClient, "fetch_user_info", _info)
+
+
+def test_microsoft_login_persiste_o_state_com_o_provedor_certo(client, clean_db, app):
+    r = client.get("/api/v1/auth/microsoft/login")
+    assert r.status_code == 302
+    state = parse_qs(urlparse(r.headers["Location"]).query)["state"][0]
+
+    with app.app_context():
+        registro = db.session.scalar(
+            select(OAuthState).where(OAuthState.state_token == state)
+        )
+        assert registro is not None
+        # Gravar o state com o provedor errado deixaria um state do Google ser
+        # consumido no callback da Microsoft.
+        assert registro.provider == OAuthProvider.MICROSOFT
+
+
+def test_microsoft_callback_cria_usuario_e_agencia(
+    client, clean_db, fake_microsoft, monkeypatch, app
+):
+    r = client.get("/api/v1/auth/microsoft/login")
+    state = parse_qs(urlparse(r.headers["Location"]).query)["state"][0]
+
+    _patch_ms_userinfo(monkeypatch, oid="ms-777", email="novo@empresa.com", name="Nova")
+
+    r = client.get(f"/api/v1/auth/microsoft/callback?code=fake-code&state={state}")
+    assert r.status_code == 200, r.get_json()
+    data = r.get_json()["data"]
+    assert data["user"]["email"] == "novo@empresa.com"
+    assert data["user"]["role"] == "admin"
+    assert "access_token" in data["tokens"]
+
+    with app.app_context():
+        criado = db.session.scalar(select(User).where(User.email == "novo@empresa.com"))
+        assert criado.oauth_provider == OAuthProvider.MICROSOFT
+
+
+def test_microsoft_callback_recusa_state_desconhecido(client, clean_db, fake_microsoft):
+    r = client.get("/api/v1/auth/microsoft/callback?code=x&state=nao-existe")
+    assert r.status_code in (401, 422)
+
+
+def test_microsoft_callback_nao_aceita_state_do_google(
+    client, clean_db, fake_microsoft, monkeypatch
+):
+    # O state é único por provedor. Aceitar o do outro abriria caminho para
+    # concluir na Microsoft um fluxo iniciado no Google.
+    r = client.get("/api/v1/auth/google/login")
+    state_do_google = parse_qs(urlparse(r.headers["Location"]).query)["state"][0]
+
+    _patch_ms_userinfo(monkeypatch, oid="ms-1", email="x@y.com", name="X")
+    r = client.get(f"/api/v1/auth/microsoft/callback?code=x&state={state_do_google}")
+    assert r.status_code in (401, 422)
+
+
+def test_microsoft_callback_repassa_o_erro_do_provedor(client, clean_db):
+    r = client.get(
+        "/api/v1/auth/microsoft/callback"
+        "?error=access_denied&error_description=user_cancelled"
+    )
+    assert r.status_code == 422
+    assert "Microsoft retornou erro" in r.get_json()["error"]["message"]
+
+
+def test_microsoft_callback_sem_code_e_erro_de_validacao(client, clean_db):
+    r = client.get("/api/v1/auth/microsoft/callback?state=algum")
+    assert r.status_code == 422
+
+
+# --------------------------------------------------------------------------
+# Redirect URI e o atalho de desenvolvimento
+# --------------------------------------------------------------------------
+def test_redirect_uri_usa_a_base_configurada_e_nao_o_host_da_requisicao(
+    client, clean_db, app, monkeypatch
+):
+    # Atrás de proxy ou container, o host que o Flask enxerga não é o que foi
+    # registrado no provedor, e o login morre em redirect_uri_mismatch. Esta é
+    # também a configuração que precisa virar HTTPS público para o App Review.
+    monkeypatch.setitem(app.config, "OAUTH_REDIRECT_BASE", "https://lumina.exemplo")
+    r = client.get("/api/v1/auth/google/login")
+    destino = parse_qs(urlparse(r.headers["Location"]).query)["redirect_uri"][0]
+    assert destino == "https://lumina.exemplo/api/v1/auth/google/callback"
+
+
+def test_sem_base_configurada_o_redirect_cai_no_host_da_requisicao(
+    client, clean_db, app, monkeypatch
+):
+    monkeypatch.setitem(app.config, "OAUTH_REDIRECT_BASE", None)
+    r = client.get("/api/v1/auth/google/login")
+    destino = parse_qs(urlparse(r.headers["Location"]).query)["redirect_uri"][0]
+    assert destino.endswith("/api/v1/auth/google/callback")
+
+
+def test_google_callback_sem_code_e_erro_de_validacao(client, clean_db):
+    r = client.get("/api/v1/auth/google/callback?state=algum")
+    assert r.status_code == 422
+
+
+def test_dev_login_desabilitado_responde_403_e_nao_emite_token(
+    client, clean_db, app, monkeypatch
+):
+    # `DEV_LOGIN_ENABLED` é fixo em False nas configurações de staging e de
+    # produção; o teste garante que a rota respeite a chave em vez de existir
+    # apenas porque o blueprint foi registrado.
+    monkeypatch.setitem(app.config, "DEV_LOGIN_ENABLED", False)
+    r = client.post("/api/v1/auth/dev-login", json={})
+    assert r.status_code == 403
+    assert r.get_json()["error"]["code"] == "dev_login_disabled"
+
+
+def test_dev_login_sem_usuario_no_banco_recusa_em_vez_de_estourar(
+    client, clean_db, app, monkeypatch
+):
+    monkeypatch.setitem(app.config, "DEV_LOGIN_ENABLED", True)
+    r = client.post("/api/v1/auth/dev-login", json={"email": "ninguem@lugar.nenhum"})
+    assert r.status_code == 401
+    assert r.get_json()["error"]["code"] == "dev_login_no_user"
