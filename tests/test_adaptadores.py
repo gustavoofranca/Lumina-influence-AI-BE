@@ -1,4 +1,4 @@
-"""Testes da camada de transporte das integrações: Instagram, YouTube, Gemini e mídia.
+"""Testes da camada de transporte das integrações: Instagram, TikTok, YouTube, Gemini e mídia.
 
 Estes três módulos eram os de menor cobertura da suíte porque todo teste até
 aqui os substituía por dublê: `test_integrations.py` usa um `FakeAdapter` e
@@ -19,6 +19,7 @@ import pytest
 
 import src.integrations.instagram as ig_mod
 import src.integrations.media as media_mod
+import src.integrations.tiktok as tt_mod
 import src.integrations.youtube as yt_mod
 from src.integrations.base import (
     AccountNotLinkedError,
@@ -36,6 +37,7 @@ from src.integrations.gemini import (
 )
 from src.integrations.instagram import InstagramAdapter
 from src.integrations.media import HttpVideoFetcher, VideoAsset, VideoFetchError
+from src.integrations.tiktok import TikTokAdapter
 from src.integrations.youtube import YouTubeAdapter
 from src.models import PostType
 
@@ -1170,3 +1172,182 @@ def test_instagram_normaliza_comentario(app, monkeypatch):
     assert c.content == "amei"
     assert c.author_handle == "fa"
     assert c.like_count == 3
+
+
+# ==========================================================================
+# TikTok — credenciais e token
+# ==========================================================================
+def _tiktok_ok(**data):
+    return FakeResponse(json_body={"data": data, "error": {"code": "ok", "message": ""}})
+
+
+def _tiktok_erro(codigo, mensagem="falhou"):
+    # O TikTok responde 200 mesmo quando falha: o erro vive no corpo.
+    return FakeResponse(json_body={"data": {}, "error": {"code": codigo, "message": mensagem}})
+
+
+def test_tiktok_sem_credencial_recusa_antes_de_chamar_a_rede(app, monkeypatch):
+    with app.app_context():
+        monkeypatch.setitem(app.config, "TIKTOK_CLIENT_KEY", None)
+        with pytest.raises(PlatformNotConfiguredError):
+            TikTokAdapter().build_auth_url(state="s", redirect_uri="http://cb")
+
+
+def test_tiktok_url_de_autorizacao_pede_os_escopos_de_leitura(app):
+    with app.app_context():
+        url = TikTokAdapter().build_auth_url(state="s", redirect_uri="http://cb")
+    for escopo in ("user.info.basic", "user.info.stats", "video.list"):
+        assert escopo in url
+
+
+def test_tiktok_troca_codigo_por_token_com_open_id(app, monkeypatch):
+    http = FakeHttp({"oauth/token": FakeResponse(json_body={
+        "access_token": "acc", "refresh_token": "ref",
+        "expires_in": 86400, "open_id": "open-1"})})
+    monkeypatch.setattr(tt_mod.requests, "post", http)
+    with app.app_context():
+        bundle = TikTokAdapter().exchange_code(code="c", redirect_uri="http://cb")
+    assert bundle.access_token == "acc"
+    assert bundle.platform_user_id == "open-1"
+    assert bundle.expires_at > datetime.now(timezone.utc)
+
+
+def test_tiktok_renovacao_preserva_o_refresh_token_quando_ele_nao_volta(app, monkeypatch):
+    monkeypatch.setattr(tt_mod.requests, "post",
+                        FakeHttp({"oauth/token": FakeResponse(json_body={"access_token": "novo"})}))
+    with app.app_context():
+        bundle = TikTokAdapter().refresh("antigo")
+    assert bundle.refresh_token == "antigo"
+
+
+# ==========================================================================
+# TikTok — o erro que chega dentro de uma resposta 200
+# ==========================================================================
+@pytest.mark.parametrize("codigo, esperado", [
+    ("access_token_invalid", TokenRevokedError),
+    ("token_expired", TokenRevokedError),
+    ("rate_limit_exceeded", RateLimitError),
+    ("scope_not_authorized", PlatformNotConfiguredError),
+    ("internal_error", SocialApiError),
+])
+def test_tiktok_erro_no_corpo_de_um_200_vira_excecao_tipada(app, monkeypatch, codigo, esperado):
+    # Sem esta leitura, token revogado devolvia lista vazia e a interface diria
+    # "criador sem post" — falha externa apresentada como ausência de dado.
+    monkeypatch.setattr(tt_mod.requests, "post",
+                        FakeHttp({"video/list": _tiktok_erro(codigo)}))
+    with app.app_context():
+        with pytest.raises(esperado):
+            TikTokAdapter().fetch_recent_posts("t")
+
+
+def test_tiktok_corpo_sem_objeto_de_erro_nao_e_tratado_como_sucesso(app, monkeypatch):
+    # Só `code == "ok"` autoriza seguir; formato inesperado é erro, não silêncio.
+    monkeypatch.setattr(tt_mod.requests, "get",
+                        FakeHttp({"user/info": FakeResponse(json_body={"data": {}})}))
+    with app.app_context():
+        with pytest.raises(SocialApiError):
+            TikTokAdapter().fetch_profile_metrics("t")
+
+
+# ==========================================================================
+# TikTok — perfil e vídeos
+# ==========================================================================
+def test_tiktok_handle_e_o_arroba_do_perfil_e_nao_o_nome_de_exibicao(app, monkeypatch):
+    # O handle entra na chave única (influencer, plataforma, handle): usar o
+    # nome de exibição faria uma troca de nome nascer como conta duplicada.
+    monkeypatch.setattr(tt_mod.requests, "get", FakeHttp({"user/info": _tiktok_ok(
+        user={"open_id": "o-1", "username": "criador.oficial",
+              "display_name": "Criador ✨", "follower_count": 8200})}))
+    with app.app_context():
+        perfil = TikTokAdapter().fetch_profile_metrics("t")
+    assert perfil.handle == "criador.oficial"
+    assert perfil.follower_count == 8200
+    assert perfil.platform_user_id == "o-1"
+
+
+def test_tiktok_sem_username_cai_no_nome_de_exibicao(app, monkeypatch):
+    monkeypatch.setattr(tt_mod.requests, "get", FakeHttp({"user/info": _tiktok_ok(
+        user={"open_id": "o-1", "display_name": "Criador", "follower_count": 1})}))
+    with app.app_context():
+        assert TikTokAdapter().fetch_profile_metrics("t").handle == "Criador"
+
+
+def test_tiktok_normaliza_video_em_post(app, monkeypatch):
+    monkeypatch.setattr(tt_mod.requests, "post", FakeHttp({"video/list": _tiktok_ok(
+        videos=[{"id": 998, "title": "trend", "create_time": 1756600000,
+                 "cover_image_url": "http://capa", "share_url": "http://tiktok.com/@x/video/998",
+                 "view_count": 50000, "like_count": 4000,
+                 "comment_count": 120, "share_count": 300}])}))
+    with app.app_context():
+        post = TikTokAdapter().fetch_recent_posts("t")[0]
+    assert post.platform_post_id == "998"  # id numérico vira string
+    assert post.post_type is PostType.VIDEO
+    assert post.reach_total == post.impressions == 50000
+    assert post.likes == 4000
+    assert post.shares == 300
+
+
+def test_tiktok_nao_entrega_pagina_como_se_fosse_arquivo_de_video(app, monkeypatch):
+    # `share_url` é a página do TikTok. Gravá-la em `video_url` faria o
+    # analisador multimodal baixar HTML e tratá-lo como vídeo.
+    monkeypatch.setattr(tt_mod.requests, "post", FakeHttp({"video/list": _tiktok_ok(
+        videos=[{"id": 1, "share_url": "http://tiktok.com/@x/video/1", "view_count": 1}])}))
+    with app.app_context():
+        assert TikTokAdapter().fetch_recent_posts("t")[0].video_url is None
+
+
+def test_tiktok_declara_todo_alcance_como_organico(app, monkeypatch):
+    monkeypatch.setattr(tt_mod.requests, "post", FakeHttp({"video/list": _tiktok_ok(
+        videos=[{"id": 1, "view_count": 700}])}))
+    with app.app_context():
+        post = TikTokAdapter().fetch_recent_posts("t")[0]
+    assert post.reach_organic == 700
+    assert post.reach_paid == 0
+
+
+def test_tiktok_video_sem_data_nao_derruba_a_coleta(app, monkeypatch):
+    monkeypatch.setattr(tt_mod.requests, "post", FakeHttp({"video/list": _tiktok_ok(
+        videos=[{"id": 1, "view_count": 1}])}))
+    with app.app_context():
+        assert TikTokAdapter().fetch_recent_posts("t")[0].posted_at is not None
+
+
+def test_tiktok_status_http_de_erro_ainda_vira_excecao_tipada(app, monkeypatch):
+    monkeypatch.setattr(tt_mod.requests, "post",
+                        FakeHttp({"video/list": FakeResponse(status_code=429, text="{}")}))
+    with app.app_context():
+        with pytest.raises(RateLimitError):
+            TikTokAdapter().fetch_recent_posts("t")
+
+
+def test_tiktok_declara_o_que_ainda_nao_coleta(app):
+    # Insights por post e comentários exigem a Business API. Devolver vazio é a
+    # resposta honesta; o teste existe para que a mudança seja deliberada.
+    with app.app_context():
+        adapter = TikTokAdapter()
+        assert adapter.fetch_post_insights("t", "1") == {}
+        assert adapter.fetch_post_comments("t", "1") == []
+
+
+# ==========================================================================
+# Mídia — a guarda que impede página virar vídeo
+# ==========================================================================
+def test_midia_pagina_html_nao_e_aceita_como_video(monkeypatch):
+    resp = FakeResponse(headers={"Content-Type": "text/html; charset=utf-8"}, chunks=[b"<html>"])
+    monkeypatch.setattr(media_mod.requests, "get", FakeHttp({"tiktok": resp}))
+    with pytest.raises(VideoFetchError) as exc:
+        HttpVideoFetcher().fetch("https://tiktok.com/@x/video/1")
+    assert exc.value.details["mime"] == "text/html"
+
+
+def test_midia_octet_stream_continua_aceito(monkeypatch):
+    # CDN de vídeo costuma servir octet-stream; a guarda é lista de exclusão
+    # justamente para não recusar download legítimo.
+    resp = FakeResponse(headers={"Content-Type": "application/octet-stream"}, chunks=[b"x"])
+    monkeypatch.setattr(media_mod.requests, "get", FakeHttp({"cdn": resp}))
+    fetcher = HttpVideoFetcher()
+    asset = fetcher.fetch("https://cdn.example/v.mp4")
+    try:
+        assert asset.path.endswith(".mp4")
+    finally:
+        fetcher.cleanup(asset)

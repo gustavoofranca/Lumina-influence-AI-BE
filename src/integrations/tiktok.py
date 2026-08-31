@@ -18,7 +18,10 @@ from src.integrations.base import (
     OAuthTokenBundle,
     PlatformNotConfiguredError,
     ProfileMetrics,
+    RateLimitError,
     SocialAdapter,
+    SocialApiError,
+    TokenRevokedError,
     raise_for_social_status,
 )
 from src.models import PostType
@@ -28,6 +31,33 @@ TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/"
 API = "https://open.tiktokapis.com/v2"
 SCOPES = ["user.info.basic", "user.info.stats", "video.list"]
 TIMEOUT = 15
+
+# O TikTok responde **200 mesmo quando falha**: o corpo sempre traz um objeto
+# `error`, e `code == "ok"` é o único valor que significa sucesso. Conferir só o
+# status HTTP deixa a falha passar como resposta vazia — token revogado viraria
+# "criador sem post", que é o defeito que a ADR-003 proíbe.
+ERRO_OK = "ok"
+_ERROS_DE_TOKEN = ("access_token_invalid", "invalid_token", "token_expired")
+_ERROS_DE_ESCOPO = ("scope_not_authorized", "scope_permission_missed", "invalid_scope")
+_ERROS_DE_COTA = ("rate_limit_exceeded", "daily_quota_limit_exceeded")
+
+
+def _raise_for_tiktok_error(payload: dict) -> None:
+    """Traduz o objeto `error` do corpo em exceção tipada."""
+    erro = payload.get("error") or {}
+    codigo = erro.get("code")
+    # Ausência do objeto é resposta de formato inesperado, não sucesso: só
+    # `code == "ok"` autoriza seguir.
+    if codigo == ERRO_OK:
+        return
+    detalhes = {"code": codigo, "message": str(erro.get("message", ""))[:200]}
+    if codigo in _ERROS_DE_TOKEN:
+        raise TokenRevokedError("tiktok: autorização expirada ou revogada", details=detalhes)
+    if codigo in _ERROS_DE_COTA:
+        raise RateLimitError("tiktok: limite de requisições atingido", details=detalhes)
+    if codigo in _ERROS_DE_ESCOPO:
+        raise PlatformNotConfiguredError("tiktok: escopo não autorizado", details=detalhes)
+    raise SocialApiError(f"tiktok: erro {codigo}", details=detalhes)
 
 
 class TikTokAdapter(SocialAdapter):
@@ -102,15 +132,21 @@ class TikTokAdapter(SocialAdapter):
     def fetch_profile_metrics(self, access_token: str) -> ProfileMetrics:
         r = requests.get(
             f"{API}/user/info/",
-            params={"fields": "open_id,display_name,follower_count"},
+            params={"fields": "open_id,username,display_name,follower_count"},
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=TIMEOUT,
         )
         raise_for_social_status(r, platform=self.platform)
-        u = r.json().get("data", {}).get("user", {})
+        corpo = r.json()
+        _raise_for_tiktok_error(corpo)
+        u = corpo.get("data", {}).get("user", {})
         return ProfileMetrics(
             follower_count=int(u.get("follower_count", 0)),
-            handle=u.get("display_name"),
+            # `username` é o @ do perfil; `display_name` é o nome livre, que o
+            # criador troca quando quer. O handle entra na chave única
+            # (influencer, plataforma, handle), então usar o nome de exibição
+            # faria uma troca de nome nascer como conta duplicada.
+            handle=u.get("username") or u.get("display_name"),
             platform_user_id=u.get("open_id"),
         )
 
@@ -124,8 +160,10 @@ class TikTokAdapter(SocialAdapter):
             timeout=TIMEOUT,
         )
         raise_for_social_status(r, platform=self.platform)
+        corpo = r.json()
+        _raise_for_tiktok_error(corpo)
         out = []
-        for v in r.json().get("data", {}).get("videos", []):
+        for v in corpo.get("data", {}).get("videos", []):
             views = int(v.get("view_count", 0))
             out.append(
                 NormalizedPost(
@@ -133,7 +171,11 @@ class TikTokAdapter(SocialAdapter):
                     post_type=PostType.VIDEO,
                     posted_at=_from_unix(v.get("create_time")),
                     caption=v.get("title"),
-                    video_url=v.get("share_url"),
+                    # `share_url` é a **página** do TikTok, não o arquivo. Baixá-la
+                    # entregaria HTML ao analisador multimodal, que o trataria
+                    # como vídeo. A Display API não expõe arquivo baixável, então
+                    # o campo fica nulo e a análise de vídeo recusa em voz alta.
+                    video_url=None,
                     thumbnail_url=v.get("cover_image_url"),
                     reach_total=views,
                     reach_organic=views,

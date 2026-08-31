@@ -24,6 +24,15 @@ logger = logging.getLogger(__name__)
 TIMEOUT = 30
 MAX_BYTES = 50 * 1024 * 1024  # 50MB — guarda contra vídeos gigantes
 
+# Tipos que nunca são vídeo. A lista é de exclusão, e não de permissão, porque
+# CDN de vídeo costuma servir `application/octet-stream` — recusar o que não
+# está numa lista de permitidos rejeitaria download legítimo.
+#
+# O caso concreto é uma URL de *página* chegando onde se espera arquivo: o
+# servidor devolve 200 com HTML, e sem esta guarda o HTML era gravado com
+# sufixo `.mp4` e enviado ao analisador como se fosse vídeo.
+MIMES_QUE_NAO_SAO_VIDEO = ("text/", "application/json", "application/xml", "application/xhtml")
+
 
 class VideoFetchError(LuminaError):
     status_code = 502
@@ -66,7 +75,12 @@ class HttpVideoFetcher(VideoFetcher):
                 details={"status": resp.status_code, "url": video_url[:120]},
             )
 
-        mime = resp.headers.get("Content-Type", "video/mp4").split(";")[0]
+        mime = resp.headers.get("Content-Type", "video/mp4").split(";")[0].strip()
+        if mime.startswith(MIMES_QUE_NAO_SAO_VIDEO):
+            raise VideoFetchError(
+                "A URL não devolveu vídeo",
+                details={"mime": mime, "url": video_url[:120]},
+            )
         suffix = _suffix_for(mime, video_url)
         fd, path = tempfile.mkstemp(suffix=suffix, prefix="lumina_vid_")
         written = 0
