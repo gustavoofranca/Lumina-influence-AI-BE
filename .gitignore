@@ -56,6 +56,8 @@ next.txt
 docs/*
 !docs/README.md
 !docs/resultados-consolidados.md
+!docs/meta-app-review.md
+!docs/cota-e-custo-gemini.md
 !docs/adr/
 !docs/security/
 !docs/testes/
