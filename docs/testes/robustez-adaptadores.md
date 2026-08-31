@@ -1,6 +1,6 @@
 # Robustez das bordas — integrações, login e filtros de listagem
 
-Executado em 28 de agosto de 2026, depois de fechada a bateria do B12. O alvo
+Executado em 31 de agosto de 2026, depois de fechada a bateria do B12. O alvo
 não foi o percentual de cobertura, e sim **onde o sistema fala com o mundo
 externo**: os três módulos que traduzem resposta de API de terceiro em tipo
 interno eram os de menor rede de proteção da suíte.

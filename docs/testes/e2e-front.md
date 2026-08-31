@@ -1,6 +1,6 @@
 # Testes ponta a ponta da interface
 
-Executado pela primeira vez em 28 de agosto de 2026. Fecha a etapa 2 do plano
+Executado pela primeira vez em 31 de agosto de 2026. Fecha a etapa 2 do plano
 de robustez: até aqui, **os 317 testes da suíte eram todos do back-end** e o
 front não tinha ferramenta de teste nenhuma.
 
@@ -32,7 +32,7 @@ O primeiro arquivo da suíte automatiza exatamente essa varredura.
 
 Os dois últimos travam o que revisão de olho não vê: foco. Os três primeiros
 travam defeitos que **já aconteceram**: a tela em branco, o
-estado de erro lido como ausência (corrigido em 28/08) e a conta social cujo
+estado de erro lido como ausência (corrigido em 31/08) e a conta social cujo
 "Desconectar" devolvia 200 sem mudar a tela.
 
 ## Decisões de ambiente

@@ -5,7 +5,7 @@ número que a sustenta, como ele foi obtido e onde está o relatório completo.
 **Nada aqui é estimativa** — todo valor foi medido e está reproduzível pelo
 relatório de origem.
 
-Última consolidação: 28 de agosto de 2026.
+Última consolidação: 31 de agosto de 2026.
 
 ## Como usar
 

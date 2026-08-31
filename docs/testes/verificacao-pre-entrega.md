@@ -5,12 +5,12 @@ código. Existem porque cada uma delas **já achou defeito que build, teste
 unitário e revisão de olho não pegaram** — a coluna "o que achou" registra o
 caso real que justificou incluir a verificação.
 
-Última execução: **28 de agosto de 2026**, sobre 22 rotas do app, as 4 abas do
+Última execução: **31 de agosto de 2026**, sobre 22 rotas do app, as 4 abas do
 criador e as 6 seções de configurações, nos dois temas e nos dois idiomas.
 
 ## Resultado das duas últimas execuções
 
-| # | Verificação | O que achou historicamente | 27/08 | 28/08 |
+| # | Verificação | O que achou historicamente | 27/08 | 31/08 |
 |---|---|---|---|---|
 | 1 | Tela que não renderiza | `/app/configuracoes/equipe` **em branco** — `refetch` fora de escopo derrubava também Plano e Preferências | 1 defeito, corrigido | 0 em 22 rotas |
 | 2 | Contraste WCAG AA | `text-muted` reprovando por 0,05 no tema claro | 0 falhas | 0 falhas **no texto medido** — os 10 rótulos de eixo em SVG, a 2,4:1, escaparam pelo limite do método (ver abaixo) |
@@ -20,7 +20,7 @@ criador e as 6 seções de configurações, nos dois temas e nos dois idiomas.
 | 6 | Teclado e foco | modal que prometia confinar o foco e não confinava; abas com `role="tab"` sem navegação por setas | controles do header aprovados | **rodada inteira: 4 defeitos, corrigidos** |
 | 7 | Erro de carregamento lido como ausência | banner de erro com a tabela dizendo "nenhum criador" logo abaixo | — | **4 telas, corrigidas** |
 
-### Os dois achados de 28/08
+### Os dois achados de 31/08
 
 Ambos na varredura estática do item 5, e ambos do mesmo tipo: rótulo escrito
 direto no JSX, sem passar por `t()`.
@@ -38,7 +38,7 @@ Nenhum dos dois aparecia na varredura dinâmica: o primeiro porque "Latest" é
 inglês numa tela que estava em inglês, o segundo porque o termo é idêntico nos
 dois idiomas. **A varredura estática e a dinâmica não se substituem.**
 
-### O achado do item 7, em 28/08
+### O achado do item 7, em 31/08
 
 A verificação nova desta rodada, tirada da lista de "defeitos que se repetem e
 valem procurar por nome". O método: percorrer as chamadas do `useApi`
@@ -68,7 +68,7 @@ medir "0 caractere" numa área em carregamento parece tela quebrada. No passo 2
 do assistente de relatório a lista só aparece depois de ~5 s contra o Supabase.
 Espere o dado antes de concluir qualquer coisa.
 
-### A verificação 6 rodada por inteiro (28/08)
+### A verificação 6 rodada por inteiro (31/08)
 
 Era a única das sete que nunca tinha sido feita além dos controles do cabeçalho.
 Método: percorrer todo elemento focável de cada tela medindo quatro coisas —
@@ -91,7 +91,7 @@ não vê foco.
 **Armadilha de medição:** âncora inline envolvendo botão mede a altura da linha,
 não a do botão. "Nova Campanha" aparecia como alvo de 20px e o alvo real é 40px.
 
-### Três pontos cegos das próprias verificações, achados em 28/08
+### Três pontos cegos das próprias verificações, achados em 31/08
 
 Uma varredura estática de código, feita em paralelo, achou defeito que as sete
 verificações não pegavam **por limite de método** — e vale mais registrar o
@@ -140,7 +140,7 @@ Tela viva tem centenas de caracteres; quebrada tem zero. **Espere pelo menos
 2 segundos por rota** — a tela do criador faz quatro requisições e mede zero em
 1,5 s, o que gera falso positivo garantido.
 
-**Não meça dentro de um `<iframe>`** para poupar navegações: em 28/08 a mesma
+**Não meça dentro de um `<iframe>`** para poupar navegações: em 31/08 a mesma
 rota `/app/influenciadores` mediu 0 caractere no iframe e 839 na aba real. Um
 atalho de método que inventa tela quebrada é pior que a varredura manual que
 ele substitui.
