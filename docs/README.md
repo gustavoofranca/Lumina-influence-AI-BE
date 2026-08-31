@@ -25,6 +25,10 @@ como reproduzir.
 | 9 | Robustez das bordas | 88 cenários sobre integrações, login e filtros de listagem; 2 defeitos achados e corrigidos | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
 | 10 | Testes ponta a ponta da interface | 32 testes em Playwright cobrindo rotas, login, estado de erro, conta social, relatório, tema, idioma e foco | [`testes/e2e-front.md`](testes/e2e-front.md) |
 
+Para escrever: [`resultados-consolidados.md`](resultados-consolidados.md) reúne
+cada número medido, o método que o produziu e o relatório de origem — mais os
+limites que o texto precisa declarar.
+
 As capturas de tela do produto em funcionamento, com legenda pronta para a
 escrita, estão em [`capturas/`](capturas/).
 

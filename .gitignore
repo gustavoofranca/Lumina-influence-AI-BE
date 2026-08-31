@@ -55,6 +55,7 @@ next.txt
 # projeto e vão versionados.
 docs/*
 !docs/README.md
+!docs/resultados-consolidados.md
 !docs/adr/
 !docs/security/
 !docs/testes/

@@ -1,0 +1,84 @@
+# Resultados consolidados
+
+Índice de evidência para a escrita: cada afirmação que o texto pode fazer, o
+número que a sustenta, como ele foi obtido e onde está o relatório completo.
+**Nada aqui é estimativa** — todo valor foi medido e está reproduzível pelo
+relatório de origem.
+
+Última consolidação: 28 de agosto de 2026.
+
+## Como usar
+
+Ao escrever uma seção, procure a afirmação na coluna da esquerda. Se ela não
+estiver aqui, ou não foi medida, ou está em algum relatório que ainda não foi
+consolidado — e nos dois casos **não deve ser afirmada sem antes medir**. Cada
+linha cita o arquivo onde estão o método e os dados brutos.
+
+## Qualidade do código
+
+| Afirmação | Número | Como foi obtido | Evidência |
+|---|---|---|---|
+| O back-end tem cobertura automatizada | **317 testes, 92%** de `src/` | `pytest --cov=src` | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
+| A camada que fala com serviços externos é coberta | `gemini.py`, `youtube.py` e `media.py` a **100%**; `google_oauth` 96%; `microsoft_oauth` 91% | 88 cenários com dublês, sem rede | idem |
+| A interface tem teste ponta a ponta | **32 testes**, 2,7 min | Playwright sobre a aplicação em funcionamento | [`testes/e2e-front.md`](testes/e2e-front.md) |
+| A interface é verificada além do teste automatizado | **7 verificações**, com defeito real registrado em cada uma | bateria manual sobre 22 rotas, 2 temas, 2 idiomas | [`testes/verificacao-pre-entrega.md`](testes/verificacao-pre-entrega.md) |
+
+## Segurança
+
+| Afirmação | Número | Como foi obtido | Evidência |
+|---|---|---|---|
+| Não há vulnerabilidade de severidade média ou alta no código | **0** achados Medium/High em **6.436 linhas** | `bandit` 1.9.4; os 18 Low foram verificados um a um e são falso positivo | [`security/analise-estatica.md`](security/analise-estatica.md) |
+| As dependências Python não têm vulnerabilidade conhecida | **0** | `pip-audit` 2.10.1 | idem |
+| As vulnerabilidades do front não alcançam o produto | 8 → **4**, nenhuma alcançável | `npm audit` + inspeção manual dos 12 pontos de navegação dinâmica | idem |
+| Não há referência direta insegura a objeto (IDOR) | **26 endpoints e 6 listagens, 0 vazamentos** | sondagem com identidade de outra agência, sem token e com id inexistente | [`security/idor.md`](security/idor.md) |
+| O modelo resiste a injeção de prompt | **7 famílias de ataque, 7 resistiram**; schema íntegro em todas | cargas contra o `gemini-3.6-flash` real, em container isolado | [`security/prompt-injection.md`](security/prompt-injection.md) |
+
+## Desempenho
+
+| Afirmação | Número | Como foi obtido | Evidência |
+|---|---|---|---|
+| O gargalo de consulta foi identificado e corrigido | `/dashboard/overview`: **70 → 13 consultas**, **15 s → 3,2 s** contra o banco gerenciado | comparação local × gerenciado com **um único usuário** — sem fila, a diferença é round trip puro | [`testes/carga.md`](testes/carga.md) |
+| A correção melhorou a vazão | **9,49 → 23,22 req/s** (50 usuários, local) | Locust 2.46 | idem |
+| A arquitetura de processos multiplica a capacidade | latência com 50 usuários: **880 ms → 64 ms** de 1 para 4 workers | `gunicorn` | idem |
+| O sistema satura sem falhar | **~43 req/s**, **0 falhas até 600 usuários** — degrada em tempo, não em erro | concorrência empurrada até a latência crescer | idem |
+
+## Produto e dado real
+
+| Afirmação | Número | Como foi obtido | Evidência |
+|---|---|---|---|
+| O sistema coleta de plataforma real via OAuth | canal de YouTube vinculado, **10 posts** e **1 comentário** ingeridos; 130 exibições conferem com o canal | fluxo completo de OAuth e sync em `mode: real` | [`testes/integracao-social.md`](testes/integracao-social.md) |
+| A análise de IA roda sobre conteúdo verdadeiro | análise completa em **30,7 s** sobre os posts coletados | `gemini-3.6-flash` | idem |
+| A exportação em PDF resiste a entrada adversa | **11 cenários**, nenhum arquivo corrompido, truncado ou ilegível | geração pelo caminho real de produção | [`testes/robustez-pdf.md`](testes/robustez-pdf.md) |
+
+## Limites que o texto precisa declarar
+
+Um trabalho sobre auditoria de dado não pode esconder o que não mediu. Estes
+limites são conhecidos, têm decisão registrada e são defensáveis — desde que
+declarados.
+
+| Limite | Por quê | Onde está a decisão |
+|---|---|---|
+| Só **1 das 3 plataformas** foi conectada de fato | Instagram e TikTok exigem HTTPS público e App Review, com prazo indeterminado | [ADR-005](adr/0005-alcance-organico-e-pago-vem-do-seed.md) |
+| A separação entre alcance **orgânico e pago vem do seed** | nenhuma API concede essa métrica sem programa comercial; a Data API v3 do YouTube não separa origem | idem |
+| Não há teste de carga sobre o endpoint de análise | o free tier do Gemini dá **20 requisições por dia**; medir p95 com carga esgotaria a cota | [`testes/carga.md`](testes/carga.md) |
+| A vazão medida é de um servidor com 4 workers | número de arquitetura, não de produto; o platô inicial de 32 req/s era teto do **gerador de carga**, não do servidor | idem |
+| A verificação de contraste mede **texto** | percorre nós de texto lendo `color`; SVG usa `fill`, e elemento sem texto não é alcançado por nenhuma das sete verificações | [`testes/verificacao-pre-entrega.md`](testes/verificacao-pre-entrega.md) |
+| Um botão da landing fica em **3,39:1** na ponta escura do gradiente | veio assim do arquivo de design; a ponta clara dá 7,08:1 | mesmo relatório |
+| Emoji no título do relatório vira quadrado no PDF | embarcar fonte com cobertura de emoji pesaria em todo PDF gerado | [`testes/robustez-pdf.md`](testes/robustez-pdf.md) |
+
+## O que o método achou, que é o resultado menos óbvio
+
+Vale como seção própria na escrita: **as medições que mais renderam não foram as
+que confirmaram o esperado, e sim as que expuseram limite do próprio método.**
+
+- Comparar local × gerenciado **com um único usuário** expôs um N+1 que teste de
+  carga com concorrência esconderia atrás da fila.
+- O platô de 32 req/s era o teto do gerador de carga. Sem empurrar a
+  concorrência até a latência crescer, o número publicado seria falso.
+- A varredura de contraste passou duas vezes numa tela com rótulos a 2,4:1,
+  porque mede `color` e o SVG usa `fill`.
+- Um marcador de injeção de prompt apareceu na resposta do modelo e quase virou
+  achado: estava no campo que **cita** o conteúdo analisado. Citar não é obedecer.
+- A resposta do modelo **varia entre execuções idênticas**: a mesma carga
+  repetida 3× produziu o marcador em 1. Teste sobre modelo generativo exige
+  repetição.
