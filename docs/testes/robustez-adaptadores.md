@@ -1,4 +1,4 @@
-# Robustez da camada de integração — YouTube, Gemini e mídia
+# Robustez das bordas — integrações, login e filtros de listagem
 
 Executado em 28 de agosto de 2026, depois de fechada a bateria do B12. O alvo
 não foi o percentual de cobertura, e sim **onde o sistema fala com o mundo
@@ -51,7 +51,9 @@ Três contratos foram escolhidos por consequência, não por linha descoberta:
 | `media.py` | 39% | **100%** |
 | `google_oauth.py` | 60% | **96%** |
 | `microsoft_oauth.py` | 44% | **91%** |
-| Suíte inteira | 230 testes, 86% | **304 testes, 91%** |
+| `campaign_service.py` | 75% | **100%** |
+| `influencer_service.py` | 83% | **100%** |
+| Suíte inteira | 230 testes, 86% | **317 testes, 92%** |
 
 Nos três primeiros módulos, nenhum defeito novo apareceu: eles se comportaram
 como o código prometia em todos os 56 cenários. O ganho é de regressão — o
@@ -75,6 +77,34 @@ mesmo formato do erro que a Microsoft já usava.
 
 É o mesmo padrão que atravessa o projeto, na versão de identidade: **ausência de
 dado externo tratada como se o dado estivesse lá.**
+
+## Terceira rodada: os filtros de listagem
+
+Mesmo método — testar por consequência — aplicado à camada de consulta.
+`campaign_service` e `influencer_service` tinham as funções de filtro sem teste
+nenhum: `status`, intervalo de datas e busca por marca nas campanhas, e a faixa
+de seguidores nos criadores. Filtro que não filtra (ou que filtra demais) é
+invisível até alguém conferir a contagem na tela.
+
+**Segundo defeito real do dia.** A faixa de seguidores somava as contas do
+criador numa subquery e fazia `JOIN` com ela. Sendo `INNER JOIN`, **criador sem
+nenhuma conta social desaparecia da listagem filtrada** — e zero seguidor
+pertence à faixa "menos de 100k". Some da tela justamente quem acabou de ser
+cadastrado e ainda precisa ser conectado. Corrigido para `LEFT JOIN` com
+`coalesce(total, 0)`.
+
+É a terceira aparição do mesmo padrão em um dia: **ausência tratada como
+exclusão**, depois de ausência tratada como zero e de ausência de resposta
+tratada como ausência de dado.
+
+Junto foram travados por teste: a soma entre plataformas (quem tem 60k no
+Instagram e 60k no TikTok pertence à faixa dos 100k), a validação do período no
+`PATCH` de campanha — que precisa olhar o período **resultante do merge**, não
+só o campo enviado —, e o id malformado na listagem de contas sociais, que
+filtra para conjunto vazio em vez de estourar 500.
+
+`campaign_service` e `influencer_service` ficaram em **100%**; a suíte, em
+**317 testes e 92%**.
 
 ## Três pontos que o teste fixou como contrato
 

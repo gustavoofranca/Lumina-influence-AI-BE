@@ -529,3 +529,148 @@ def test_member_cannot_change_own_role(client, ctx):
     me = client.get("/api/v1/auth/me", headers=ctx.h_a_member).get_json()["data"]["user"]["id"]
     r = client.patch(f"/api/v1/users/{me}", headers=ctx.h_a_member, json={"role": "admin"})
     assert r.status_code == 403
+
+
+# --------------------------------------------------------------------------
+# Filtros de listagem — o que a tela oferece e a suíte não exercitava
+# --------------------------------------------------------------------------
+def _cria_influ_com_seguidores(client, ctx, nome, seguidores, plataforma="tiktok"):
+    """Cria influenciador e uma conta social com a contagem pedida."""
+    inf = client.post(
+        "/api/v1/influencers", headers=ctx.h_a_admin,
+        json={"display_name": nome, "niche": "beauty"},
+    ).get_json()["data"]
+    client.post(
+        "/api/v1/social-accounts", headers=ctx.h_a_admin,
+        json={"influencer_id": inf["id"], "platform": plataforma,
+              "handle": nome.lower(), "follower_count": seguidores},
+    )
+    return inf["id"]
+
+
+def _nomes(resposta):
+    return {i["display_name"] for i in resposta.get_json()["data"]}
+
+
+def test_filtro_de_seguidores_respeita_o_minimo(client, ctx):
+    _cria_influ_com_seguidores(client, ctx, "Micro", 5_000)
+    _cria_influ_com_seguidores(client, ctx, "Macro", 800_000)
+
+    r = client.get("/api/v1/influencers?follower_min=100000", headers=ctx.h_a_admin)
+    assert r.status_code == 200
+    assert _nomes(r) == {"Macro"}
+
+
+def test_filtro_de_seguidores_respeita_o_maximo(client, ctx):
+    _cria_influ_com_seguidores(client, ctx, "Micro", 5_000)
+    _cria_influ_com_seguidores(client, ctx, "Macro", 800_000)
+
+    r = client.get("/api/v1/influencers?follower_max=100000", headers=ctx.h_a_admin)
+    assert "Macro" not in _nomes(r)
+    assert "Micro" in _nomes(r)
+
+
+def test_faixa_de_seguidores_soma_as_contas_do_criador(client, ctx):
+    # A tela oferece faixas ("100k – 500k") e o criador costuma ter mais de uma
+    # plataforma: filtrar por conta isolada colocaria na faixa errada quem tem
+    # 60k no Instagram e 60k no TikTok.
+    inf = client.post(
+        "/api/v1/influencers", headers=ctx.h_a_admin,
+        json={"display_name": "Somado", "niche": "fitness"},
+    ).get_json()["data"]
+    for plataforma in ("instagram", "tiktok"):
+        client.post(
+            "/api/v1/social-accounts", headers=ctx.h_a_admin,
+            json={"influencer_id": inf["id"], "platform": plataforma,
+                  "handle": f"somado_{plataforma}", "follower_count": 60_000},
+        )
+
+    acima = client.get("/api/v1/influencers?follower_min=100000", headers=ctx.h_a_admin)
+    assert "Somado" in _nomes(acima)
+
+
+def test_faixa_de_seguidores_combina_minimo_e_maximo(client, ctx):
+    _cria_influ_com_seguidores(client, ctx, "Micro", 5_000)
+    _cria_influ_com_seguidores(client, ctx, "Mid", 250_000)
+    _cria_influ_com_seguidores(client, ctx, "Macro", 800_000)
+
+    r = client.get(
+        "/api/v1/influencers?follower_min=100000&follower_max=500000", headers=ctx.h_a_admin
+    )
+    assert _nomes(r) == {"Mid"}
+
+
+def test_criador_sem_conta_social_nao_soma_seguidor_nenhum(client, ctx):
+    # Criador recém-cadastrado, ainda sem conta conectada, tem zero seguidor —
+    # e zero está dentro de "menos de 100k". Sumir da faixa esconde justamente
+    # quem acabou de entrar e precisa ser conectado.
+    client.post(
+        "/api/v1/influencers", headers=ctx.h_a_admin,
+        json={"display_name": "Recem Cadastrado", "niche": "games"},
+    )
+    r = client.get("/api/v1/influencers?follower_max=100000", headers=ctx.h_a_admin)
+    assert "Recem Cadastrado" in _nomes(r)
+
+
+def test_campanha_filtra_por_inicio_e_fim_do_periodo(client, ctx):
+    client.post(
+        "/api/v1/campaigns", headers=ctx.h_a_admin,
+        json={"brand_name": "Marca Nova", "period_start": "2026-06-01",
+              "period_end": "2026-07-01"},
+    )
+    depois = client.get("/api/v1/campaigns?starts_after=2026-05-01", headers=ctx.h_a_admin)
+    assert {c["brand_name"] for c in depois.get_json()["data"]} == {"Marca Nova"}
+
+    antes = client.get("/api/v1/campaigns?ends_before=2026-03-01", headers=ctx.h_a_admin)
+    assert {c["brand_name"] for c in antes.get_json()["data"]} == {"Marca A"}
+
+
+def test_campanha_busca_por_marca_ignora_caixa(client, ctx):
+    r = client.get("/api/v1/campaigns?search=marca a", headers=ctx.h_a_admin)
+    assert r.status_code == 200
+    assert {c["brand_name"] for c in r.get_json()["data"]} == {"Marca A"}
+
+
+def test_campanha_busca_sem_correspondencia_devolve_lista_vazia(client, ctx):
+    r = client.get("/api/v1/campaigns?search=inexistente", headers=ctx.h_a_admin)
+    assert r.status_code == 200
+    assert r.get_json()["data"] == []
+
+
+def test_patch_de_campanha_recusa_periodo_invertido_no_merge(client, ctx):
+    # A validação tem que olhar o período *resultante*: mandar só o fim, com o
+    # início vindo do que já está gravado, é o caminho que passa despercebido.
+    r = client.patch(
+        f"/api/v1/campaigns/{ctx.camp_a_id}", headers=ctx.h_a_admin,
+        json={"period_end": "2025-12-01"},
+    )
+    assert r.status_code == 422
+
+
+def test_patch_de_campanha_aceita_periodo_coerente(client, ctx):
+    r = client.patch(
+        f"/api/v1/campaigns/{ctx.camp_a_id}", headers=ctx.h_a_admin,
+        json={"period_end": "2026-03-01", "brand_name": "Marca A Renomeada"},
+    )
+    assert r.status_code == 200
+    assert r.get_json()["data"]["brand_name"] == "Marca A Renomeada"
+
+
+def test_delete_de_campanha_remove_da_listagem(client, ctx):
+    assert client.delete(f"/api/v1/campaigns/{ctx.camp_a_id}",
+                         headers=ctx.h_a_admin).status_code in (200, 204)
+    r = client.get("/api/v1/campaigns", headers=ctx.h_a_admin)
+    assert ctx.camp_a_id not in {c["id"] for c in r.get_json()["data"]}
+
+
+def test_conta_social_com_id_de_criador_malformado_devolve_lista_vazia(client, ctx):
+    # Id quebrado vem de link velho ou digitação, não é ataque: a listagem
+    # filtra para conjunto vazio em vez de estourar 500.
+    r = client.get("/api/v1/social-accounts?influencer_id=nao-e-uuid", headers=ctx.h_a_admin)
+    assert r.status_code == 200
+    assert r.get_json()["data"] == []
+
+
+def test_plano_com_id_malformado_devolve_404(client, ctx):
+    r = client.get("/api/v1/plans/nao-e-uuid", headers=ctx.h_a_admin)
+    assert r.status_code == 404

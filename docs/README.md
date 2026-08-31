@@ -7,7 +7,7 @@ como reproduzir.
 
 - **Período de execução:** 25 a 27 de agosto de 2026
 - **Suíte do back-end ao fim da bateria:** 230 testes, 85% de cobertura de `src/`
-- **Suíte do back-end em 28/08, após a frente de robustez:** 304 testes, 91%
+- **Suíte do back-end em 28/08, após a frente de robustez:** 317 testes, 92%
 
 ## Resultado por frente
 
@@ -21,7 +21,7 @@ como reproduzir.
 | 6 | Documentação visual da arquitetura | 4 diagramas em Mermaid, versionados com o código | [`arquitetura/README.md`](arquitetura/README.md) |
 | 7 | Integração social contra conta real (B8) | canal de YouTube vinculado por OAuth, 10 posts e comentário real coletados; limite de alcance pago declarado | [`testes/integracao-social.md`](testes/integracao-social.md) |
 | 8 | Verificação de interface pré-entrega | 6 verificações sobre a interface em funcionamento; a última execução achou 1 tela que não renderizava | [`testes/verificacao-pre-entrega.md`](testes/verificacao-pre-entrega.md) |
-| 9 | Robustez da camada de integração | 74 cenários sobre YouTube, Gemini, mídia e os dois clientes OAuth; 1 defeito de login achado e corrigido | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
+| 9 | Robustez das bordas | 88 cenários sobre integrações, login e filtros de listagem; 2 defeitos achados e corrigidos | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
 
 As capturas de tela do produto em funcionamento, com legenda pronta para a
 escrita, estão em [`capturas/`](capturas/).

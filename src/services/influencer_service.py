@@ -59,11 +59,16 @@ def build_influencer_query(
             .group_by(SocialAccount.influencer_id)
             .subquery()
         )
-        stmt = stmt.join(sums, sums.c.inf_id == Influencer.id)
+        # LEFT JOIN, não INNER: criador ainda sem conta conectada tem zero
+        # seguidor, e zero pertence à faixa "menos de 100k". Com o join interno
+        # ele sumia da listagem filtrada — justamente quem acabou de ser
+        # cadastrado e precisa ser conectado.
+        total = func.coalesce(sums.c.total, 0)
+        stmt = stmt.outerjoin(sums, sums.c.inf_id == Influencer.id)
         if follower_min is not None:
-            stmt = stmt.where(sums.c.total >= follower_min)
+            stmt = stmt.where(total >= follower_min)
         if follower_max is not None:
-            stmt = stmt.where(sums.c.total <= follower_max)
+            stmt = stmt.where(total <= follower_max)
 
     return stmt
 
