@@ -8,7 +8,7 @@ como reproduzir.
 - **Período de execução:** 25 a 27 de agosto de 2026
 - **Suíte do back-end ao fim da bateria:** 230 testes, 85% de cobertura de `src/`
 - **Suíte do back-end em 01/09, após a frente de robustez:** 404 testes, 95%
-- **Suíte de interface:** 46 testes ponta a ponta em Playwright
+- **Suíte de interface:** 51 testes ponta a ponta em Playwright
 
 ## Resultado por frente
 

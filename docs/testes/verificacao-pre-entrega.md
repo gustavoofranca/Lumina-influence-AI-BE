@@ -13,7 +13,7 @@ criador e as 6 seções de configurações, nos dois temas e nos dois idiomas.
 | # | Verificação | O que achou historicamente | 27/08 | 31/08 |
 |---|---|---|---|---|
 | 1 | Tela que não renderiza | `/app/configuracoes/equipe` **em branco** — `refetch` fora de escopo derrubava também Plano e Preferências | 1 defeito, corrigido | 0 em 22 rotas |
-| 2 | Contraste WCAG AA | `text-muted` reprovando por 0,05 no tema claro | 0 falhas | 0 falhas **no texto medido** — os 10 rótulos de eixo em SVG, a 2,4:1, escaparam pelo limite do método (ver abaixo) |
+| 2 | Contraste WCAG AA | `text-muted` reprovando por 0,05 no tema claro | 0 falhas | 0 falhas **no texto medido** — os 10 rótulos de eixo em SVG, a 2,4:1, escaparam pelo limite do método. **Automatizada em 01/09**, com SVG e composição de camadas: achou mais 3 famílias de defeito, todas corrigidas |
 | 3 | Vazamento de largura em 390px | 4 telas estourando a viewport por falta de `min-w-0` | 0 estouros | 0 em 13 rotas |
 | 4 | Botão sem ação atrás | 7 botões mortos, entre eles "Gerar Relatório" e "Abrir auditoria" | 0 | 0 (12 achados, todos na página de showcase) |
 | 5 | Texto fora do i18n | "Entrar com Google" em português na tela em inglês; idioma que não persistia | 0 | **2 defeitos, corrigidos** |
@@ -91,7 +91,7 @@ não vê foco.
 **Armadilha de medição:** âncora inline envolvendo botão mede a altura da linha,
 não a do botão. "Nova Campanha" aparecia como alvo de 20px e o alvo real é 40px.
 
-### Três pontos cegos das próprias verificações, achados em 31/08
+### Três pontos cegos das próprias verificações — achados em 31/08, fechados em 01/09
 
 Uma varredura estática de código, feita em paralelo, achou defeito que as sete
 verificações não pegavam **por limite de método** — e vale mais registrar o
@@ -113,6 +113,38 @@ Os dois scripts do item 4 e da parte estática do item 5 ficaram versionados em
 [`scripts/`](scripts/) — rodar é `python3 scripts/botao_morto.py <caminho>/src`
 e `python3 scripts/texto_fora_do_i18n.py <caminho>/src`, apontando para o
 front-end.
+
+#### Como cada um foi fechado, em 01/09
+
+Os três viraram verificação automatizada. Em cada caso o defeito histórico foi
+**reintroduzido de propósito** para confirmar que o teste novo o vê — teste que
+nunca reprovou pode estar medindo nada, que é exatamente como os três buracos
+sobreviveram.
+
+| Ponto cego | Como foi fechado | Prova |
+|---|---|---|
+| Contraste não enxerga SVG | `e2e/contraste.spec.js` mede `color` **e** `fill`, nos dois temas | com o defeito de volta, acusa 1,18:1 |
+| Nada sem texto é medido | `e2e/carregamento.spec.js` segura a resposta da API e mede o placeholder | acusa página a 0,931 e placeholder a 0,022 |
+| A varredura de i18n só olha JSX | o script ganhou dois alvos e passou a ler `.js` | `scripts/regressao/` guarda os dois defeitos reais |
+
+**O buraco mais fundo não era formato, era uma exclusão.** A varredura de i18n
+descartava `^[a-z][a-zA-Z]*$` para ignorar identificador, e junto ignorava
+**qualquer palavra minúscula solta** — inclusive "seguidores", fixo em português
+no cabeçalho do criador. Uma regra escrita para reduzir ruído cegou a varredura
+para uma classe inteira de defeito, e isso não aparece lendo a lista de achados:
+só aparece lendo o filtro.
+
+**Fechar o de contraste achou defeito novo.** Ao compor as camadas translúcidas
+em vez de pular até a primeira opaca — mudança feita para eliminar o falso
+positivo conhecido do selo de duração —, apareceram crachás de status, iniciais
+de avatar e contadores de aba entre **3,57 e 4,43:1** no tema claro. O método
+antigo media aqueles tokens contra branco puro, onde davam 4,9–5,4:1 e pareciam
+folgados; na tela eles quase nunca pousam sobre branco, e sim sobre um tinte de
+15% a 25% da própria cor. Corrigidos.
+
+Sobra uma quarta limitação, esta declarada e não fechada: as verificações medem
+o que o navegador renderiza, e não o que um leitor de tela **anuncia**. Ordem de
+leitura, `aria-live` e agrupamento continuam fora de alcance.
 
 ## Como rodar cada uma
 

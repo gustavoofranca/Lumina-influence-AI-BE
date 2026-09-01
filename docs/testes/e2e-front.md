@@ -4,7 +4,7 @@ Executado pela primeira vez em 31 de agosto de 2026. Fecha a etapa 2 do plano
 de robustez: até aqui, **os 317 testes da suíte eram todos do back-end** e o
 front não tinha ferramenta de teste nenhuma.
 
-- **Ferramenta:** Playwright, 46 testes, 3,6 min por execução completa.
+- **Ferramenta:** Playwright, 51 testes, 5,0 min por execução completa.
 - **Onde:** `Lumina-Influence-AI-FE/e2e/`, com `package.json` próprio.
 - **Como rodar:** `cd Lumina-Influence-AI-FE/e2e && npm install && npm test`,
   com a stack de pé.
@@ -32,6 +32,8 @@ O primeiro arquivo da suíte automatiza exatamente essa varredura.
 | `paginas-legais.spec.js` | 7 | política, termos e exclusão de dados existem em URL própria, nos dois idiomas, e o rodapé leva até elas |
 | `exclusao-de-criador.spec.js` | 2 | o botão só libera com o nome digitado, e confirmar apaga de verdade — o teste confere 404 na API, não o sumiço da tela |
 | `exclusao-do-titular.spec.js` | 2 | a escolha de apagar o histórico começa desmarcada e muda o rótulo do botão; a exclusão da conta declara o escopo antes de existir botão |
+| `contraste.spec.js` | 3 | contraste WCAG AA nos dois temas, medindo `color` **e** `fill` de SVG, com as camadas translúcidas compostas |
+| `carregamento.spec.js` | 2 | o placeholder pertence ao tema — medido segurando a resposta da API para o estado intermediário existir |
 
 `paginas-legais.spec.js` entrou em 31/08, junto da preparação para o App Review
 da Meta: as três páginas são a primeira coisa que o revisor abre, e antes disso
