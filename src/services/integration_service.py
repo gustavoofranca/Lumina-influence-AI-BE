@@ -201,7 +201,23 @@ def handle_callback(
     return account
 
 
-def disconnect_account(*, social_account_id: uuid.UUID, agency_id: uuid.UUID) -> None:
+def disconnect_account(
+    *, social_account_id: uuid.UUID, agency_id: uuid.UUID, purge_collected: bool = False
+) -> dict:
+    """Desliga a coleta de uma conta. `purge_collected` também apaga o histórico.
+
+    O padrão preserva as publicações já coletadas: desligar a coleta não deve
+    apagar o trabalho de análise junto, e a conta sobrevive para que o criador
+    continue mostrando a rede vinculada.
+
+    `purge_collected=True` é o direito de eliminação do titular exercido no
+    escopo de uma rede: apaga as publicações daquela conta e, em cascata, os
+    comentários coletados com elas. A conta em si permanece, sem token e sem
+    histórico — é o registro do vínculo, não o dado pessoal.
+
+    Devolve quantos posts foram apagados, porque a interface precisa confirmar
+    o que aconteceu: "desconectado" não distingue as duas operações.
+    """
     account = db.session.scalar(
         select(SocialAccount)
         .join(Influencer, SocialAccount.influencer_id == Influencer.id)
@@ -209,10 +225,24 @@ def disconnect_account(*, social_account_id: uuid.UUID, agency_id: uuid.UUID) ->
     )
     if account is None:
         raise NotFoundError("SocialAccount não encontrada")
+
+    apagados = 0
+    if purge_collected:
+        posts = db.session.scalars(
+            select(Post).where(Post.social_account_id == account.id)
+        ).all()
+        for post in posts:
+            # Delete pela sessão, e não em massa: o cascade dos comentários é
+            # do ORM, e um `DELETE` em lote os deixaria órfãos.
+            db.session.delete(post)
+        apagados = len(posts)
+        account.last_synced_at = None
+
     account.access_token_encrypted = None
     account.refresh_token_encrypted = None
     account.token_expires_at = None
     db.session.commit()
+    return {"purged": purge_collected, "posts_deleted": apagados}
 
 
 # ==========================================================================

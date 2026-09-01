@@ -93,5 +93,12 @@ def disconnect(platform, social_account_id):
         from src.utils.errors import NotFoundError
 
         raise NotFoundError("SocialAccount não encontrada") from exc
-    integration_service.disconnect_account(social_account_id=sid, agency_id=current_agency_id())
-    return ok({"disconnected": str(sid)})
+    # O flag vem no corpo, não na query: é o que distingue desligar a coleta de
+    # apagar o histórico, e parâmetro destrutivo em URL vaza em log de acesso.
+    corpo = request.get_json(silent=True) or {}
+    resultado = integration_service.disconnect_account(
+        social_account_id=sid,
+        agency_id=current_agency_id(),
+        purge_collected=bool(corpo.get("purge_collected", False)),
+    )
+    return ok({"disconnected": str(sid), **resultado})

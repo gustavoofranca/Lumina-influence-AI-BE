@@ -70,6 +70,29 @@ def update_user(user_id):
     return ok(_dump(user_service.apply_update(target, data)))
 
 
+@bp.get("/me/deletion-preview")
+@require_auth
+def preview_own_deletion():
+    """O que a exclusão da própria conta levaria junto.
+
+    A interface precisa dizer isto **antes** de pedir a confirmação: avisar
+    "isto apaga a agência" depois do fato não é aviso, é notificação.
+    """
+    return ok(user_service.preview_own_deletion(g.current_user))
+
+
+@bp.delete("/me")
+@require_auth
+def delete_own_account():
+    """Exclusão definitiva pedida pelo próprio titular.
+
+    Rota separada de `DELETE /<user_id>` de propósito: aquela é remoção de
+    membro **por um admin**, é soft delete e proíbe auto-remoção. Esta é o
+    direito de eliminação do titular (LGPD, art. 18, VI) e apaga de verdade.
+    """
+    return ok(user_service.erase_own_account(g.current_user))
+
+
 @bp.delete("/<user_id>")
 @require_auth
 @require_role(UserRole.ADMIN)

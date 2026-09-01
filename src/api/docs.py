@@ -260,6 +260,30 @@ def build_openapi() -> dict:
     paths.update(_crud_paths("campaigns", "CampaignOut", "CampaignCreateIn", "Campaigns"))
     paths.update(_crud_paths("reports", "ReportOut", "ReportCreateIn", "Reports", mutable=False))
 
+    # Exclusão pedida pelo próprio titular. Fica fora do CRUD porque não é a
+    # mesma operação que `DELETE /users/{id}`: aquela é remoção de membro por um
+    # admin e é lógica; esta apaga de verdade e pode levar a agência junto.
+    paths["/api/v1/users/me/deletion-preview"] = {
+        "get": {
+            "tags": ["Users"], "summary": "O que a exclusão da própria conta levaria junto",
+            "description": "Devolve `scope: account` quando só o usuário é apagado, "
+                           "ou `scope: agency` com a contagem de criadores, campanhas, "
+                           "relatórios e membros que iriam junto.",
+            "responses": {"200": {"description": "Prévia da exclusão"}},
+        }
+    }
+    paths["/api/v1/users/me"] = {
+        "delete": {
+            "tags": ["Users"],
+            "summary": "Excluir definitivamente a própria conta",
+            "description": "Exclusão física, sem soft delete e sem desfazer. Se não restar "
+                           "outro administrador na agência, ela é apagada junto, com "
+                           "criadores, contas conectadas, publicações, comentários, "
+                           "campanhas e relatórios.",
+            "responses": {"200": {"description": "Conta (ou agência) excluída"}},
+        }
+    }
+
     return {
         "openapi": "3.1.0",
         "info": {
