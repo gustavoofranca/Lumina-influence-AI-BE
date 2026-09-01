@@ -45,12 +45,40 @@ preço da saída.
 **A conclusão é que o problema nunca foi preço, foi cota.** Trocar o free tier
 pelo Tier 1 resolve o 429 por menos de dois dólares até o fim do projeto.
 
+## Não existe plano mensal
+
+Vale registrar porque a pergunta é natural e a resposta é contraintuitiva: **a
+API do Gemini não tem assinatura.** Os "tiers" não são planos que se compra —
+são faixas de limite que o projeto sobe sozinho conforme o gasto acumulado.
+
+| Tier | Como se chega | Teto de gasto |
+|---|---|---|
+| Free | projeto ativo | — (mas 20 requisições/dia) |
+| Tier 1 | **vincular uma conta de faturamento** | US$ 250/mês |
+| Tier 2 | US$ 100 acumulados, há 3+ dias | US$ 2.000/mês |
+| Tier 3 | US$ 1.000 acumulados, há 30+ dias | US$ 20.000+/mês |
+
+Desde 23/03/2026 há duas formas de pagar. **Postpay** cobra no fim do mês, sem
+mínimo. **Prepay** exige comprar crédito antes, a partir de **US$ 10**, que
+expira em 12 meses. Para este projeto os dois servem: o Postpay não tem piso, e
+os US$ 10 do Prepay cobrem a entrega final com folga — é o teto rígido para quem
+prefere não deixar cartão exposto a consumo variável.
+
+O teto de US$ 250/mês do Tier 1 é a rede de segurança: mesmo um laço acidental
+não passa dali.
+
+**Atenção ao calendário:** o preço dobra em **1º de janeiro de 2027**, para
+US$ 1,50 / US$ 7,50. Uma entrega final até dezembro fica na faixa barata. Vários
+sites de terceiros já publicam o valor dobrado como se fosse o atual — é o preço
+de 2027, não o de hoje.
+
 ## Como sair do free tier
 
 1. Abrir [aistudio.google.com](https://aistudio.google.com) com a conta dona da
    chave.
 2. **Get API key → o projeto da Lumina → Set up billing**, e vincular uma conta
-   de faturamento do Google Cloud com cartão.
+   de faturamento do Google Cloud com cartão. Vincular já basta para o Tier 1 —
+   não é preciso gastar nada antes.
 3. Conferir em [aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit)
    que o projeto aparece como **Tier 1**. A promoção costuma valer na hora.
 4. A chave em `GEMINI_API_KEY` **continua a mesma** — o tier é do projeto, não da
@@ -63,6 +91,11 @@ melhorar seus produtos; **no tier pago, não.** Como o sistema envia legenda e
 comentários de criadores reais, isso é argumento de privacidade além de
 disponibilidade — e a Política de Privacidade publicada afirma que os dados não
 são usados para treinar modelo, o que só é verdade fora do free tier.
+
+Depois de habilitar, declare `GEMINI_PAID_TIER=true` no `.env`. Sem isso o boot
+continua reclamando e o `/health` segue publicando `model_privacy:
+free_tier_warning` — a verificação existe justamente porque o tier não é
+detectável pela chave. Ver [`conformidade-publicada.md`](conformidade-publicada.md).
 
 ## O que estes números não cobrem
 
