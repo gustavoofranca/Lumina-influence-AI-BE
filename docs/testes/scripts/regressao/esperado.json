@@ -1,0 +1,11 @@
+{
+  "_leia_me": "Defeitos reais, ja vividos no produto, que cada varredura precisa continuar vendo. Rodar: python3 <script>.py --verificar-regressao. Se algum FALTOU, uma regra de exclusao ficou larga demais.",
+  "_formato": "Cada item e um trecho que precisa aparecer entre os achados. Para texto_fora_do_i18n o achado e o proprio literal; para botao_morto e a tag do botao.",
+  "texto_fora_do_i18n": [
+    "seguidores",
+    "Download iniciado"
+  ],
+  "botao_morto": [
+    "leftIcon={Download}"
+  ]
+}

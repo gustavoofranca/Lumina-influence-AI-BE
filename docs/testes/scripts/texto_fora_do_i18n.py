@@ -22,7 +22,11 @@ import re
 import sys
 from pathlib import Path
 
-RAIZ = Path(sys.argv[1] if len(sys.argv) > 1 else "src")
+from varredura import Filtro, verificar_regressao
+
+ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
+MODO_REGRESSAO = "--verificar-regressao" in sys.argv
+RAIZ = Path(ARGS[0] if ARGS else "src")
 ENTRE_TAGS = re.compile(r">\s*([A-Za-zÀ-ÿ][^<>{}\n]{2,60}?)\s*<")
 ATRIBUTO = re.compile(r'\b(placeholder|title|aria-label|alt|label)\s*=\s*"([^"{}]{3,60})"')
 # `{expr} texto<` — o alvo 1 exige `>` antes do texto e perde exatamente isto.
@@ -47,13 +51,23 @@ EXCECOES = {
 # ser texto de interface.
 SO_TECNICO = re.compile(r"^[\s\d\W_]+$|^[a-z][a-z]{0,2}$|^[a-z]+[A-Z]\w*$|^https?://")
 # O alvo 3 casa `}` + texto + `<`, e isso inclui codigo: `} return ( <div`.
-# Frase de interface nao tem parentese solto, atribuicao nem palavra-chave de
-# JavaScript no comeco — filtrar por isso e mais barato que parsear.
+#
+# **Esta regra vale so onde se le JSX cru** (alvos 1 e 3): o `>` que fecha uma
+# tag e o `}` que fecha uma expressao sao ambos seguidos de codigo. Nao vale
+# para os alvos 2 e 4, que leem string entre aspas — ali nao ha codigo para
+# vazar, e a regra so tira texto legitimo. Aplica-la a todos cegava os outros: sem
+# `re.IGNORECASE` "Export" ainda casaria com a palavra-chave `export`, e o
+# parentese sozinho descartava "Background solido (neutral-800)...", que e
+# texto de interface legitimo. Filtro escrito para um alvo nao pode filtrar os
+# demais — foi o relatorio de descartes que expos isso, na primeira execucao.
+#
+# Sem IGNORECASE de proposito: palavra-chave de JavaScript e minuscula, e
+# "Export", "Import", "New", "Case" e "Delete" sao rotulos de botao.
+ALVOS_COM_CODIGO_CRU = ("entre_tags", "apos_expressao")
 PARECE_CODIGO = re.compile(
-    r"[(){}=;]|&&|\|\||=>|"
+    r"[{}=;]|&&|\|\||=>|"
     r"^(?:return|if|else|const|let|var|function|export|import|for|while|switch|"
-    r"case|await|async|new|typeof|delete)\b",
-    re.IGNORECASE,
+    r"case|await|async|new|typeof|delete)\b"
 )
 
 
@@ -83,40 +97,77 @@ def nomes_de_chave(raiz: Path) -> set[str]:
 
 
 CHAVES: set[str] = set()
+FILTRO = Filtro()
 
 
-def relevante(texto: str) -> bool:
+def relevante(texto: str, *, alvo: str = "") -> bool:
+    """Cada descarte é registrado por regra — ver `varredura.Filtro`.
+
+    Um `return False` mudo aqui foi o que cegou esta varredura por duas
+    auditorias: a regra de identificador comia palavra minúscula solta, e o
+    relatório limpo parecia bom resultado.
+
+    `alvo` existe porque **filtro é específico do alvo**. A guarda contra código
+    só faz sentido onde código pode vazar (o padrão `}` … `<`); aplicá-la ao
+    texto entre tags descartava frase de interface com parêntese.
+    """
     t = texto.strip()
-    if t in EXCECOES or SO_TECNICO.match(t) or PARECE_CODIGO.search(t):
-        return False
+    if t in EXCECOES:
+        return not FILTRO.descarta("identidade visual / nome próprio", t)
+    if SO_TECNICO.match(t):
+        return not FILTRO.descarta("parece identificador ou fragmento técnico", t)
+    if alvo in ALVOS_COM_CODIGO_CRU and PARECE_CODIGO.search(t):
+        return not FILTRO.descarta("parece código (só nos alvos que leem JSX cru)", t)
     if t in CHAVES:
-        return False
-    return bool(re.search(r"[A-Za-zÀ-ÿ]{3,}", t))
+        return not FILTRO.descarta("é nome de chave do i18n", t)
+    if not re.search(r"[A-Za-zÀ-ÿ]{3,}", t):
+        return not FILTRO.descarta("sem palavra de 3+ letras", t)
+    return True
+
+
+def coletar(raiz: Path) -> list[str]:
+    """Só os textos achados — usado pela verificação de regressão."""
+    global CHAVES, RAIZ
+    anterior, RAIZ = RAIZ, raiz
+    CHAVES = nomes_de_chave(raiz)
+    try:
+        return [valor for _, _, valor in _varrer(raiz)]
+    finally:
+        RAIZ = anterior
+
+
+def _varrer(raiz: Path):
+    achados = []
+    # `.js` entra por causa do alvo 4: servico e hook tambem montam mensagem.
+    arquivos = sorted([*raiz.rglob("*.jsx"), *raiz.rglob("*.js")])
+    for arq in arquivos:
+        texto = arq.read_text(encoding="utf-8")
+        for regex, grupos, alvo in (
+            (ENTRE_TAGS, (1,), "entre_tags"),
+            (ATRIBUTO, (2,), "atributo"),
+            (APOS_EXPRESSAO, (1,), "apos_expressao"),
+            (EM_CHAMADA, (1, 2), "em_chamada"),
+        ):
+            for m in regex.finditer(texto):
+                valor = next((m.group(g) for g in grupos if m.group(g)), None)
+                if valor is None or not relevante(valor, alvo=alvo):
+                    continue
+                linha = texto[:m.start()].count("\n") + 1
+                achados.append((str(arq), linha, valor.strip()))
+    return achados
 
 
 def main() -> int:
     global CHAVES
+    if MODO_REGRESSAO:
+        return verificar_regressao("texto_fora_do_i18n", coletar)
+
     CHAVES = nomes_de_chave(RAIZ)
-    achados = []
-    # `.js` entra por causa do alvo 4: servico e hook tambem montam mensagem.
-    arquivos = sorted([*RAIZ.rglob("*.jsx"), *RAIZ.rglob("*.js")])
-    for arq in arquivos:
-        texto = arq.read_text(encoding="utf-8")
-        for regex, grupos in (
-            (ENTRE_TAGS, (1,)),
-            (ATRIBUTO, (2,)),
-            (APOS_EXPRESSAO, (1,)),
-            (EM_CHAMADA, (1, 2)),
-        ):
-            for m in regex.finditer(texto):
-                valor = next((m.group(g) for g in grupos if m.group(g)), None)
-                if valor is None or not relevante(valor):
-                    continue
-                linha = texto[:m.start()].count("\n") + 1
-                achados.append((str(arq), linha, valor.strip()))
+    achados = _varrer(RAIZ)
     for arq, linha, valor in achados:
         print(f"{arq}:{linha}: {valor!r}")
     print(f"\n{len(achados)} literal(is) fora do t()")
+    FILTRO.imprimir_relatorio()
     return 0
 
 

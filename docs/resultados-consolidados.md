@@ -84,10 +84,16 @@ que confirmaram o esperado, e sim as que expuseram limite do próprio método.**
   **compor** as camadas translúcidas, achou mais três famílias de defeito que o
   método antigo escondia — medir contra branco puro fazia tokens que sempre
   pousam sobre tinte parecerem folgados.
-- **Uma regra escrita para reduzir ruído cegou uma varredura inteira.** A de
-  i18n descartava `^[a-z][a-zA-Z]*$` para ignorar identificador, e com isso
+- **Uma varredura falha em silêncio pelo lado da exclusão, não pelo lado da
+  detecção.** Detecção errada enche o relatório de ruído e alguém percebe;
+  exclusão errada deixa o relatório limpo, que é o sintoma de um sistema são. A
+  de i18n descartava `^[a-z][a-zA-Z]*$` para ignorar identificador e com isso
   ignorava qualquer palavra minúscula solta — inclusive "seguidores", fixo em
-  português. Não aparece lendo a lista de achados: só aparece lendo o filtro.
+  português. A correção não foi o caso, foi a forma: todo descarte passou a ser
+  contabilizado e impresso junto dos achados, e **na primeira execução com o
+  relatório ligado apareceram mais duas exclusões largas demais**, uma delas
+  descartando o rótulo "Export" por casar com a palavra-chave `export`. Em
+  ferramenta de auditoria, a regra de exclusão é código de produção.
 - **Teste que nunca reprovou pode não estar medindo nada.** Cada verificação
   automatizada foi validada reintroduzindo o defeito histórico, e duas delas
   passavam por vazio na primeira versão — uma media a tela antes de o gráfico

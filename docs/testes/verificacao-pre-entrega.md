@@ -146,6 +146,50 @@ Sobra uma quarta limitação, esta declarada e não fechada: as verificações m
 o que o navegador renderiza, e não o que um leitor de tela **anuncia**. Ordem de
 leitura, `aria-live` e agrupamento continuam fora de alcance.
 
+### O modo de falha por trás dos três: o filtro é invisível
+
+Os três pontos cegos têm a mesma forma, e ela merece nome próprio: **uma
+varredura falha em silêncio pelo lado da exclusão, não pelo lado da detecção.**
+
+Quando a detecção erra, o relatório enche de ruído e alguém percebe no mesmo
+dia. Quando a **exclusão** erra, o relatório fica limpo — e limpo é exatamente
+o que se espera de um bom resultado. O sintoma de uma varredura cega é
+indistinguível do sintoma de um sistema são. Não aparece lendo a lista de
+achados; só aparece lendo o filtro, que é justamente o que ninguém relê.
+
+Duas mudanças, em 01/09, atacam a forma e não os três casos:
+
+**1. Todo descarte é contabilizado e impresso.** As varreduras deixaram de ter
+`continue` mudo: cada exclusão passa por `varredura.Filtro`, que agrupa por
+regra e imprime o balanço logo abaixo dos achados, com amostras. O mesmo vale no
+lado JavaScript, onde o teste de contraste leva o balanço na mensagem de falha.
+
+O efeito foi imediato e é a melhor evidência de que o problema era real: **na
+primeira execução com o relatório ligado, duas outras exclusões largas demais
+apareceram.** A regra "parece código" descartava `'Export'` — porque casava com
+a palavra-chave `export` sob `re.IGNORECASE` — e descartava frases inteiras de
+interface só por conterem parêntese. Nenhuma das duas aparecia na lista de
+achados, pela definição do problema. Corrigidas: a regra perdeu o `IGNORECASE`,
+perdeu o parêntese, e passou a valer **só nos alvos que leem JSX cru** — filtro
+escrito para um alvo não pode filtrar os outros.
+
+**2. Defeito conhecido vira prova executável.** `scripts/regressao/` guarda
+amostras com defeitos que o produto **já teve**, e `esperado.json` declara o que
+cada varredura precisa continuar vendo:
+
+```
+python3 scripts/texto_fora_do_i18n.py --verificar-regressao
+python3 scripts/botao_morto.py --verificar-regressao
+```
+
+Se um ajuste de filtro voltar a cegar a varredura, isto reprova nomeando o caso.
+É a mesma ideia dos testes de interface que foram validados reintroduzindo o
+defeito histórico — só que permanente, e barata de rodar.
+
+O que fica como lição geral: **em ferramenta de auditoria, a regra de exclusão é
+código de produção.** Ela decide o que nunca será visto, e por isso precisa da
+mesma visibilidade e da mesma proteção de regressão que a regra de detecção.
+
 ## Como rodar cada uma
 
 Todas rodam no navegador, com a stack de pé e um usuário autenticado.
