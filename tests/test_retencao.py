@@ -232,3 +232,49 @@ def test_conta_sem_token_nunca_esta_conectada(base, app):
     conta.access_token_encrypted = None
     db.session.commit()
     assert conta.connected is False
+
+
+# ==========================================================================
+# O compromisso que depende de configuração
+# ==========================================================================
+def test_free_tier_em_producao_e_sinalizado_como_nao_conforme(app, monkeypatch):
+    # A política afirma que os dados não são usados para treinar modelo. Isso é
+    # verdade no tier pago do Gemini e não é no free tier. Sem esta checagem, o
+    # compromisso dependeria de alguém lembrar de uma variável de ambiente.
+    from src.services.health_service import privacidade_do_modelo_conforme
+
+    with app.app_context():
+        monkeypatch.setitem(app.config, "ENV", "prod")
+        monkeypatch.setitem(app.config, "GEMINI_API_KEY", "chave")
+        monkeypatch.setitem(app.config, "GEMINI_PAID_TIER", False)
+        assert privacidade_do_modelo_conforme() is False
+
+        monkeypatch.setitem(app.config, "GEMINI_PAID_TIER", True)
+        assert privacidade_do_modelo_conforme() is True
+
+
+def test_sem_chave_nao_ha_o_que_prometer(app, monkeypatch):
+    from src.services.health_service import privacidade_do_modelo_conforme
+
+    with app.app_context():
+        monkeypatch.setitem(app.config, "ENV", "prod")
+        monkeypatch.setitem(app.config, "GEMINI_API_KEY", None)
+        monkeypatch.setitem(app.config, "GEMINI_PAID_TIER", False)
+        assert privacidade_do_modelo_conforme() is True
+
+
+def test_em_desenvolvimento_o_free_tier_e_aceitavel(app, monkeypatch):
+    # Os dados de dev e de teste são de seed; o compromisso é com gente real.
+    from src.services.health_service import privacidade_do_modelo_conforme
+
+    with app.app_context():
+        monkeypatch.setitem(app.config, "ENV", "dev")
+        monkeypatch.setitem(app.config, "GEMINI_API_KEY", "chave")
+        monkeypatch.setitem(app.config, "GEMINI_PAID_TIER", False)
+        assert privacidade_do_modelo_conforme() is True
+
+
+def test_o_healthcheck_publica_o_estado_do_compromisso(client):
+    corpo = client.get("/api/v1/health").get_json()
+    # Visível em operação, não só numa linha de log do boot que ninguém releu.
+    assert corpo["model_privacy"] in ("compliant", "free_tier_warning")

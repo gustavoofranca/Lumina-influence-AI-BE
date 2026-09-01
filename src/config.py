@@ -68,6 +68,13 @@ class Config:
     GEMINI_TIMEOUT_SECONDS: int = int(os.getenv("GEMINI_TIMEOUT_SECONDS", "90"))
     # Máximo de comentários enviados no prompt (controle de custo/contexto)
     GEMINI_MAX_COMMENTS: int = int(os.getenv("GEMINI_MAX_COMMENTS", "30"))
+    # No free tier o Google pode usar o conteúdo enviado para melhorar seus
+    # produtos; no tier pago, não. A Política de Privacidade publicada afirma
+    # que os dados **não** são usados para treinar modelo, então rodar em free
+    # tier fora de desenvolvimento contradiz um compromisso com o usuário.
+    # Não há como descobrir o tier pela chave: é declaração explícita, e o boot
+    # reclama alto quando ela falta onde importa.
+    GEMINI_PAID_TIER: bool = os.getenv("GEMINI_PAID_TIER", "").lower() in ("1", "true", "yes")
 
     # Retenção de registro técnico (dias). A política de privacidade publicada
     # declara este prazo ao usuário: mudar o número aqui muda um compromisso.

@@ -246,6 +246,13 @@ def create_app(config_name: str | None = None) -> Flask:
     _register_security_headers(app)
     _register_cli(app)
 
+    # Confere no boot os compromissos que dependem de configuração: o que a
+    # política de privacidade afirma ao usuário não pode depender de alguém
+    # lembrar de uma variável de ambiente sem que nada reclame.
+    from src.services.health_service import avisar_se_privacidade_do_modelo_nao_confere
+
+    avisar_se_privacidade_do_modelo_nao_confere(app)
+
     app.logger.info("Lumina BE iniciado em modo %s", app.config.get("ENV"))
     return app
 
