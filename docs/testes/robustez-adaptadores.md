@@ -271,3 +271,21 @@ publicada tornaria a política falsa.
 **A lição de método:** documentação que descreve comportamento é código sem
 teste. Ou se verifica contra a implementação antes de publicar, ou se prende a
 implementação com um teste que cite o documento.
+
+**O desfecho, em 01/09.** A segunda das três afirmações erradas não era só erro
+de texto: era lacuna real de produto. O endpoint de exclusão de criador existe e
+faz delete físico em cascata — contas, tokens, publicações, comentários e
+análises —, mas a interface não o oferecia, e o titular ficava dependendo de
+pedido por e-mail para exercer um direito que o sistema já sabia executar.
+
+A exclusão passou a existir na tela, com confirmação **digitada** e não por
+clique: a ação não tem lixeira, e um clique é pouco para a diferença entre errar
+o botão e decidir apagar. Dois testes ponta a ponta a travam, e o segundo
+confere **404 na API** em vez do sumiço da linha na tela — sumir da lista e ter
+sido apagado são coisas diferentes, e é justamente a distinção que a página
+pública promete ao usuário.
+
+Vale notar como o defeito de implementação apareceu: o import do modal não
+entrou no arquivo, `npm run build` **passou**, e a tela do criador ficou em
+branco. É exatamente o modo de falha que criou a suíte ponta a ponta em 27/08
+(`refetch is not defined`), e foi ela que pegou de novo.

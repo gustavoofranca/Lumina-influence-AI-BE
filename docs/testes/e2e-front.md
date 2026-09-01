@@ -4,7 +4,7 @@ Executado pela primeira vez em 31 de agosto de 2026. Fecha a etapa 2 do plano
 de robustez: até aqui, **os 317 testes da suíte eram todos do back-end** e o
 front não tinha ferramenta de teste nenhuma.
 
-- **Ferramenta:** Playwright, 42 testes, 3,2 min por execução completa.
+- **Ferramenta:** Playwright, 44 testes, 3,3 min por execução completa.
 - **Onde:** `Lumina-Influence-AI-FE/e2e/`, com `package.json` próprio.
 - **Como rodar:** `cd Lumina-Influence-AI-FE/e2e && npm install && npm test`,
   com a stack de pé.
@@ -30,6 +30,7 @@ O primeiro arquivo da suíte automatiza exatamente essa varredura.
 | `modal.spec.js` | 1 | o modal leva o foco para dentro, prende o Tab e devolve ao gatilho ao fechar |
 | `teclado.spec.js` | 1 | as abas andam por setas, Home e End, e ocupam uma só parada de tabulação |
 | `paginas-legais.spec.js` | 7 | política, termos e exclusão de dados existem em URL própria, nos dois idiomas, e o rodapé leva até elas |
+| `exclusao-de-criador.spec.js` | 2 | o botão só libera com o nome digitado, e confirmar apaga de verdade — o teste confere 404 na API, não o sumiço da tela |
 
 `paginas-legais.spec.js` entrou em 31/08, junto da preparação para o App Review
 da Meta: as três páginas são a primeira coisa que o revisor abre, e antes disso
