@@ -203,3 +203,32 @@ def test_o_job_e_idempotente(app, base):
         segunda = run_cleanup_expired_tokens()
     assert primeira["dead_tokens_purged"] >= 1
     assert segunda["dead_tokens_purged"] == 0
+
+
+# ==========================================================================
+# "Conectada" precisa significar que a coleta funciona
+# ==========================================================================
+def test_conta_com_token_morto_nao_se_declara_conectada(base):
+    # A rotina de limpeza apaga esses tokens, mas roda uma vez por dia. Até lá
+    # a tela não pode chamar credencial morta de conexão viva.
+    assert _conta(base, "morta").connected is False
+
+
+def test_conta_com_token_vencido_mas_renovavel_continua_conectada(base):
+    assert _conta(base, "renovavel").connected is True
+
+
+def test_conta_dentro_da_validade_esta_conectada(base):
+    assert _conta(base, "viva").connected is True
+
+
+def test_conta_sem_data_de_validade_esta_conectada(base):
+    # Supor que morreu desligaria coleta que talvez funcione.
+    assert _conta(base, "sem_validade").connected is True
+
+
+def test_conta_sem_token_nunca_esta_conectada(base, app):
+    conta = _conta(base, "viva")
+    conta.access_token_encrypted = None
+    db.session.commit()
+    assert conta.connected is False

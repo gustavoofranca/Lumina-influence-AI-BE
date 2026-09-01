@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import (
@@ -64,14 +64,31 @@ class SocialAccount(Base, TimestampMixin):
 
     @property
     def connected(self) -> bool:
-        """Há token guardado para coletar da plataforma.
+        """A conta consegue coletar da plataforma agora.
 
         Desconectar apaga os tokens e preserva a conta, para não levar junto o
         histórico de posts. Sem esta distinção no payload, a interface trata
         como conectada qualquer conta que exista — inclusive as do seed, que
         nunca passaram por OAuth.
+
+        Ter token guardado não basta: token **vencido e sem refresh** não
+        coleta nada — a próxima chamada volta 401. Chamar isso de "conectada"
+        é apresentar credencial morta como conexão viva, e a interface tem o
+        estado certo para o caso ("vinculada, sem coleta ativa"). A rotina de
+        limpeza apaga esses tokens, mas ela roda uma vez por dia, e até lá a
+        tela não pode afirmar o que não é.
         """
-        return self.access_token_encrypted is not None
+        if self.access_token_encrypted is None:
+            return False
+        if self.refresh_token_encrypted is not None or self.token_expires_at is None:
+            # Renovável, ou sem validade declarada: não há como afirmar que
+            # morreu, e supor que morreu desligaria coleta que talvez funcione.
+            return True
+        validade = self.token_expires_at
+        if validade.tzinfo is None:
+            # SQLite devolve datetime ingênuo; comparar com aware estoura.
+            validade = validade.replace(tzinfo=timezone.utc)
+        return validade > datetime.now(timezone.utc)
 
     influencer: Mapped["Influencer"] = relationship(back_populates="social_accounts")
     posts: Mapped[list["Post"]] = relationship(
