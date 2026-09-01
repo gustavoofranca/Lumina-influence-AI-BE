@@ -88,8 +88,37 @@ por polling disputava com o auto-fechar. Esperar a **resposta** antes de olhar
 o aviso põe os dois na mesma linha do tempo. É a terceira vez que a mesma
 armadilha aparece neste projeto com uma roupa diferente.
 
+## Segunda rodada: dado exibido que ninguém podia corrigir
+
+A primeira varredura procurou **ação que não acontece**. Ela não procurava a
+variante estática: dado que a tela mostra e ninguém pode mudar. Rodada logo em
+seguida, essa segunda leitura achou mais duas:
+
+| O que a tela mostrava | O que faltava | Desde quando o back-end sabia fazer |
+|---|---|---|
+| Participantes da campanha | não dava para adicionar nem remover depois de criada | **nada** — `CampaignUpdateIn` não aceita participantes e não havia endpoint |
+| Nome, nicho e bio do criador | somente leitura | `PATCH /influencers/{id}`, B4 |
+
+O caso dos participantes é o mais sério do conjunto inteiro, e o único que
+exigiu back-end novo. **A campanha é a unidade de trabalho do produto** — é o
+que se audita, o que se compara no benchmarking e o que vira relatório —, e a
+lista de quem está nela era imutável depois da criação. Recontratar ou dispensar
+um criador é exatamente a decisão que o sistema existe para apoiar.
+
+Duas escolhas de contrato:
+
+- **Vincular duas vezes responde 409 com código próprio.** A chave única já
+  barraria, mas com `IntegrityError` e 500 — e a interface precisa poder dizer
+  o que houve, não só falhar.
+- **Desvincular apaga só o vínculo.** O criador continua cadastrado e as
+  publicações dele continuam existindo: `posts.campaign_id` é `SET NULL`, não
+  cascade, justamente por isso. A confirmação declara isso, porque falar só da
+  perda faria o usuário pensar que está apagando o criador.
+
 ## O que fica como pergunta
 
-A varredura procurou ação que não acontece. Ela **não** procura dado exibido que
-ninguém pode corrigir — nicho e bio do criador, por exemplo, aceitam `PATCH` e
-não têm campo na tela. É uma omissão do mesmo tipo, e continua aberta.
+As duas leituras — ação que não acontece, dado que não se corrige — foram
+manuais, comparando a superfície da API com o que a interface chama. Não há
+verificação automatizada disso, e ela seria barata: a lista de rotas do OpenAPI
+contra a lista de chamadas dos serviços do front acusaria toda divergência nova.
+Fica registrado como a próxima varredura que vale escrever.
