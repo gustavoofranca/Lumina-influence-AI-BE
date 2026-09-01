@@ -156,13 +156,19 @@ Facebook Login virar também o login da aplicação, a decisão muda.
 
 **A página descreve apenas caminhos que existem.** A primeira versão dela
 afirmava três coisas falsas — que desconectar apaga as publicações, e que
-"excluir criador" e "excluir conta" eram caminhos na interface. Os endpoints de
-exclusão existem, mas **a interface não os expõe**, e a desconexão preserva o
-histórico de propósito. O texto foi corrigido para descrever o que existe
-(desconectar na plataforma, revogar pela própria rede social) e encaminhar a
-exclusão do que já foi coletado ao pedido por e-mail, que é caminho aceito tanto
-pela Meta quanto pela LGPD. Um revisor que siga as instruções precisa chegar
-onde elas dizem.
+"excluir criador" e "excluir conta" eram caminhos na interface. Um revisor que
+siga as instruções precisa chegar onde elas dizem, então cada afirmação foi
+conferida contra o código:
+
+- *Desconectar apaga as publicações* — **falso**, e continua falso: preservar o
+  histórico ao desconectar é decisão deliberada. O texto passou a dizê-lo.
+- *Excluir criador é caminho na interface* — era falso e **deixou de ser**: o
+  endpoint fazia delete físico em cascata e a tela não o oferecia. A exclusão
+  passou a existir, com confirmação digitada, em 01/09. É hoje o caminho que
+  apaga de fato o que veio das plataformas.
+- *Excluir a própria conta é caminho na interface* — **falso**, e permanece: o
+  back-end faz *soft delete* e proíbe auto-remoção. Segue como pedido por
+  e-mail, que é caminho aceito tanto pela Meta quanto pela LGPD.
 
 **Marketing API fora da submissão.** Ela é o que separaria alcance orgânico de
 pago (ver [ADR-005](adr/0005-alcance-organico-e-pago-vem-do-seed.md)), mas é
