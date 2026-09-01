@@ -37,7 +37,7 @@ JOB_DEFINITIONS = [
         "trigger": "interval",
         "trigger_kwargs": {"days": 1},
         "logic": run_cleanup_expired_tokens,
-        "description": "Remove OAuthStates expirados (diariamente).",
+        "description": "Higiene diária: states OAuth expirados, tokens mortos e registros de uso fora da janela de retenção.",
     },
 ]
 

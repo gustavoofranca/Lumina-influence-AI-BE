@@ -69,6 +69,10 @@ class Config:
     # Máximo de comentários enviados no prompt (controle de custo/contexto)
     GEMINI_MAX_COMMENTS: int = int(os.getenv("GEMINI_MAX_COMMENTS", "30"))
 
+    # Retenção de registro técnico (dias). A política de privacidade publicada
+    # declara este prazo ao usuário: mudar o número aqui muda um compromisso.
+    RETENTION_DAYS: int = int(os.getenv("RETENTION_DAYS", "90"))
+
     # Front-end
     FRONTEND_ORIGIN: str = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
 
