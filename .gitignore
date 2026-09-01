@@ -59,6 +59,7 @@ docs/*
 !docs/meta-app-review.md
 !docs/cota-e-custo-gemini.md
 !docs/conformidade-publicada.md
+!docs/acoes-que-nao-aconteciam.md
 !docs/adr/
 !docs/security/
 !docs/testes/
