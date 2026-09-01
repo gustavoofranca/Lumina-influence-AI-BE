@@ -22,6 +22,7 @@ linha cita o arquivo onde estão o método e os dados brutos.
 | A camada que fala com serviços externos é coberta | **os 5 adaptadores a 100%** (`instagram`, `tiktok`, `youtube`, `gemini`, `media`); `google_oauth` 96%; `microsoft_oauth` 91% | 133 cenários com dublês, sem rede | idem |
 | A interface tem teste ponta a ponta | **51 testes**, 5,0 min | Playwright sobre a aplicação em funcionamento | [`testes/e2e-front.md`](testes/e2e-front.md) |
 | A interface é verificada além do teste automatizado | **7 verificações**, com defeito real registrado em cada uma | bateria manual sobre 22 rotas, 2 temas, 2 idiomas | [`testes/verificacao-pre-entrega.md`](testes/verificacao-pre-entrega.md) |
+| A bateria fechou os limites que declarou sobre si | **3 pontos cegos**, os 3 automatizados; cada teste validado reintroduzindo o defeito histórico | contraste com SVG e composição de camadas; carregamento com a resposta segurada; i18n com dois alvos novos | idem |
 
 ## Segurança
 
@@ -65,7 +66,7 @@ declarados.
 | A separação entre alcance **orgânico e pago vem do seed** | nenhuma API concede essa métrica sem programa comercial; a Data API v3 do YouTube não separa origem | idem |
 | Não há teste de carga sobre o endpoint de análise | o free tier do Gemini dá **20 requisições por dia**; medir p95 com carga esgotaria a cota | [`testes/carga.md`](testes/carga.md) |
 | A vazão medida é de um servidor com 4 workers | número de arquitetura, não de produto; o platô inicial de 32 req/s era teto do **gerador de carga**, não do servidor | idem |
-| A verificação de contraste mede **texto** | percorre nós de texto lendo `color`; SVG usa `fill`, e elemento sem texto não é alcançado por nenhuma das sete verificações | [`testes/verificacao-pre-entrega.md`](testes/verificacao-pre-entrega.md) |
+| Nenhuma verificação mede o que o **leitor de tela anuncia** | as sete medem o que o navegador renderiza; ordem de leitura, `aria-live` e agrupamento ficam fora de alcance | [`testes/verificacao-pre-entrega.md`](testes/verificacao-pre-entrega.md) |
 | Um botão da landing fica em **3,39:1** na ponta escura do gradiente | veio assim do arquivo de design; a ponta clara dá 7,08:1 | mesmo relatório |
 | Emoji no título do relatório vira quadrado no PDF | embarcar fonte com cobertura de emoji pesaria em todo PDF gerado | [`testes/robustez-pdf.md`](testes/robustez-pdf.md) |
 
@@ -79,7 +80,18 @@ que confirmaram o esperado, e sim as que expuseram limite do próprio método.**
 - O platô de 32 req/s era o teto do gerador de carga. Sem empurrar a
   concorrência até a latência crescer, o número publicado seria falso.
 - A varredura de contraste passou duas vezes numa tela com rótulos a 2,4:1,
-  porque mede `color` e o SVG usa `fill`.
+  porque mede `color` e o SVG usa `fill`. Ao ser automatizada e passar a
+  **compor** as camadas translúcidas, achou mais três famílias de defeito que o
+  método antigo escondia — medir contra branco puro fazia tokens que sempre
+  pousam sobre tinte parecerem folgados.
+- **Uma regra escrita para reduzir ruído cegou uma varredura inteira.** A de
+  i18n descartava `^[a-z][a-zA-Z]*$` para ignorar identificador, e com isso
+  ignorava qualquer palavra minúscula solta — inclusive "seguidores", fixo em
+  português. Não aparece lendo a lista de achados: só aparece lendo o filtro.
+- **Teste que nunca reprovou pode não estar medindo nada.** Cada verificação
+  automatizada foi validada reintroduzindo o defeito histórico, e duas delas
+  passavam por vazio na primeira versão — uma media a tela antes de o gráfico
+  existir, a outra tinha um padrão de rota estreito demais para interceptar.
 - Um marcador de injeção de prompt apareceu na resposta do modelo e quase virou
   achado: estava no campo que **cita** o conteúdo analisado. Citar não é obedecer.
 - Ler o código contra a **documentação vigente** achou três defeitos que nenhum
