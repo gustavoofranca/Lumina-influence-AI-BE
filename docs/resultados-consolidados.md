@@ -18,9 +18,9 @@ linha cita o arquivo onde estão o método e os dados brutos.
 
 | Afirmação | Número | Como foi obtido | Evidência |
 |---|---|---|---|
-| O back-end tem cobertura automatizada | **404 testes, 95%** de `src/` | `pytest --cov=src` | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
+| O back-end tem cobertura automatizada | **424 testes, 95%** de `src/` | `pytest --cov=src` | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
 | A camada que fala com serviços externos é coberta | **os 5 adaptadores a 100%** (`instagram`, `tiktok`, `youtube`, `gemini`, `media`); `google_oauth` 96%; `microsoft_oauth` 91% | 133 cenários com dublês, sem rede | idem |
-| A interface tem teste ponta a ponta | **51 testes**, 5,0 min | Playwright sobre a aplicação em funcionamento | [`testes/e2e-front.md`](testes/e2e-front.md) |
+| A interface tem teste ponta a ponta | **70 testes**, 7,8 min | Playwright sobre a aplicação em funcionamento | [`testes/e2e-front.md`](testes/e2e-front.md) |
 | A interface é verificada além do teste automatizado | **7 verificações**, com defeito real registrado em cada uma | bateria manual sobre 22 rotas, 2 temas, 2 idiomas | [`testes/verificacao-pre-entrega.md`](testes/verificacao-pre-entrega.md) |
 | A bateria fechou os limites que declarou sobre si | **3 pontos cegos**, os 3 automatizados; cada teste validado reintroduzindo o defeito histórico | contraste com SVG e composição de camadas; carregamento com a resposta segurada; i18n com dois alvos novos | idem |
 

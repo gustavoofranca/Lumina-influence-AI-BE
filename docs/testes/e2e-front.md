@@ -4,7 +4,7 @@ Executado pela primeira vez em 31 de agosto de 2026. Fecha a etapa 2 do plano
 de robustez: até aqui, **os 317 testes da suíte eram todos do back-end** e o
 front não tinha ferramenta de teste nenhuma.
 
-- **Ferramenta:** Playwright, 51 testes, 5,0 min por execução completa.
+- **Ferramenta:** Playwright, 70 testes, 7,8 min por execução completa.
 - **Onde:** `Lumina-Influence-AI-FE/e2e/`, com `package.json` próprio.
 - **Como rodar:** `cd Lumina-Influence-AI-FE/e2e && npm install && npm test`,
   com a stack de pé.
@@ -34,6 +34,13 @@ O primeiro arquivo da suíte automatiza exatamente essa varredura.
 | `exclusao-do-titular.spec.js` | 2 | a escolha de apagar o histórico começa desmarcada e muda o rótulo do botão; a exclusão da conta declara o escopo antes de existir botão |
 | `contraste.spec.js` | 3 | contraste WCAG AA nos dois temas, medindo `color` **e** `fill` de SVG, com as camadas translúcidas compostas |
 | `carregamento.spec.js` | 2 | o placeholder pertence ao tema — medido segurando a resposta da API para o estado intermediário existir |
+| `semantica.spec.js` | 12 | título, marco de conteúdo, hierarquia de cabeçalho, nome acessível e região viva em 10 rotas |
+| `recomendacoes.spec.js` | 1 | aceitar uma recomendação grava no banco, diz quem decidiu e sobrevive ao F5 |
+| `sincronizacao.spec.js` | 2 | o resumo da coleta distingue os cinco desfechos por conta, em vez de um "pronto" |
+| `status-do-criador.spec.js` | 1 | mudar o status persiste — `risk` na tela é `archived` na API |
+| `exclusao-de-campanha.spec.js` | 1 | pede o nome digitado e declara o que permanece |
+| `participantes.spec.js` | 1 | adicionar e remover criador da campanha, com o criador sobrevivendo à remoção |
+| `edicao-do-criador.spec.js` | 1 | nome, nicho e bio gravam e sobrevivem ao recarregar |
 
 `paginas-legais.spec.js` entrou em 31/08, junto da preparação para o App Review
 da Meta: as três páginas são a primeira coisa que o revisor abre, e antes disso
