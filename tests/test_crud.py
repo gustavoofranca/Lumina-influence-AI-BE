@@ -674,3 +674,87 @@ def test_conta_social_com_id_de_criador_malformado_devolve_lista_vazia(client, c
 def test_plano_com_id_malformado_devolve_404(client, ctx):
     r = client.get("/api/v1/plans/nao-e-uuid", headers=ctx.h_a_admin)
     assert r.status_code == 404
+
+
+# --------------------------------------------------------------------------
+# Participantes de uma campanha já existente
+# --------------------------------------------------------------------------
+# Até esta frente os participantes só podiam ser escolhidos na criação: depois
+# disso a lista era imutável, num produto cuja unidade de trabalho é a campanha.
+def test_vincular_criador_a_campanha_existente(client, ctx):
+    r = client.post(
+        f"/api/v1/campaigns/{ctx.camp_a_id}/participants",
+        headers=ctx.h_a_admin,
+        json={"influencer_id": ctx.inf_a_id, "fee_brl_cents": 250000},
+    )
+    assert r.status_code == 201
+    corpo = r.get_json()["data"]
+    assert corpo["influencer_id"] == ctx.inf_a_id
+    assert corpo["fee_brl_cents"] == 250000
+
+    detalhe = client.get(f"/api/v1/campaigns/{ctx.camp_a_id}", headers=ctx.h_a_admin)
+    ids = [p["influencer_id"] for p in detalhe.get_json()["data"]["participants"]]
+    assert ctx.inf_a_id in ids
+
+
+def test_vincular_duas_vezes_e_conflito_e_nao_erro_de_banco(client, ctx):
+    client.post(f"/api/v1/campaigns/{ctx.camp_a_id}/participants",
+                headers=ctx.h_a_admin, json={"influencer_id": ctx.inf_a_id})
+    r = client.post(f"/api/v1/campaigns/{ctx.camp_a_id}/participants",
+                    headers=ctx.h_a_admin, json={"influencer_id": ctx.inf_a_id})
+    # A chave única já barraria, mas com 500. Conflito explícito é o que
+    # permite a interface dizer o que houve.
+    assert r.status_code == 409
+    assert r.get_json()["error"]["code"] == "participant_already_linked"
+
+
+def test_criador_de_outra_agencia_nao_entra_na_campanha(client, ctx):
+    # Mesmo 404 de id inexistente: responder diferente revelaria quais ids
+    # existem na outra agência.
+    r = client.post(f"/api/v1/campaigns/{ctx.camp_a_id}/participants",
+                    headers=ctx.h_a_admin, json={"influencer_id": ctx.inf_b_id})
+    assert r.status_code == 404
+
+
+def test_desvincular_preserva_o_criador_e_os_posts(client, ctx):
+    client.post(f"/api/v1/campaigns/{ctx.camp_a_id}/participants",
+                headers=ctx.h_a_admin, json={"influencer_id": ctx.inf_a_id})
+    r = client.delete(
+        f"/api/v1/campaigns/{ctx.camp_a_id}/participants/{ctx.inf_a_id}",
+        headers=ctx.h_a_admin,
+    )
+    assert r.status_code == 204
+
+    # Sair de uma campanha não é deixar de existir.
+    assert client.get(f"/api/v1/influencers/{ctx.inf_a_id}",
+                      headers=ctx.h_a_admin).status_code == 200
+    detalhe = client.get(f"/api/v1/campaigns/{ctx.camp_a_id}", headers=ctx.h_a_admin)
+    assert detalhe.get_json()["data"]["participants"] == []
+
+
+def test_desvincular_quem_nao_esta_na_campanha_e_404(client, ctx):
+    r = client.delete(
+        f"/api/v1/campaigns/{ctx.camp_a_id}/participants/{ctx.inf_a_id}",
+        headers=ctx.h_a_admin,
+    )
+    assert r.status_code == 404
+
+
+def test_id_malformado_de_criador_nao_estoura_500(client, ctx):
+    r = client.delete(
+        f"/api/v1/campaigns/{ctx.camp_a_id}/participants/nao-e-uuid",
+        headers=ctx.h_a_admin,
+    )
+    assert r.status_code == 404
+
+
+def test_viewer_nao_mexe_nos_participantes(client, ctx):
+    r = client.post(f"/api/v1/campaigns/{ctx.camp_a_id}/participants",
+                    headers=ctx.h_a_viewer, json={"influencer_id": ctx.inf_a_id})
+    assert r.status_code == 403
+
+
+def test_campanha_de_outra_agencia_nao_aceita_participante(client, ctx):
+    r = client.post(f"/api/v1/campaigns/{ctx.camp_a_id}/participants",
+                    headers=ctx.h_b_admin, json={"influencer_id": ctx.inf_b_id})
+    assert r.status_code == 404

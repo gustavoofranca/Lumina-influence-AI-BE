@@ -272,6 +272,29 @@ def build_openapi() -> dict:
             "responses": {"200": {"description": "Prévia da exclusão"}},
         }
     }
+    # Participantes de uma campanha já existente. Fora do CRUD porque o recurso
+    # é o vínculo, e não a campanha.
+    paths["/api/v1/campaigns/{id}/participants"] = {
+        "post": {
+            "tags": ["Campaigns"],
+            "summary": "Vincular um criador à campanha",
+            "description": "Corpo: `influencer_id` e, opcionalmente, `fee_brl_cents` e "
+                           "`deliverables`. Criador de outra agência responde 404, o "
+                           "mesmo de id inexistente.",
+            "responses": {"201": {"description": "Criador vinculado"},
+                          "409": {"description": "Já vinculado"}},
+        }
+    }
+    paths["/api/v1/campaigns/{id}/participants/{influencer_id}"] = {
+        "delete": {
+            "tags": ["Campaigns"],
+            "summary": "Desvincular o criador da campanha",
+            "description": "Apaga só o vínculo. O criador e as publicações dele "
+                           "permanecem — `posts.campaign_id` é `SET NULL`.",
+            "responses": {"204": {"description": "Vínculo removido"}},
+        }
+    }
+
     # Decisão sobre recomendação da IA. Fora do CRUD porque o recurso não é o
     # criador: é o par (análise, índice) dentro dele.
     paths["/api/v1/influencers/{id}/recommendations/{item_index}"] = {

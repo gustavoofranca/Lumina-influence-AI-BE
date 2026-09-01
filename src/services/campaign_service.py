@@ -8,7 +8,7 @@ from sqlalchemy import Select, select
 
 from src.extensions import db
 from src.models import Campaign, CampaignInfluencer, CampaignStatus, Influencer
-from src.utils.errors import NotFoundError, ValidationError
+from src.utils.errors import ConflictError, NotFoundError, ValidationError
 
 
 def build_campaign_query(
@@ -91,6 +91,69 @@ def validate_participants(participants, agency_id: uuid.UUID) -> None:
     )
     if requested - found:
         raise NotFoundError("Influencer não encontrado", code="influencer_not_found")
+
+
+def add_participant(campaign: Campaign, participant, agency_id: uuid.UUID) -> dict:
+    """Vincula um criador à campanha depois que ela já existe.
+
+    Até aqui os participantes só podiam ser escolhidos no momento da criação:
+    depois disso a lista era imutável, num produto cuja unidade de trabalho é
+    justamente a campanha. Recontratar ou dispensar um criador é a decisão que
+    o sistema existe para apoiar.
+
+    A validação é a mesma da criação — id desconhecido e id de outra agência
+    caem no mesmo 404, para não revelar quais ids existem.
+    """
+    validate_participants([participant], agency_id)
+
+    ja_existe = db.session.scalar(
+        select(CampaignInfluencer).where(
+            CampaignInfluencer.campaign_id == campaign.id,
+            CampaignInfluencer.influencer_id == participant.influencer_id,
+        )
+    )
+    if ja_existe is not None:
+        # A chave única já barraria, mas com IntegrityError e 500. Conflito
+        # explícito é o que permite a interface dizer o que houve.
+        raise ConflictError(
+            "Criador já vinculado a esta campanha",
+            code="participant_already_linked",
+        )
+
+    vinculo = CampaignInfluencer(
+        campaign_id=campaign.id,
+        influencer_id=participant.influencer_id,
+        fee_brl_cents=participant.fee_brl_cents,
+        deliverables=participant.deliverables,
+    )
+    db.session.add(vinculo)
+    db.session.commit()
+
+    criador = db.session.get(Influencer, participant.influencer_id)
+    return {
+        "influencer_id": str(participant.influencer_id),
+        "display_name": criador.display_name if criador else None,
+        "fee_brl_cents": vinculo.fee_brl_cents,
+    }
+
+
+def remove_participant(campaign: Campaign, influencer_id: uuid.UUID) -> None:
+    """Desvincula o criador da campanha.
+
+    Apaga **só o vínculo**: o criador continua cadastrado, e as publicações
+    dele continuam existindo. Sair de uma campanha não é deixar de existir — e
+    o `campaign_id` do post é `SET NULL`, não cascade, justamente por isso.
+    """
+    vinculo = db.session.scalar(
+        select(CampaignInfluencer).where(
+            CampaignInfluencer.campaign_id == campaign.id,
+            CampaignInfluencer.influencer_id == influencer_id,
+        )
+    )
+    if vinculo is None:
+        raise NotFoundError("Criador não está vinculado a esta campanha")
+    db.session.delete(vinculo)
+    db.session.commit()
 
 
 def attach_participants(campaign: Campaign, participants) -> None:

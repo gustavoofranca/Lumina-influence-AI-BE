@@ -1,12 +1,18 @@
 """Blueprint /api/v1/campaigns — CRUD com filtros de status e período."""
 from __future__ import annotations
 
+import uuid
 from datetime import date
 
 from flask import Blueprint, request
 
 from src.models import Campaign, CampaignStatus, UserRole
-from src.schemas.campaign import CampaignCreateIn, CampaignOut, CampaignUpdateIn
+from src.schemas.campaign import (
+    CampaignCreateIn,
+    CampaignOut,
+    CampaignParticipantIn,
+    CampaignUpdateIn,
+)
 from src.services import dashboard_service
 from src.services import campaign_service
 from src.services.campaign_service import (
@@ -16,7 +22,7 @@ from src.services.campaign_service import (
 )
 from src.utils.auth_decorators import require_auth
 from src.utils.authz import current_agency_id, get_scoped_or_404, require_role
-from src.utils.errors import ValidationError
+from src.utils.errors import NotFoundError, ValidationError
 from src.utils.pagination import paginate
 from src.utils.responses import created, no_content, ok, paginated
 from src.utils.validation import parse_enum_arg, parse_json
@@ -92,6 +98,32 @@ def update_campaign(campaign_id):
     payload = parse_json(CampaignUpdateIn)
     updated = campaign_service.apply_update(camp, payload.model_dump(exclude_unset=True))
     return ok(_dump(updated))
+
+
+@bp.post("/<campaign_id>/participants")
+@require_auth
+@require_role(UserRole.ADMIN, UserRole.MEMBER)
+def add_campaign_participant(campaign_id):
+    """Vincula um criador a uma campanha já existente."""
+    campaign = get_scoped_or_404(Campaign, campaign_id)
+    payload = parse_json(CampaignParticipantIn)
+    return created(campaign_service.add_participant(
+        campaign, payload, current_agency_id()
+    ))
+
+
+@bp.delete("/<campaign_id>/participants/<influencer_id>")
+@require_auth
+@require_role(UserRole.ADMIN, UserRole.MEMBER)
+def remove_campaign_participant(campaign_id, influencer_id):
+    """Desvincula o criador. O criador e as publicações dele permanecem."""
+    campaign = get_scoped_or_404(Campaign, campaign_id)
+    try:
+        alvo = uuid.UUID(str(influencer_id))
+    except (ValueError, AttributeError) as exc:
+        raise NotFoundError("Criador não está vinculado a esta campanha") from exc
+    campaign_service.remove_participant(campaign, alvo)
+    return no_content()
 
 
 @bp.delete("/<campaign_id>")
