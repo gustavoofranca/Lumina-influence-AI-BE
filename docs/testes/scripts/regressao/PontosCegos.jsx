@@ -12,7 +12,8 @@
 export default function PontosCegos({ inf, setToast }) {
   return (
     <div>
-      {/* Alvo 3: texto colado a uma expressão. O padrão `>texto<` não vê. */}
+      {/* Alvo 3: texto colado a uma expressão — o alvo original exige um
+          sinal de maior antes do texto e não enxerga este caso. */}
       <span>{formatFollowers(inf.followers)} seguidores</span>
 
       {/* Alvo 4: string de interface dentro de handler. Não está entre tags
