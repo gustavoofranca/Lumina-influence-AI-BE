@@ -28,7 +28,7 @@ perfil do Instagram) está na [ADR-007](adr/0007-instagram-com-facebook-login-e-
 | 3 | Escopos coerentes com o que o app faz | **cumprido** (4 escopos, nenhum de escrita) | `instagram.py:SCOPES` |
 | 4 | Política de privacidade em URL pública | **cumprido** | `/privacidade`, pt e en |
 | 5 | Termos de uso em URL pública | **cumprido** | `/termos`, pt e en |
-| 6 | Caminho de exclusão de dados | **cumprido** | `/exclusao-de-dados`, pt e en |
+| 6 | Caminho de exclusão de dados | **cumprido** | 3 caminhos na interface + `/exclusao-de-dados`, pt e en |
 | 7 | Interface em inglês para o revisor | **cumprido** | seletor de idioma no cabeçalho |
 | 8 | App acessível por HTTPS público | **pendente** | `OAUTH_REDIRECT_BASE` ainda em `localhost` |
 | 9 | Ícone, categoria e e-mail de contato do app | **pendente** | painel da Meta |
@@ -160,15 +160,23 @@ afirmava três coisas falsas — que desconectar apaga as publicações, e que
 siga as instruções precisa chegar onde elas dizem, então cada afirmação foi
 conferida contra o código:
 
-- *Desconectar apaga as publicações* — **falso**, e continua falso: preservar o
-  histórico ao desconectar é decisão deliberada. O texto passou a dizê-lo.
+- *Desconectar apaga as publicações* — era falso, e **virou escolha**. O padrão
+  continua preservando o histórico, que é decisão deliberada, mas a tela de
+  desconexão passou a oferecer "apagar também o histórico já coletado". As duas
+  operações moram no mesmo lugar porque a diferença entre elas é a pergunta que
+  o usuário precisa responder, não uma configuração escondida.
 - *Excluir criador é caminho na interface* — era falso e **deixou de ser**: o
   endpoint fazia delete físico em cascata e a tela não o oferecia. A exclusão
-  passou a existir, com confirmação digitada, em 01/09. É hoje o caminho que
-  apaga de fato o que veio das plataformas.
-- *Excluir a própria conta é caminho na interface* — **falso**, e permanece: o
-  back-end faz *soft delete* e proíbe auto-remoção. Segue como pedido por
-  e-mail, que é caminho aceito tanto pela Meta quanto pela LGPD.
+  passou a existir, com confirmação digitada.
+- *Excluir a própria conta é caminho na interface* — era falso e **deixou de
+  ser**. `DELETE /users/me` é novo e é exclusão de verdade, separada da remoção
+  de membro por um admin, que segue lógica. Quando não resta outro
+  administrador, a agência vai junto — e a tela diz isso, com a contagem do que
+  se perde, **antes** de pedir a confirmação.
+
+Os três caminhos foram construídos em 01/09 e verificados de ponta a ponta. O
+pedido por e-mail continua na página, agora no papel que lhe cabe: quem já
+perdeu o acesso à plataforma.
 
 **Marketing API fora da submissão.** Ela é o que separaria alcance orgânico de
 pago (ver [ADR-005](adr/0005-alcance-organico-e-pago-vem-do-seed.md)), mas é

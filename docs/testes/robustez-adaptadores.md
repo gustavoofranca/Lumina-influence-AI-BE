@@ -289,3 +289,28 @@ Vale notar como o defeito de implementação apareceu: o import do modal não
 entrou no arquivo, `npm run build` **passou**, e a tela do criador ficou em
 branco. É exatamente o modo de falha que criou a suíte ponta a ponta em 27/08
 (`refetch is not defined`), e foi ela que pegou de novo.
+
+**As outras duas, no mesmo dia.** Ficar com "é falso e continua falso" era
+aceitar que a plataforma não entregava um direito que já sabia executar. As
+duas viraram produto:
+
+- *Desconectar apaga as publicações* virou **escolha** na hora de desconectar.
+  O padrão segue preservando — é decisão deliberada —, mas quem quer apagar
+  agora tem como. A caixa começa desmarcada e o rótulo do botão muda ao marcar:
+  ação destrutiva não pode ser o caminho de menor resistência, e quem clica
+  precisa ver que a ação mudou.
+- *Excluir a própria conta* virou `DELETE /users/me`, exclusão física separada
+  da remoção de membro por um admin, que continua lógica. Um teste garante que
+  as duas sigam diferentes.
+
+O caso interessante é o do **último administrador**: excluir a conta dele
+deixaria a agência sem quem a administre, então ela vai junto com tudo que
+coletou. Isso é grande demais para descobrir depois de clicar, e daí o endpoint
+de prévia: a tela declara o escopo e **conta** o que se perde — criadores,
+campanhas, relatórios, membros — antes de existir botão de confirmar. Número, e
+não "isto apaga tudo": o titular precisa reconhecer o que perde para decidir.
+
+Um detalhe que só aparece quando se escreve o teste: admin **soft-deletado**
+ainda ocupa linha na tabela. Contá-lo como administrador restante deixaria a
+agência órfã, viva e sem ninguém que pudesse administrá-la. É a mesma família
+do projeto inteiro, agora em ausência lida como presença.
