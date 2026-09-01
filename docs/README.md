@@ -7,7 +7,7 @@ como reproduzir.
 
 - **Período de execução:** 25 a 27 de agosto de 2026
 - **Suíte do back-end ao fim da bateria:** 230 testes, 85% de cobertura de `src/`
-- **Suíte do back-end em 01/09, após a frente de robustez:** 387 testes, 95%
+- **Suíte do back-end em 01/09, após a frente de robustez:** 404 testes, 95%
 - **Suíte de interface:** 46 testes ponta a ponta em Playwright
 
 ## Resultado por frente
@@ -25,6 +25,7 @@ como reproduzir.
 | 9 | Robustez das bordas | 133 cenários sobre integrações, login e filtros de listagem; **9 defeitos achados e corrigidos**; os 5 adaptadores em 100% | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
 | 10 | Testes ponta a ponta da interface | 46 testes em Playwright cobrindo rotas, login, estado de erro, conta social, relatório, tema, idioma, foco, páginas legais e os três caminhos de exclusão | [`testes/e2e-front.md`](testes/e2e-front.md) |
 | 11 | Preparação do App Review da Meta | 7 requisitos de código cumpridos; 3 defeitos que causariam rejeição, corrigidos | [`meta-app-review.md`](meta-app-review.md) |
+| 12 | Conformidade entre documento publicado e código | 29 afirmações auditadas; **5 divergências, 4 resolvidas construindo** | [`conformidade-publicada.md`](conformidade-publicada.md) |
 
 Para escrever: [`resultados-consolidados.md`](resultados-consolidados.md) reúne
 cada número medido, o método que o produziu e o relatório de origem — mais os
@@ -131,6 +132,21 @@ perfil do Instagram) e um escopo faltando, que só falharia **depois** da
 aprovação. Junto entraram as três páginas públicas que o revisor abre antes de
 olhar o app — política de privacidade, termos e exclusão de dados, nos dois
 idiomas —, cujos links no rodapé apontavam para `#`.
+
+**Conformidade publicada (item 12).** As páginas legais são a única parte do
+sistema em que o produto **afirma coisas sobre si mesmo para quem não pode
+conferi-las** — e, diferente de qualquer outra parte do código, nada falha
+quando o texto e a implementação divergem. Auditar as 29 afirmações contra o
+código achou 5 divergências. Quatro viraram produto (a escolha de apagar o
+histórico ao desconectar, os dois caminhos de exclusão que faltavam, e a purga
+de credencial morta); a quinta virou limite declarado, porque prometer descarte
+de registro que o ambiente de hospedagem retém seria promessa vazia.
+
+O caso mais instrutivo não é de código nosso: a política afirma que os dados não
+treinam modelo, o que é verdade no tier pago do Gemini e falso no free tier, sem
+diferença detectável na chave. Um compromisso que depende de alguém lembrar de
+uma variável de ambiente não é compromisso — então o boot passou a reclamar e o
+`/health` a publicar `model_privacy`.
 
 ## Um padrão que atravessou o projeto inteiro
 

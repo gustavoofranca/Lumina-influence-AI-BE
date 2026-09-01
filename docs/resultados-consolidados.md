@@ -18,7 +18,7 @@ linha cita o arquivo onde estão o método e os dados brutos.
 
 | Afirmação | Número | Como foi obtido | Evidência |
 |---|---|---|---|
-| O back-end tem cobertura automatizada | **387 testes, 95%** de `src/` | `pytest --cov=src` | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
+| O back-end tem cobertura automatizada | **404 testes, 95%** de `src/` | `pytest --cov=src` | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
 | A camada que fala com serviços externos é coberta | **os 5 adaptadores a 100%** (`instagram`, `tiktok`, `youtube`, `gemini`, `media`); `google_oauth` 96%; `microsoft_oauth` 91% | 133 cenários com dublês, sem rede | idem |
 | A interface tem teste ponta a ponta | **46 testes**, 3,6 min | Playwright sobre a aplicação em funcionamento | [`testes/e2e-front.md`](testes/e2e-front.md) |
 | A interface é verificada além do teste automatizado | **7 verificações**, com defeito real registrado em cada uma | bateria manual sobre 22 rotas, 2 temas, 2 idiomas | [`testes/verificacao-pre-entrega.md`](testes/verificacao-pre-entrega.md) |
@@ -48,6 +48,7 @@ linha cita o arquivo onde estão o método e os dados brutos.
 |---|---|---|---|
 | O sistema coleta de plataforma real via OAuth | canal de YouTube vinculado, **10 posts** e **1 comentário** ingeridos; 130 exibições conferem com o canal | fluxo completo de OAuth e sync em `mode: real` | [`testes/integracao-social.md`](testes/integracao-social.md) |
 | A análise de IA roda sobre conteúdo verdadeiro | análise completa em **30,7 s** sobre os posts coletados | `gemini-3.6-flash` | idem |
+| O que o produto afirma publicamente é o que ele faz | **29 afirmações auditadas**, 5 divergências, 4 resolvidas construindo o que faltava | leitura de cada frase dos documentos publicados contra a implementação | [`conformidade-publicada.md`](conformidade-publicada.md) |
 | A exportação em PDF resiste a entrada adversa | **11 cenários**, nenhum arquivo corrompido, truncado ou ilegível | geração pelo caminho real de produção | [`testes/robustez-pdf.md`](testes/robustez-pdf.md) |
 | Os adaptadores estão conformes às APIs vigentes | **6 defeitos** que impediriam ou falseariam a coleta, corrigidos; Instagram e TikTok de 0% e 41% para **100%** | leitura do código contra a documentação da Graph API v25.0 e da TikTok Display API v2 | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
 
@@ -86,6 +87,12 @@ que confirmaram o esperado, e sim as que expuseram limite do próprio método.**
   falharia **depois** do App Review aprovado. Cobertura não substitui conferir a
   API contra a fonte — o módulo tinha teste de rota passando e 0% de cobertura
   própria.
+- **Documento publicado é código sem teste.** As páginas legais foram escritas
+  em 31/08 e a primeira frase conferida contra o código era falsa; as duas
+  seguintes também. Nada no sistema falha quando texto e implementação divergem,
+  e é por isso que a divergência dura. A resposta foi dar endereço no código a
+  cada compromisso: um teste que caia quando ele deixar de valer, ou uma
+  verificação em execução que reclame.
 - A resposta do modelo **varia entre execuções idênticas**: a mesma carga
   repetida 3× produziu o marcador em 1. Teste sobre modelo generativo exige
   repetição.
