@@ -13,6 +13,7 @@ from src.models.base import Base, JSONField, TimestampMixin
 
 if TYPE_CHECKING:
     from src.models.post import Post
+    from src.models.recommendation_decision import RecommendationDecision
 
 
 class AIAnalysis(Base, TimestampMixin):
@@ -44,3 +45,6 @@ class AIAnalysis(Base, TimestampMixin):
     raw_response: Mapped[Optional[dict]] = mapped_column(JSONField, nullable=True)
 
     post: Mapped["Post"] = relationship(back_populates="ai_analyses")
+    recommendation_decisions: Mapped[list["RecommendationDecision"]] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan"
+    )

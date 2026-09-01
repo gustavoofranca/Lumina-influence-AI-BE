@@ -20,6 +20,7 @@ from src.models import (
     Influencer,
     InfluencerStatus,
     Post,
+    RecommendationDecision,
     SocialAccount,
 )
 from src.services import metric_service as M
@@ -425,9 +426,10 @@ def influencer_analysis(influencer: Influencer) -> dict:
             }
             break
 
-    # Recomendações da análise mais recente
-    recommendations = analyses[0].recommendations if analyses and analyses[0].recommendations else []
-    latest_analysis_id = str(analyses[0].id) if analyses else None
+    # Recomendações da análise mais recente, já com a decisão da agência.
+    latest = analyses[0] if analyses else None
+    recommendations = _recomendacoes_com_decisao(latest)
+    latest_analysis_id = str(latest.id) if latest else None
 
     return {
         "influencer": {
@@ -458,6 +460,45 @@ def influencer_analysis(influencer: Influencer) -> dict:
         "latest_analysis_id": latest_analysis_id,
         "analyses_count": ai["analyses_count"],
     }
+
+
+def _recomendacoes_com_decisao(analysis) -> list[dict]:
+    """Recomendações da análise, com o que a agência decidiu sobre cada uma.
+
+    A decisão viaja **junto** com o item, e não numa chamada separada: sem isso
+    a tela recarregada não tem como saber o que já foi decidido, e voltaria a
+    oferecer "aceitar" para algo que a agência aceitou semana passada.
+
+    `index` sai no payload porque é a identidade estável do item — a
+    recomendação vive dentro do JSON da análise e não tem id próprio.
+    """
+    if analysis is None or not analysis.recommendations:
+        return []
+
+    decisoes = {
+        d.item_index: d
+        for d in db.session.scalars(
+            select(RecommendationDecision).where(
+                RecommendationDecision.analysis_id == analysis.id
+            )
+        )
+    }
+    saida = []
+    for i, item in enumerate(analysis.recommendations):
+        if not isinstance(item, dict):
+            continue
+        d = decisoes.get(i)
+        saida.append({
+            **item,
+            "index": i,
+            "decision": d.decision.value if d else None,
+            "decided_at": d.updated_at.isoformat() if d and d.updated_at else None,
+            # Nome de quem decidiu, e não só a decisão: auditoria em que
+            # ninguém responde pelo aceite não é auditoria. Fica nulo quando o
+            # usuário saiu da agência — o FK é SET NULL de propósito.
+            "decided_by": d.decided_by.name if d and d.decided_by else None,
+        })
+    return saida
 
 
 # ==========================================================================

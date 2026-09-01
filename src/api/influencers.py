@@ -1,7 +1,7 @@
 """Blueprint /api/v1/influencers — CRUD com filtros, escopado por agência."""
 from __future__ import annotations
 
-from flask import Blueprint, request
+from flask import Blueprint, g, request
 
 from src.models import Influencer, InfluencerStatus, Platform, UserRole
 from src.schemas.influencer import (
@@ -16,6 +16,7 @@ from src.utils.auth_decorators import require_auth
 from src.utils.authz import current_agency_id, get_scoped_or_404, require_role
 from src.utils.pagination import paginate
 from src.utils.responses import created, no_content, ok, paginated
+from src.utils.errors import ValidationError
 from src.utils.validation import parse_enum_arg, parse_json
 
 bp = Blueprint("influencers", __name__, url_prefix="/api/v1/influencers")
@@ -115,6 +116,43 @@ def influencer_analysis(influencer_id):
     # social_accounts são lazy-loaded dentro da request quando o service acessa.
     data = dashboard_service.influencer_analysis(inf)
     return ok(data)
+
+
+@bp.put("/<influencer_id>/recommendations/<int:item_index>")
+@require_auth
+@require_role(UserRole.ADMIN, UserRole.MEMBER)
+def decidir_recomendacao(influencer_id, item_index):
+    """Registra o que a agência decidiu sobre uma recomendação da IA.
+
+    `PUT` e não `POST`: decidir é idempotente e a identidade do recurso é
+    (análise, índice). Repetir o mesmo aceite não empilha registros.
+    """
+    inf = get_scoped_or_404(Influencer, influencer_id)
+    corpo = request.get_json(silent=True) or {}
+    if not corpo.get("analysis_id"):
+        raise ValidationError("analysis_id é obrigatório")
+    return ok(influencer_service.registrar_decisao(
+        influencer=inf,
+        analysis_id=corpo["analysis_id"],
+        item_index=item_index,
+        decision=corpo.get("decision", ""),
+        user=g.current_user,
+    ))
+
+
+@bp.delete("/<influencer_id>/recommendations/<int:item_index>")
+@require_auth
+@require_role(UserRole.ADMIN, UserRole.MEMBER)
+def desfazer_recomendacao(influencer_id, item_index):
+    """Devolve a recomendação ao estado indeciso."""
+    inf = get_scoped_or_404(Influencer, influencer_id)
+    analysis_id = request.args.get("analysis_id")
+    if not analysis_id:
+        raise ValidationError("analysis_id é obrigatório")
+    influencer_service.desfazer_decisao(
+        influencer=inf, analysis_id=analysis_id, item_index=item_index
+    )
+    return no_content()
 
 
 @bp.get("/<influencer_id>/analyses")

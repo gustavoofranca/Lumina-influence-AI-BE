@@ -10,12 +10,14 @@ from src.models._enums import (
     Platform,
     PostType,
     ReportFormat,
+    RecommendationDecisionKind,
     SentimentLabel,
     UserRole,
 )
 from src.models.agency import Agency, Plan
 from src.models.ai_analysis import AIAnalysis
 from src.models.api_usage import ApiUsageLog
+from src.models.recommendation_decision import RecommendationDecision
 from src.models.base import Base, JSONField, SoftDeleteMixin, TimestampMixin
 from src.models.campaign import Campaign, CampaignInfluencer
 from src.models.influencer import Influencer
@@ -41,6 +43,8 @@ __all__ = [
     "AIAnalysis",
     "Agency",
     "ApiUsageLog",
+    "RecommendationDecision",
+    "RecommendationDecisionKind",
     "Campaign",
     "CampaignInfluencer",
     "Comment",

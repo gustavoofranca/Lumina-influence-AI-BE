@@ -272,6 +272,24 @@ def build_openapi() -> dict:
             "responses": {"200": {"description": "Prévia da exclusão"}},
         }
     }
+    # Decisão sobre recomendação da IA. Fora do CRUD porque o recurso não é o
+    # criador: é o par (análise, índice) dentro dele.
+    paths["/api/v1/influencers/{id}/recommendations/{item_index}"] = {
+        "put": {
+            "tags": ["Influencers"],
+            "summary": "Registrar decisão sobre uma recomendação da IA",
+            "description": "Corpo: `analysis_id` e `decision` (`accepted` ou `ignored`). "
+                           "Idempotente — decidir de novo troca a decisão vigente e "
+                           "registra quem a tomou.",
+            "responses": {"200": {"description": "Decisão registrada"}},
+        },
+        "delete": {
+            "tags": ["Influencers"],
+            "summary": "Desfazer a decisão sobre uma recomendação",
+            "description": "Query: `analysis_id`. Devolve o item ao estado indeciso.",
+            "responses": {"204": {"description": "Decisão removida"}},
+        },
+    }
     paths["/api/v1/users/me"] = {
         "delete": {
             "tags": ["Users"],

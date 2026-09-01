@@ -43,6 +43,13 @@ class PostType(str, enum.Enum):
     CAROUSEL = "carousel"
 
 
+class RecommendationDecisionKind(str, enum.Enum):
+    """O que a agência fez com uma recomendação da IA."""
+
+    ACCEPTED = "accepted"
+    IGNORED = "ignored"
+
+
 class SentimentLabel(str, enum.Enum):
     POSITIVE = "positive"
     NEUTRAL = "neutral"
