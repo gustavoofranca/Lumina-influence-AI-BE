@@ -60,6 +60,7 @@ docs/*
 !docs/cota-e-custo-gemini.md
 !docs/conformidade-publicada.md
 !docs/acoes-que-nao-aconteciam.md
+!docs/dado-inventado.md
 !docs/adr/
 !docs/security/
 !docs/testes/

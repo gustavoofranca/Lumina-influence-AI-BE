@@ -7,7 +7,7 @@ como reproduzir.
 
 - **Período de execução:** 25 a 27 de agosto de 2026
 - **Suíte do back-end ao fim da bateria:** 230 testes, 85% de cobertura de `src/`
-- **Suíte do back-end em 01/09, após a frente de robustez:** 424 testes, 95%
+- **Suíte do back-end em 02/09:** 438 testes, 95%
 - **Suíte de interface:** 70 testes ponta a ponta em Playwright
 
 ## Resultado por frente
@@ -26,6 +26,7 @@ como reproduzir.
 | 10 | Testes ponta a ponta da interface | 46 testes em Playwright cobrindo rotas, login, estado de erro, conta social, relatório, tema, idioma, foco, páginas legais e os três caminhos de exclusão | [`testes/e2e-front.md`](testes/e2e-front.md) |
 | 11 | Preparação do App Review da Meta | 7 requisitos de código cumpridos; 3 defeitos que causariam rejeição, corrigidos | [`meta-app-review.md`](meta-app-review.md) |
 | 12 | Conformidade entre documento publicado e código | 29 afirmações auditadas; **5 divergências, 4 resolvidas construindo** | [`conformidade-publicada.md`](conformidade-publicada.md) |
+| 14 | Dado inventado × dado de demonstração | 2 casos de precisão inventada, ambos convertidos em medição | [`dado-inventado.md`](dado-inventado.md) |
 | 13 | Ações que a interface oferecia e não aconteciam | 1 mentira de interface, 4 endpoints prontos sem caminho na tela e 1 lacuna de back-end | [`acoes-que-nao-aconteciam.md`](acoes-que-nao-aconteciam.md) |
 
 Para escrever: [`resultados-consolidados.md`](resultados-consolidados.md) reúne
