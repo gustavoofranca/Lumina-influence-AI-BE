@@ -194,6 +194,33 @@ def _videos(items):
     return FakeResponse(json_body={"items": items})
 
 
+def _analytics_indisponivel():
+    """Analytics recusando — o caso comum em canal sem relatório de proprietário.
+
+    Entra em toda rota de coleta de propósito: a retenção é best-effort, e os
+    testes de normalização precisam continuar medindo o que mediam. Quem quer
+    exercitar a retenção usa `_analytics(...)`.
+    """
+    return FakeResponse(status_code=403, text="{}")
+
+
+def _analytics(linhas):
+    """Resposta da Analytics API. `linhas` = [(video_id, duração_s, pct)]."""
+    return FakeResponse(json_body={
+        "columnHeaders": [
+            {"name": "video"},
+            {"name": "averageViewDuration"},
+            {"name": "averageViewPercentage"},
+        ],
+        "rows": [list(linha) for linha in linhas],
+    })
+
+
+def _coleta(rotas):
+    """Rotas de coleta com a Analytics recusando por padrão."""
+    return FakeHttp({"youtubeanalytics": _analytics_indisponivel(), **rotas})
+
+
 def test_youtube_normaliza_video_em_post(app, monkeypatch):
     item = {
         "id": "vid1",
@@ -205,7 +232,7 @@ def test_youtube_normaliza_video_em_post(app, monkeypatch):
         "statistics": {"viewCount": "4000", "likeCount": "310", "commentCount": "27"},
     }
     monkeypatch.setattr(yt_mod.requests, "get",
-                        FakeHttp({"/search": _busca(["vid1"]), "/videos": _videos([item])}))
+                        _coleta({"/search": _busca(["vid1"]), "/videos": _videos([item])}))
     with app.app_context():
         posts = YouTubeAdapter().fetch_recent_posts("tok")
     assert len(posts) == 1
@@ -225,7 +252,7 @@ def test_youtube_declara_todo_alcance_como_organico(app, monkeypatch):
     # o dado. Se algum dia virar estimativa, este teste é quem avisa.
     item = {"id": "vid1", "snippet": {}, "statistics": {"viewCount": "4000"}}
     monkeypatch.setattr(yt_mod.requests, "get",
-                        FakeHttp({"/search": _busca(["vid1"]), "/videos": _videos([item])}))
+                        _coleta({"/search": _busca(["vid1"]), "/videos": _videos([item])}))
     with app.app_context():
         p = YouTubeAdapter().fetch_recent_posts("tok")[0]
     assert p.reach_total == 4000
@@ -239,7 +266,7 @@ def test_youtube_estatistica_ausente_vira_zero_e_nao_quebra(app, monkeypatch):
     # coluna é NOT NULL e soma sem amostra é zero de verdade (ADR-003).
     item = {"id": "vid1", "snippet": {}, "statistics": {}}
     monkeypatch.setattr(yt_mod.requests, "get",
-                        FakeHttp({"/search": _busca(["vid1"]), "/videos": _videos([item])}))
+                        _coleta({"/search": _busca(["vid1"]), "/videos": _videos([item])}))
     with app.app_context():
         p = YouTubeAdapter().fetch_recent_posts("tok")[0]
     assert (p.likes, p.comments_count, p.reach_total) == (0, 0, 0)
@@ -248,7 +275,7 @@ def test_youtube_estatistica_ausente_vira_zero_e_nao_quebra(app, monkeypatch):
 
 
 def test_youtube_canal_sem_video_nao_chama_a_segunda_rota(app, monkeypatch):
-    http = FakeHttp({"/search": FakeResponse(json_body={"items": []})})
+    http = _coleta({"/search": FakeResponse(json_body={"items": []})})
     monkeypatch.setattr(yt_mod.requests, "get", http)
     with app.app_context():
         assert YouTubeAdapter().fetch_recent_posts("tok") == []
@@ -259,7 +286,7 @@ def test_youtube_ignora_resultado_de_busca_sem_id_de_video(app, monkeypatch):
     busca = FakeResponse(json_body={"items": [
         {"id": {"kind": "youtube#channel"}}, {"id": {"videoId": "vid1"}}, {},
     ]})
-    http = FakeHttp({"/search": busca,
+    http = _coleta({"/search": busca,
                      "/videos": _videos([{"id": "vid1", "snippet": {}, "statistics": {}}])})
     monkeypatch.setattr(yt_mod.requests, "get", http)
     with app.app_context():
@@ -273,7 +300,7 @@ def test_youtube_data_ilegivel_nao_derruba_a_coleta(app, monkeypatch):
     # porque perder o post inteiro por causa do carimbo é pior.
     item = {"id": "vid1", "snippet": {"publishedAt": "ontem"}, "statistics": {}}
     monkeypatch.setattr(yt_mod.requests, "get",
-                        FakeHttp({"/search": _busca(["vid1"]), "/videos": _videos([item])}))
+                        _coleta({"/search": _busca(["vid1"]), "/videos": _videos([item])}))
     with app.app_context():
         p = YouTubeAdapter().fetch_recent_posts("tok")[0]
     assert (datetime.now(timezone.utc) - p.posted_at).total_seconds() < 60
@@ -283,7 +310,7 @@ def test_youtube_erro_na_busca_nao_vira_lista_vazia(app, monkeypatch):
     # Falha de rede lida como "canal sem post" é o padrão "ausência de dado
     # apresentada como zero" — tem que estourar.
     monkeypatch.setattr(yt_mod.requests, "get",
-                        FakeHttp({"/search": FakeResponse(status_code=403)}))
+                        _coleta({"/search": FakeResponse(status_code=403)}))
     with app.app_context():
         with pytest.raises(PrivateAccountError):
             YouTubeAdapter().fetch_recent_posts("tok")
@@ -1351,3 +1378,160 @@ def test_midia_octet_stream_continua_aceito(monkeypatch):
         assert asset.path.endswith(".mp4")
     finally:
         fetcher.cleanup(asset)
+
+
+# ==========================================================================
+# YouTube — retenção, da Analytics API
+# ==========================================================================
+def _item_video(vid="vid1"):
+    return {
+        "id": vid,
+        "snippet": {"title": "Titulo", "publishedAt": "2026-08-01T10:00:00Z",
+                    "thumbnails": {"high": {"url": "http://thumb"}}},
+        "statistics": {"viewCount": "1000", "likeCount": "50", "commentCount": "5"},
+    }
+
+
+def test_youtube_coleta_tempo_de_exibicao_e_retencao(app, monkeypatch):
+    # Os dois campos existiam no modelo e no painel desde a B7 e ninguém os
+    # coletava: para a conta real chegavam sempre nulos.
+    http = FakeHttp({
+        "/search": _busca(["vid1"]),
+        "/videos": _videos([_item_video()]),
+        "youtubeanalytics": _analytics([("vid1", 132.5, 47.5)]),
+    })
+    monkeypatch.setattr(yt_mod.requests, "get", http)
+    with app.app_context():
+        post = YouTubeAdapter().fetch_recent_posts("t")[0]
+    assert post.avg_watch_time == 132.5
+    # `averageViewPercentage` vem em 0–100; o campo interno é fração.
+    assert post.retention_rate == 0.475
+
+
+def test_youtube_pede_as_metricas_de_retencao_por_video(app, monkeypatch):
+    http = FakeHttp({
+        "/search": _busca(["vid1"]),
+        "/videos": _videos([_item_video()]),
+        "youtubeanalytics": _analytics([("vid1", 10.0, 20.0)]),
+    })
+    monkeypatch.setattr(yt_mod.requests, "get", http)
+    with app.app_context():
+        YouTubeAdapter().fetch_recent_posts("t")
+    chamada = next(k for url, k in http.calls if "youtubeanalytics" in url)
+    params = chamada["params"]
+    assert params["metrics"] == "averageViewDuration,averageViewPercentage"
+    # Sem `dimensions=video` a API agrega todos os vídeos numa linha só, e a
+    # retenção de um vídeo passaria a ser a média do canal.
+    assert params["dimensions"] == "video"
+    assert params["filters"] == "video==vid1"
+    assert params["ids"] == "channel==MINE"
+    # As duas datas são obrigatórias na Analytics API.
+    assert params["startDate"] < params["endDate"]
+
+
+def test_youtube_analytics_recusada_deixa_a_retencao_nula_e_nao_zero(app, monkeypatch):
+    # 403 é o caso comum: o token autoriza analytics e o canal não tem
+    # relatório de proprietário. Retenção zero afirmaria "ninguém assistiu".
+    monkeypatch.setattr(yt_mod.requests, "get", FakeHttp({
+        "/search": _busca(["vid1"]),
+        "/videos": _videos([_item_video()]),
+        "youtubeanalytics": FakeResponse(status_code=403, text="{}"),
+    }))
+    with app.app_context():
+        post = YouTubeAdapter().fetch_recent_posts("t")[0]
+    assert post.avg_watch_time is None
+    assert post.retention_rate is None
+    # E o que importa continua vindo: a retenção é enfeite do painel, o
+    # alcance é o produto.
+    assert post.reach_total == 1000
+
+
+def test_youtube_analytics_fora_do_ar_nao_derruba_a_coleta(app, monkeypatch):
+    def _get(url, **kwargs):
+        if "youtubeanalytics" in url:
+            raise yt_mod.requests.RequestException("timeout")
+        return FakeHttp({"/search": _busca(["vid1"]),
+                         "/videos": _videos([_item_video()])})(url, **kwargs)
+
+    monkeypatch.setattr(yt_mod.requests, "get", _get)
+    with app.app_context():
+        posts = YouTubeAdapter().fetch_recent_posts("t")
+    assert len(posts) == 1
+    assert posts[0].retention_rate is None
+
+
+def test_youtube_video_sem_linha_na_analytics_fica_sem_retencao(app, monkeypatch):
+    # Vídeo recém-publicado não tem dado ainda: a API omite a linha.
+    monkeypatch.setattr(yt_mod.requests, "get", FakeHttp({
+        "/search": _busca(["vid1", "vid2"]),
+        "/videos": _videos([_item_video("vid1"), _item_video("vid2")]),
+        "youtubeanalytics": _analytics([("vid1", 90.0, 30.0)]),
+    }))
+    with app.app_context():
+        posts = {p.platform_post_id: p for p in YouTubeAdapter().fetch_recent_posts("t")}
+    assert posts["vid1"].retention_rate == 0.3
+    assert posts["vid2"].retention_rate is None
+
+
+def test_youtube_le_a_analytics_pela_ordem_das_colunas(app, monkeypatch):
+    # Assumir posição fixa quebraria em silêncio se a API acrescentasse coluna
+    # — e o erro seria trocar duração por percentual, que passa por plausível.
+    corpo = FakeResponse(json_body={
+        "columnHeaders": [
+            {"name": "averageViewPercentage"},
+            {"name": "video"},
+            {"name": "averageViewDuration"},
+        ],
+        "rows": [[60.0, "vid1", 200.0]],
+    })
+    monkeypatch.setattr(yt_mod.requests, "get", FakeHttp({
+        "/search": _busca(["vid1"]),
+        "/videos": _videos([_item_video()]),
+        "youtubeanalytics": corpo,
+    }))
+    with app.app_context():
+        post = YouTubeAdapter().fetch_recent_posts("t")[0]
+    assert post.avg_watch_time == 200.0
+    assert post.retention_rate == 0.6
+
+
+def test_youtube_analytics_sem_as_colunas_esperadas_nao_inventa(app, monkeypatch):
+    monkeypatch.setattr(yt_mod.requests, "get", FakeHttp({
+        "/search": _busca(["vid1"]),
+        "/videos": _videos([_item_video()]),
+        "youtubeanalytics": FakeResponse(json_body={"columnHeaders": [{"name": "outra"}],
+                                                    "rows": [["x"]]}),
+    }))
+    with app.app_context():
+        post = YouTubeAdapter().fetch_recent_posts("t")[0]
+    assert post.retention_rate is None
+
+
+def test_youtube_sem_video_nao_chama_a_analytics(app, monkeypatch):
+    http = FakeHttp({"/search": FakeResponse(json_body={"items": []})})
+    monkeypatch.setattr(yt_mod.requests, "get", http)
+    with app.app_context():
+        assert YouTubeAdapter().fetch_recent_posts("t") == []
+    assert not any("youtubeanalytics" in url for url, _ in http.calls)
+
+
+def test_youtube_linha_curta_da_analytics_e_ignorada(app, monkeypatch):
+    # Linha com menos colunas que o cabeçalho promete: descartar é o único
+    # caminho honesto, porque não se sabe qual valor está faltando.
+    corpo = FakeResponse(json_body={
+        "columnHeaders": [
+            {"name": "video"},
+            {"name": "averageViewDuration"},
+            {"name": "averageViewPercentage"},
+        ],
+        "rows": [["vid1", 10.0]],
+    })
+    monkeypatch.setattr(yt_mod.requests, "get", FakeHttp({
+        "/search": _busca(["vid1"]),
+        "/videos": _videos([_item_video()]),
+        "youtubeanalytics": corpo,
+    }))
+    with app.app_context():
+        post = YouTubeAdapter().fetch_recent_posts("t")[0]
+    assert post.retention_rate is None
+    assert post.avg_watch_time is None

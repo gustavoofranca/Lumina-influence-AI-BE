@@ -7,6 +7,7 @@ credenciais do Google (mesmo projeto do login). Não exige App Review da Meta �
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
@@ -27,6 +28,11 @@ from src.models import PostType
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 DATA = "https://www.googleapis.com/youtube/v3"
+# A Analytics API é um host próprio, e não um recurso da Data API v3. Só ela
+# entrega tempo de exibição e retenção — a v3 não expõe nenhum dos dois.
+ANALYTICS = "https://youtubeanalytics.googleapis.com/v2/reports"
+
+logger = logging.getLogger(__name__)
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.readonly",
     "https://www.googleapis.com/auth/yt-analytics.readonly",
@@ -150,6 +156,11 @@ class YouTubeAdapter(SocialAdapter):
             headers=headers, timeout=TIMEOUT,
         )
         raise_for_social_status(v, platform=self.platform)
+
+        # 3) Retenção, da YouTube Analytics API. Best-effort de propósito: ver
+        #    `_retencao_por_video`.
+        retencao = self._retencao_por_video(headers, ids)
+
         out = []
         for item in v.json().get("items", []):
             stats = item.get("statistics", {})
@@ -177,9 +188,89 @@ class YouTubeAdapter(SocialAdapter):
                     # A Data API v3 não expõe compartilhamento nem salvamento.
                     shares=0,
                     saves=0,
+                    # `None` quando a Analytics não respondeu ou não tem dado do
+                    # vídeo — nunca 0. Retenção zero é uma afirmação forte
+                    # ("ninguém assistiu"), e ausência de medição não é isso
+                    # (ADR-003).
+                    **retencao.get(item["id"], {}),
                 )
             )
         return out
+
+    def _retencao_por_video(self, headers: dict, ids: list[str]) -> dict[str, dict]:
+        """Tempo médio de exibição e retenção, por vídeo, da Analytics API.
+
+        Estes dois campos existiam no modelo, no schema e no tipo normalizado
+        desde a B7, e o painel já os consumia — só ninguém os coletava. Para a
+        conta real conectada na B8 chegavam sempre nulos, e nas de demonstração
+        vinham inventados pelo seed. O escopo `yt-analytics.readonly` já estava
+        concedido: faltava a chamada.
+
+        **Best-effort, e por um motivo.** A Analytics API responde 403 para
+        canal sem histórico de proprietário, e devolve linha vazia para vídeo
+        recém-publicado. Nenhum dos dois é motivo para perder a coleta dos
+        posts: a retenção é um enfeite do painel, o alcance é o produto. A
+        falha vira aviso e os campos ficam nulos.
+
+        `averageViewDuration` vem em **segundos** e `averageViewPercentage` em
+        0–100 — o campo interno é fração, daí a divisão por 100.
+        """
+        hoje = datetime.now(timezone.utc).date()
+        try:
+            r = requests.get(
+                ANALYTICS,
+                params={
+                    "ids": "channel==MINE",
+                    # A janela precisa cobrir os vídeos pedidos; um ano cobre o
+                    # que `search` devolve com folga, e a API exige as duas datas.
+                    "startDate": (hoje - timedelta(days=365)).isoformat(),
+                    "endDate": hoje.isoformat(),
+                    "metrics": "averageViewDuration,averageViewPercentage",
+                    "dimensions": "video",
+                    # Até 500 ids por chamada; `limit` aqui é uma dezena.
+                    "filters": "video==" + ",".join(ids),
+                },
+                headers=headers,
+                timeout=TIMEOUT,
+            )
+        except requests.RequestException as exc:
+            logger.warning("youtube analytics indisponível: %s", exc.__class__.__name__)
+            return {}
+
+        if r.status_code != 200:
+            # 403 é o caso comum: o token autoriza analytics, mas o canal não
+            # tem relatório de proprietário. Não é defeito do sistema.
+            logger.info(
+                "youtube analytics recusou (%s): retenção fica ausente", r.status_code
+            )
+            return {}
+
+        corpo = r.json()
+        # A ordem das colunas vem em `columnHeaders`; assumir posição fixa
+        # quebraria em silêncio se a API acrescentasse coluna.
+        colunas = [c.get("name") for c in corpo.get("columnHeaders", [])]
+        try:
+            i_video = colunas.index("video")
+            i_duracao = colunas.index("averageViewDuration")
+            i_pct = colunas.index("averageViewPercentage")
+        except ValueError:
+            logger.warning("youtube analytics sem as colunas esperadas: %s", colunas)
+            return {}
+
+        saida: dict[str, dict] = {}
+        for linha in corpo.get("rows", []) or []:
+            if len(linha) <= max(i_video, i_duracao, i_pct):
+                continue
+            campos = {}
+            duracao = linha[i_duracao]
+            pct = linha[i_pct]
+            if duracao is not None:
+                campos["avg_watch_time"] = float(duracao)
+            if pct is not None:
+                campos["retention_rate"] = round(float(pct) / 100, 4)
+            if campos:
+                saida[str(linha[i_video])] = campos
+        return saida
 
     def fetch_post_insights(self, access_token: str, platform_post_id: str) -> dict:
         # Reach orgânico/pago detalhado viria da YouTube Analytics API (relatórios).
