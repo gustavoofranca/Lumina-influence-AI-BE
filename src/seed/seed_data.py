@@ -445,6 +445,14 @@ def seed_run() -> dict[str, int]:
             script_score=round(rng.uniform(5.0, 9.5), 2),
             brand_coherence_score=round(data["brand_coherence"] + rng.uniform(-5, 3), 2),
             bot_probability=round(data["bot_probability"] + rng.uniform(-2, 4), 2),
+            # Faixa suspeita como grandeza própria, e não fração da de bot: no
+            # dado real ela vem medida pelo modelo, e o seed precisa ter a
+            # mesma forma para a tela de demonstração exercitar o mesmo
+            # caminho. Fica um pouco acima da de bot porque dúvida é mais
+            # comum que automação confirmada.
+            suspicious_probability=round(
+                data["bot_probability"] * rng.uniform(1.1, 1.8), 2
+            ),
             transcript_text=(
                 "Olha só esse drop — testei por semanas e a diferença é absurda. "
                 "Pra quem trabalha pesado, vale cada centavo. Link na bio com cupom."

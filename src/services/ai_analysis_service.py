@@ -99,6 +99,7 @@ texto fora do JSON, seguindo EXATAMENTE este schema:
   "script_score": <float 0-10>,
   "brand_coherence_score": <float 0-100>,
   "bot_probability": <float 0-100>,
+  "suspicious_probability": <float 0-100>,
   "key_phrases": [<string>, ...],
   "recommendations": [
     {{"priority": "high"|"medium"|"low", "title": <string>, "description": <string>}}
@@ -107,6 +108,8 @@ texto fora do JSON, seguindo EXATAMENTE este schema:
 
 Regras:
 - sentiment_breakdown deve somar aproximadamente 100.
+- bot_probability: proporção da audiência que se comporta como automação clara (texto repetido, elogio genérico sem referência ao conteúdo, emoji em cadeia).
+- suspicious_probability: proporção que levanta dúvida sem ser conclusiva (engajamento raso, conta sem histórico aparente, comentário fora de contexto). As duas são faixas distintas e não se sobrepõem; juntas não devem passar de 100.
 - key_phrases: 4 a 8 termos relevantes extraídos dos comentários.
 - recommendations: 2 a 3 itens acionáveis para a agência.
 - Seja objetivo e baseie-se nos dados fornecidos.
@@ -204,6 +207,10 @@ def parse_analysis_payload(text: str) -> dict:
         "script_score": _clamp(raw.get("script_score"), 0, 10),
         "brand_coherence_score": _clamp(raw.get("brand_coherence_score"), 0, 100),
         "bot_probability": _clamp(raw.get("bot_probability"), 0, 100),
+        # Sem clamp cruzado de propósito: se o modelo devolver duas faixas que
+        # somam mais de 100, corrigir aqui esconderia uma resposta incoerente
+        # atrás de um número plausível. O serviço de leitura trata o caso.
+        "suspicious_probability": _clamp(raw.get("suspicious_probability"), 0, 100),
         "key_phrases": key_phrases,
         "recommendations": recommendations,
         "transcript_text": transcript,
@@ -273,6 +280,7 @@ def _persist_analysis(post, agency_id, parsed, result, *, transcript) -> AIAnaly
         script_score=parsed["script_score"],
         brand_coherence_score=parsed["brand_coherence_score"],
         bot_probability=parsed["bot_probability"],
+        suspicious_probability=parsed["suspicious_probability"],
         transcript_text=transcript if transcript is not None else parsed.get("transcript_text"),
         key_phrases=parsed["key_phrases"],
         recommendations=parsed["recommendations"],
@@ -316,6 +324,7 @@ Responda APENAS com um objeto JSON válido seguindo EXATAMENTE este schema:
   "script_score": <float 0-10>,
   "brand_coherence_score": <float 0-100>,
   "bot_probability": <float 0-100>,
+  "suspicious_probability": <float 0-100>,
   "key_phrases": [<string>, ...],
   "recommendations": [
     {{"priority": "high"|"medium"|"low", "title": <string>, "description": <string>}}

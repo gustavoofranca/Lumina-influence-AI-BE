@@ -129,6 +129,7 @@ def ctx(app):
         c.post_a_id = str(post_a.id)
         c.post_b_id = str(post_b.id)
         c.agency_a_id = str(agency_a.id)
+        c.inf_a_id = inf_a.id
         c.h_admin = {"Authorization": f"Bearer {issue_token_pair(admin)['access_token']}"}
         c.h_viewer = {"Authorization": f"Bearer {issue_token_pair(viewer)['access_token']}"}
         c.h_b = {"Authorization": f"Bearer {issue_token_pair(b_admin)['access_token']}"}
@@ -265,3 +266,74 @@ def test_analyze_no_analysis_persisted_on_failure(client, ctx, app, monkeypatch)
     with app.app_context():
         count = db.session.scalar(select(func.count(AIAnalysis.id)))
         assert count == 0  # parse falhou antes de persistir
+
+
+# ==========================================================================
+# A faixa suspeita passou a ser medida, e não derivada
+# ==========================================================================
+def test_prompt_pede_a_faixa_suspeita_e_explica_a_diferenca():
+    """O modelo precisa saber que são duas faixas distintas.
+
+    Sem a regra, "suspeito" e "bot" viram sinônimos na cabeça do modelo e os
+    dois números passam a dizer a mesma coisa — que é o problema anterior com
+    outra roupa.
+    """
+    from src.services.ai_analysis_service import PROMPT_TEMPLATE
+
+    assert '"suspicious_probability"' in PROMPT_TEMPLATE
+    assert "não se sobrepõem" in PROMPT_TEMPLATE
+    assert "automação clara" in PROMPT_TEMPLATE
+
+
+def _analise_com_faixas(app, ctx, *, bot, suspeita):
+    """Cria a análise do post A com as duas faixas e devolve a leitura da API."""
+    from src.models import SentimentLabel
+    from src.services import dashboard_service
+
+    with app.app_context():
+        db.session.add(AIAnalysis(
+            post_id=uuid.UUID(ctx.post_a_id), model_version="teste",
+            sentiment_score=0.5, sentiment_label=SentimentLabel.POSITIVE,
+            bot_probability=bot, suspicious_probability=suspeita,
+        ))
+        db.session.commit()
+        criador = db.session.get(Influencer, ctx.inf_a_id)
+        return dashboard_service.influencer_analysis(criador)["audience_integrity"]
+
+
+def test_audiencia_usa_a_faixa_medida_e_nao_a_constante(app, ctx):
+    """Antes: suspeito = bot × 0,6 e bot = bot × 0,4. Agora os dois são medidos."""
+    aud = _analise_com_faixas(app, ctx, bot=10.0, suspeita=25.0)
+    assert aud["bots"] == 10.0
+    assert aud["suspicious"] == 25.0
+    assert aud["organic"] == 65.0
+
+
+def test_analise_antiga_sem_a_faixa_nao_inventa_composicao(app, ctx):
+    aud = _analise_com_faixas(app, ctx, bot=12.0, suspeita=None)
+    assert aud["bots"] == 12.0
+    # Preencher com qualquer número reintroduziria a invenção removida.
+    assert aud["suspicious"] is None
+    assert aud["totals"]["suspicious"] is None
+    # E o orgânico é só o que sobra do que foi medido.
+    assert aud["organic"] == 88.0
+
+
+def test_faixas_incoerentes_omitem_a_composicao(app, ctx):
+    """Modelo devolvendo faixas que somam mais de 100.
+
+    Normalizar inventaria uma divisão; o honesto é não afirmar composição
+    nenhuma e reclamar no log.
+    """
+    aud = _analise_com_faixas(app, ctx, bot=70.0, suspeita=60.0)
+    assert aud["bots"] is None
+    assert aud["suspicious"] is None
+    assert aud["organic"] is None
+
+
+def test_contagem_de_seguidores_acompanha_a_faixa_medida(app, ctx):
+    aud = _analise_com_faixas(app, ctx, bot=10.0, suspeita=20.0)
+    # A conta social do seed do teste não tem seguidor, então o que importa
+    # aqui é o tipo: número onde houve medição, nulo onde não houve.
+    assert isinstance(aud["totals"]["bots"], int)
+    assert isinstance(aud["totals"]["suspicious"], int)

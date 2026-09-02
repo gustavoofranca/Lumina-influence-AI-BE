@@ -37,6 +37,11 @@ class AIAnalysis(Base, TimestampMixin):
     script_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     brand_coherence_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     bot_probability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # Faixa "suspeita": conta que o modelo não classifica como bot mas também
+    # não como pública legítima. Nullable porque análise anterior a 02/09/2026
+    # não a mediu — e preenchê-la com qualquer número reintroduziria a invenção
+    # que esta coluna existe para remover.
+    suspicious_probability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     transcript_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     key_phrases: Mapped[Optional[list]] = mapped_column(JSONField, nullable=True)

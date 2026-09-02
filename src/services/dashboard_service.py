@@ -5,6 +5,8 @@ em snake_case (convenção da API). O front mapeia os nomes na B11.
 """
 from __future__ import annotations
 
+import logging
+
 import uuid
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -24,6 +26,8 @@ from src.models import (
     SocialAccount,
 )
 from src.services import metric_service as M
+
+logger = logging.getLogger(__name__)
 
 
 def _change(curr: float | None, prev: float | None) -> dict:
@@ -387,20 +391,43 @@ def influencer_analysis(influencer: Influencer) -> dict:
     # anunciava "100% de audiência orgânica" para quem nunca foi analisado —
     # uma afirmação favorável inventada, pior que um zero (ADR-003).
     bot = ai["bot_probability"]
+    suspeita = ai["suspicious_probability"]
     total_followers = sum(sa.follower_count for sa in influencer.social_accounts)
     audience_integrity = None
     if bot is not None:
-        suspicious_pct = round(bot * 0.6, 1)
-        bots_pct = round(bot * 0.4, 1)
-        audiencia_organica_pct = round(100 - suspicious_pct - bots_pct, 1)
+        # A faixa suspeita é **medida** pelo modelo. Até 02/09/2026 ela saía de
+        # `bot * 0.6` e a de bot de `bot * 0.4`: três números no cartão, um
+        # medido e dois inventados por constantes que ninguém justificou — num
+        # cartão chamado "integridade".
+        #
+        # Análise anterior à mudança não tem a faixa. Ela sai `null`, e o
+        # cartão mostra duas fatias em vez de três: preencher com qualquer
+        # número reintroduziria exatamente a invenção removida.
+        bots_pct = round(bot, 1)
+        suspicious_pct = round(suspeita, 1) if suspeita is not None else None
+        medido = bots_pct + (suspicious_pct or 0)
+        if medido > 100:
+            # Resposta incoerente do modelo. Normalizar inventaria uma divisão;
+            # o honesto é não afirmar composição nenhuma.
+            logger.warning(
+                "audiência: faixas somam %.1f para o criador %s — composição omitida",
+                medido, influencer.id,
+            )
+            bots_pct = suspicious_pct = None
+        audiencia_organica_pct = (
+            round(100 - medido, 1) if bots_pct is not None else None
+        )
         audience_integrity = {
             "organic": audiencia_organica_pct,
             "suspicious": suspicious_pct,
             "bots": bots_pct,
+            # Contagem absoluta só para a faixa que tem percentual. `None`
+            # vira `None`, e não 0 seguidor suspeito — que seria a afirmação
+            # oposta à ausência de medição.
             "totals": {
-                "verified_humans": int(total_followers * audiencia_organica_pct / 100),
-                "suspicious": int(total_followers * suspicious_pct / 100),
-                "bots": int(total_followers * bots_pct / 100),
+                "verified_humans": _seguidores(total_followers, audiencia_organica_pct),
+                "suspicious": _seguidores(total_followers, suspicious_pct),
+                "bots": _seguidores(total_followers, bots_pct),
             },
         }
 
@@ -460,6 +487,11 @@ def influencer_analysis(influencer: Influencer) -> dict:
         "latest_analysis_id": latest_analysis_id,
         "analyses_count": ai["analyses_count"],
     }
+
+
+def _seguidores(total: int, pct: float | None) -> int | None:
+    """Converte percentual em contagem. Sem percentual, não há contagem."""
+    return None if pct is None else int(total * pct / 100)
 
 
 def _recomendacoes_com_decisao(analysis) -> list[dict]:

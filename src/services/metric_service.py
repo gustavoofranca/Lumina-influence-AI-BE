@@ -203,6 +203,7 @@ def ai_aggregates(analyses: list[AIAnalysis]) -> dict:
             "sentiment_index_pct": None,
             "brand_coherence": None,
             "bot_probability": None,
+            "suspicious_probability": None,
             "script_score": None,
             "analyses_count": 0,
         }
@@ -212,6 +213,10 @@ def ai_aggregates(analyses: list[AIAnalysis]) -> dict:
         "sentiment_index_pct": sentiment_to_pct(sentiment),
         "brand_coherence": _avg([a.brand_coherence_score for a in analyses]),
         "bot_probability": _avg([a.bot_probability for a in analyses]),
+        # `_avg` ignora `None`: a média sai das análises que **mediram** a
+        # faixa, e não das que a deixaram em branco. Nenhuma medição devolve
+        # `None`, que é o que faz o cartão mostrar duas fatias em vez de três.
+        "suspicious_probability": _avg([a.suspicious_probability for a in analyses]),
         "script_score": _avg([a.script_score for a in analyses]),
         "analyses_count": len(analyses),
     }
