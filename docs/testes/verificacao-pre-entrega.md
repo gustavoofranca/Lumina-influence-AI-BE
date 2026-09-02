@@ -270,6 +270,33 @@ Para cada controle novo: tem nome acessível que descreve a **ação**, é alcan
 por Tab, mostra foco visível, tem alvo de toque de pelo menos 24px e responde ao
 Enter.
 
+### 7. Rota chamada que não existe
+
+`docs/testes/scripts/rota_orfa.py`, com a API de pé. Lê a spec em execução e
+percorre os serviços do front, comparando os dois lados nas duas direções.
+
+O triângulo tem três lados e só dois estavam verificados: app↔spec já é coberto
+por `test_toda_rota_esta_na_spec_openapi` e seu inverso. O lado front↔app não
+tinha teste nenhum, porque os dois vivem em repositórios diferentes — e é o lado
+em que o erro só aparece executando: `npm run build` passa, o teste de unidade
+passa, e a tela quebra na frente de quem estiver olhando.
+
+Três categorias, três significados:
+
+| Categoria | O que é | Gravidade |
+|---|---|---|
+| Fantasma | a tela chama caminho que não existe | quebra em runtime |
+| Fora do contrato | a rota existe no app, mas não está na spec | some sem reprovar teste |
+| Órfã | a rota existe e nenhuma tela consome | superfície sem dono |
+
+Duas armadilhas de método, ambas vividas construindo a varredura: `api.raw` é
+uma quarta forma de chamada — deixá-la de fora fazia `/reports/{id}/download`
+parecer órfã —, e o primeiro argumento pode estar em outra linha, o que esconde
+a chamada de qualquer `grep`. As duas estão presas em `scripts/regressao/`.
+
+Resultado de 02/09/2026: **nenhuma rota fantasma**, uma chamada fora do contrato
+(`dev-login`, atalho de demonstração) e dez rotas sem consumidor.
+
 ## O que esta bateria não cobre
 
 - **Fluxo com efeito real**: conectar conta social, gerar PDF e rodar análise

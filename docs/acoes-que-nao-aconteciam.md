@@ -115,10 +115,39 @@ Duas escolhas de contrato:
   cascade, justamente por isso. A confirmação declara isso, porque falar só da
   perda faria o usuário pensar que está apagando o criador.
 
+## Segunda rodada: o campo de senha (02/09/2026)
+
+A varredura proposta no fim deste documento foi escrita — `rota_orfa.py`,
+descrita em [`testes/verificacao-pre-entrega.md`](testes/verificacao-pre-entrega.md).
+Ela não achou rota fantasma, mas puxou o fio que levou ao caso mais caro da
+família inteira, e no lugar mais visível do produto: **a tela de login.**
+
+O formulário pedia e-mail e senha. O valor da senha era guardado em estado,
+nunca enviado, nunca validado — e não havia o que validar: **não existe senha
+em lugar nenhum do sistema.** Nenhum modelo guarda credencial, nenhuma rota
+recebe uma. A autenticação do produto é OAuth 2.0, como a própria tela de
+cadastro já dizia por escrito. Digitar qualquer coisa entrava.
+
+É a mentira de interface na sua forma mais pura: um controle que afirma uma
+verificação que não acontece, na primeira tela que qualquer visitante vê, e
+contradizendo a tela vizinha.
+
+O segundo defeito estava embaixo: o botão principal chama `POST /auth/dev-login`,
+que é `DEV_LOGIN_ENABLED = False` fixo em staging e em produção. No domínio
+HTTPS exigido pelo App Review da Meta, o botão responderia 403 e o revisor leria
+"Forbidden", sem caminho para descobrir que a porta era o Google.
+
+O que mudou:
+
+- o campo de senha saiu, junto com o estado morto de validação que nunca rodava;
+- o 403 `dev_login_disabled` deixou de ser erro cru e passou a dizer que o
+  acesso de demonstração está desativado **e qual é o caminho que resta**;
+- dois testes ponta a ponta prendem os dois comportamentos, e ambos foram
+  verificados reintroduzindo o defeito para conferir que reprovam.
+
 ## O que fica como pergunta
 
-As duas leituras — ação que não acontece, dado que não se corrige — foram
-manuais, comparando a superfície da API com o que a interface chama. Não há
-verificação automatizada disso, e ela seria barata: a lista de rotas do OpenAPI
-contra a lista de chamadas dos serviços do front acusaria toda divergência nova.
-Fica registrado como a próxima varredura que vale escrever.
+A varredura de rotas cobre o lado front↔app. Continua sem cobertura o lado
+**tela↔serviço**: um serviço pode existir, chamar a rota certa e nenhuma tela
+importá-lo. Foi assim que `atualizarInfluenciador` esperou desde a B4. Achar
+isso exige seguir a importação, não a rota — e é a próxima que vale escrever.

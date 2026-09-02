@@ -7,5 +7,10 @@
   ],
   "botao_morto": [
     "leftIcon={Download}"
+  ],
+  "rota_orfa": [
+    "get /api/v1/influencers/inexistente",
+    "delete /api/v1/campaigns/{id}/inexistente",
+    "get /api/v1/reports/{id}/inexistente"
   ]
 }
