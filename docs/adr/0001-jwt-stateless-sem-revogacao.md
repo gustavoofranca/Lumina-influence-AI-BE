@@ -79,3 +79,45 @@ Consequências que mudam:
 
 O que não muda: o TTL curto do access token continua sendo o limite de exposição,
 e o logout continua sendo responsabilidade do cliente.
+
+## Segunda revisão: o refresh token entra na mesma gaveta (2026-09-03)
+
+A revisão de agosto resolveu o F5 e deixou um buraco maior de pé: **o front
+nunca guardava o refresh token.** O par vinha completo do login — no corpo da
+resposta do `dev-login` e no fragmento do retorno OAuth — e o cliente lia só o
+`access_token`, descartando o outro.
+
+O efeito era o pior possível para uma demonstração. O access token vale 1 hora;
+passada ela, a primeira requisição levava 401, o `onUnauthorized` limpava a
+sessão e o usuário aparecia na tela de login no meio do que estava fazendo, sem
+mensagem. A função `refresh()` existia em `services/auth.js`, ninguém a
+importava, e do jeito que estava escrita não teria funcionado: mandava
+`auth: false`, e `require_refresh` lê o token do cabeçalho `Authorization`.
+
+**Decisão:** o refresh token passa a ser guardado em `sessionStorage`, ao lado
+do access token, e um 401 numa requisição autenticada dispara uma tentativa de
+renovação antes de derrubar a sessão.
+
+O raciocínio é o mesmo da primeira revisão, e leva ao mesmo lugar. O que esta
+ADR precisa garantir é que **fechar a aba encerre a sessão** — é isso que limita
+a janela de um token que não pode ser revogado. Guardar um refresh token de 30
+dias em `localStorage` quebraria a premissa de um jeito muito mais grave que o
+access token quebraria, porque a janela deixaria de ser de uma hora e passaria a
+ser de um mês, em disco. `sessionStorage` mantém a propriedade: o par inteiro
+morre com a aba.
+
+Consequências:
+
+- A sessão dura até a aba fechar, e não mais uma hora.
+- Uma renovação por vez. Quatro requisições que expiram juntas — o que a tela do
+  criador faz ao abrir — pediriam quatro renovações, e as três últimas usariam
+  um refresh token já trocado.
+- Uma tentativa por requisição. Se o token novo também for recusado, a sessão
+  cai, e é isso que se espera: insistir viraria laço.
+- Falha de rede durante a renovação **não** derruba a sessão. Rede fora não é
+  sessão inválida, e tratar as duas igual desconectaria o usuário no túnel.
+- A superfície de um XSS cresce: quem executar na página passa a poder pegar
+  também o refresh token, e com ele emitir pares novos até o fim dos 30 dias.
+  Continua valendo o que a decisão original diz — sem estado no servidor, não há
+  como revogar. Esta é a troca aceita, e é o argumento mais forte que existe
+  para uma blocklist, se o requisito voltar.

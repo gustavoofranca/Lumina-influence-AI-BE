@@ -525,6 +525,39 @@ def test_member_can_update_self(client, ctx):
     assert r.get_json()["data"]["name"] == "Renomeado"
 
 
+def test_ultimo_admin_nao_pode_se_rebaixar(client, ctx):
+    """Rebaixar o último admin deixaria a agência sem quem a administre.
+
+    É o mesmo buraco que `preview_own_deletion` já considera, e não tem volta
+    pela interface: a ação que consertaria exige justamente ser admin. A tela
+    de equipe passou a oferecer a troca de papel, então a guarda precisa estar
+    no back-end, não só no formulário.
+    """
+    me = client.get("/api/v1/auth/me", headers=ctx.h_a_admin).get_json()["data"]["user"]["id"]
+    r = client.patch(f"/api/v1/users/{me}", headers=ctx.h_a_admin, json={"role": "viewer"})
+    assert r.status_code == 409
+    assert r.get_json()["error"]["code"] == "last_admin_role_change"
+
+    # E continua admin de verdade, não só na resposta.
+    atual = client.get("/api/v1/auth/me", headers=ctx.h_a_admin).get_json()["data"]["user"]
+    assert atual["role"] == "admin"
+
+
+def test_admin_pode_se_rebaixar_havendo_outro(client, ctx):
+    """A guarda é sobre restar administrador, não sobre proibir a troca."""
+    me = client.get("/api/v1/auth/me", headers=ctx.h_a_admin).get_json()["data"]["user"]["id"]
+    segundo = client.post(
+        "/api/v1/users",
+        headers=ctx.h_a_admin,
+        json={"email": "segundo-admin@a.com", "name": "Segundo", "role": "admin"},
+    )
+    assert segundo.status_code == 201
+
+    r = client.patch(f"/api/v1/users/{me}", headers=ctx.h_a_admin, json={"role": "viewer"})
+    assert r.status_code == 200
+    assert r.get_json()["data"]["role"] == "viewer"
+
+
 def test_member_cannot_change_own_role(client, ctx):
     me = client.get("/api/v1/auth/me", headers=ctx.h_a_member).get_json()["data"]["user"]["id"]
     r = client.patch(f"/api/v1/users/{me}", headers=ctx.h_a_member, json={"role": "admin"})

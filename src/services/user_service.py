@@ -55,6 +55,25 @@ def create_member(
 
 
 def apply_update(user: User, data: dict) -> User:
+    """Aplica a atualização, barrando a que deixaria a agência sem administrador.
+
+    Rebaixar o último admin é a mesma falha que `preview_own_deletion` já
+    considera: sem ninguém com papel de admin, a agência fica sem quem convide
+    membro, mude papel ou encerre a conta — e não há caminho de volta pela
+    interface, porque a própria ação que consertaria exige ser admin.
+    """
+    novo_papel = data.get("role")
+    if (
+        novo_papel is not None
+        and user.role == UserRole.ADMIN
+        and novo_papel != UserRole.ADMIN
+        and not _restam_administradores(user)
+    ):
+        raise ConflictError(
+            "A agência ficaria sem administrador.",
+            code="last_admin_role_change",
+        )
+
     for field, value in data.items():
         setattr(user, field, value)
     db.session.commit()

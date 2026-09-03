@@ -145,9 +145,41 @@ O que mudou:
 - dois testes ponta a ponta prendem os dois comportamentos, e ambos foram
   verificados reintroduzindo o defeito para conferir que reprovam.
 
+## Terceira rodada: o que a varredura de rotas não via (03/09/2026)
+
+A varredura de rotas conta uma rota como consumida quando **algum serviço** a
+chama. Não pergunta se alguma tela chama o serviço — e foi aí que estavam os
+três últimos casos, todos com endpoint pronto desde a B4:
+
+| Serviço | Rota | O que faltava |
+|---|---|---|
+| `refresh` | `POST /auth/refresh` | a sessão nunca era renovada |
+| `updateMemberRole` | `PATCH /users/{id}` | papel do membro era só leitura |
+| `listPlans` | `GET /plans` | a tela não dizia o que os outros planos ofereciam |
+
+O primeiro é o grave, e não é omissão: é a sessão morrendo em uma hora e
+jogando o usuário no login no meio do trabalho, sem mensagem. Está na segunda
+revisão da [ADR-001](adr/0001-jwt-stateless-sem-revogacao.md).
+
+O segundo trouxe junto uma falha de back-end: **nada impedia o último admin de
+se rebaixar.** Expor a troca de papel na tela sem essa guarda criaria um
+caminho sem volta — a ação que consertaria exige justamente ser admin. Agora é
+409 `last_admin_role_change`, com o mesmo critério de "administrador ativo" que
+a exclusão do titular já usava.
+
+O terceiro parou antes de onde poderia ir, e o motivo vale registro. O
+comparativo de planos **não exibe preço**: `price_brl_cents` é `0` tanto no
+Free, que é gratuito, quanto no Enterprise, que nunca teve valor definido. A
+coluna é `nullable=False, default=0` e não distingue as duas coisas — é a
+ADR-003 sendo violada na origem, no fixture. Desenhar "R$ 0" no Enterprise
+afirmaria um preço que ninguém estabeleceu, então o cartão compara o que está
+medido: os limites. **Corrigir na origem exige tornar a coluna anulável, e isso
+é migração — fica como decisão em aberto.**
+
 ## O que fica como pergunta
 
-A varredura de rotas cobre o lado front↔app. Continua sem cobertura o lado
-**tela↔serviço**: um serviço pode existir, chamar a rota certa e nenhuma tela
-importá-lo. Foi assim que `atualizarInfluenciador` esperou desde a B4. Achar
-isso exige seguir a importação, não a rota — e é a próxima que vale escrever.
+O lado **tela↔serviço** foi varrido à mão nesta rodada e rendeu três casos, o
+que já é argumento suficiente para automatizá-lo: uma função exportada em
+`services/` que nenhum `.jsx` importa é rota que a varredura conta como
+consumida e usuário nenhum alcança. Achar isso exige seguir a importação, não a
+rota. É a próxima que vale escrever, e agora se sabe o tamanho do que ela pega.
