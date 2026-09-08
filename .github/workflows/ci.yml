@@ -23,8 +23,13 @@ jobs:
           pip install -r requirements.txt
           pip install ruff pytest-cov
 
+      # Exceção registrada a COD-13 (auditoria de 08/09/2026): um verificador
+      # que nunca reprova não verifica. O `|| true` é decisão datada, tomada
+      # para o prazo do TCC — o passo existe para dar visibilidade ao relatório
+      # do ruff sem travar a entrega. Ao remover o `|| true`, esperar uma
+      # primeira execução com muitos apontamentos.
       - name: Lint (ruff)
-        run: ruff check src tests || true  # não bloqueia o build nesta fase do TCC
+        run: ruff check src tests || true
 
       - name: Run tests with coverage
         # Os testes usam SQLite in-memory (TestConfig) — não precisam de Postgres.

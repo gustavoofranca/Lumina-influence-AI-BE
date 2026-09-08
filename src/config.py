@@ -127,6 +127,20 @@ class DevConfig(Config):
 
 
 class TestConfig(Config):
+    """Configuração da suíte. Todo literal aqui é fictício, por decisão.
+
+    Exceção registrada a SEC-04 (auditoria de 08/09/2026): a regra pede que
+    valor de credencial exista apenas em `.env.example`, com marcador. Os
+    literais desta classe contrariam a letra e não o propósito — nenhum casa
+    prefixo de credencial real (`GOCSPX-`, `AIza`, `sk-`, `ya29.`, `ghp_`,
+    `AKIA`), e todos começam por `test-` justamente para serem inconfundíveis.
+
+    Estarem fixos aqui, e não vindos do ambiente, é o que garante que a suíte
+    rode igual em qualquer máquina — ver o comentário de `AUTH_SUCCESS_REDIRECT`
+    logo abaixo, onde a variável de ambiente já mudou o comportamento do teste
+    conforme o `.env` do desenvolvedor.
+    """
+
     ENV = "test"
     TESTING = True
     DEBUG = True
