@@ -306,3 +306,76 @@ Resultado de 02/09/2026: **nenhuma rota fantasma**, uma chamada fora do contrato
 - **Carga e concorrência**: [`carga.md`](carga.md).
 - **Regressão de regra de negócio**: é o papel da suíte do back-end, com 438
   testes.
+
+---
+
+# Execução de 08/09/2026 — véspera da janela de entrega
+
+Rodadas as verificações automatizáveis: **1** (tela que não renderiza),
+**4** (botão sem ação), **5 estática** (texto fora do i18n) e **7** (rota
+fantasma e órfã). As verificações 2, 3 e 6 dependem de percurso manual no
+navegador e não foram refeitas nesta data — a automação de contraste de 01/09
+continua valendo.
+
+| # | Verificação | Cobertura | Resultado |
+|---|---|---|---|
+| 1 | Tela que não renderiza | **25 rotas**, incluindo as duas de detalhe e as 6 abas de configurações | **0 telas em branco** |
+| 4 | Botão sem ação | todo o `src/` do front | 13 achados: 12 na página de vitrine, 1 falso positivo |
+| 5 | Texto fora do i18n (estática) | todo o `src/` do front | 58 achados: 47 na vitrine, 11 fora dela e **nenhum é defeito** |
+| 7 | Rota fantasma e órfã | 59 rotas da API contra 44 chamadas do front | **0 fantasmas**, 1 fora do contrato (`dev-login`, conhecido), 10 órfãs — idêntico a 02/09 |
+
+Nenhuma regressão. Nenhum erro de console ou falha de rede inesperados: a única
+requisição que falha é `https://invalida.example/foto.jpg`, deliberada, na
+página de vitrine, para demonstrar o fallback do `Avatar`.
+
+## O achado desta execução é sobre a própria bateria
+
+**A instrução "espere pelo menos 2 segundos por rota" está errada, e gera falso
+positivo garantido nas duas rotas de detalhe.**
+
+Ela nasceu correta: em 31/08 o problema observado foi medir a 1,5 s. A correção
+levantou o limite para 2 s sem medir onde ele realmente cai. Medindo agora, em
+`/app/influenciadores/{id}`:
+
+| Momento | `<main>` existe | Caracteres em `<main>` |
+|---|---|---|
+| 1,0 s | não | 0 |
+| 2,5 s | **sim** | **0** |
+| 5,0 s | sim | 2.190 |
+| 9,0 s | sim | 2.190 |
+
+Aos 2,5 s o `<main>` já está no DOM e ainda vazio — que é exatamente a assinatura
+de tela quebrada. Uma varredura seguindo a instrução do documento reportaria
+`/app/influenciadores/{id}` e `/app/campanhas/{id}` como quebradas, e as duas
+estão sãs.
+
+**A correção não é aumentar o número.** Qualquer limite fixo ou inventa defeito
+na tela lenta ou desperdiça tempo nas 23 rápidas, e o número certo muda com a
+máquina e com a latência do banco gerenciado. Espere por **condição**:
+
+```js
+await pagina.waitForFunction(
+  () => ((document.querySelector('main') || document.body).innerText || '').trim().length > 0,
+  { timeout: 15000 }
+)
+```
+
+O estouro do tempo limite passa a ser o sinal de tela quebrada, em vez de o
+relógio ser o juiz. É o mesmo modo de falha que este documento já registra em
+outro lugar: **um atalho de método que inventa tela quebrada é pior que a
+varredura manual que ele substitui.**
+
+## Dois falsos positivos das varreduras estáticas, a corrigir quando houver folga
+
+Nenhum dos dois esconde defeito — ambos acrescentam ruído, que é o lado menos
+perigoso. Ficam registrados para não serem rediagnosticados a cada execução.
+
+- **`botao_morto.py` lê JSX dentro de comentário.** O único achado fora da
+  vitrine é `landing/FaqSection.jsx:19`, que é a linha `<button aria-expanded>`
+  escrita no comentário do arquivo explicando por que não se usou `<details>`.
+  O botão real, na linha 29, tem `onClick={aoAlternar}`.
+- **`texto_fora_do_i18n.py` lê nome de classe do Tailwind como texto.** Em
+  `dashboard/TopNetworksTable.jsx:40-42`, as cadeias `'text-positive'`,
+  `'text-text-primary'` e `'text-tint-rose'` são valores de classe dentro de uma
+  constante de faixa, não texto de interface. O filtro reconhece classe em
+  `className=`, mas não em literal solto dentro de objeto.
