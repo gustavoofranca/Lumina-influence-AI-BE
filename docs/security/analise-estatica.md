@@ -82,3 +82,87 @@ alcançabilidade acima; registrar como dívida conhecida.
 | bandit | 0 Medium/High, 18 Low (falso positivo) | idem |
 | pip-audit | 0 | 0 |
 | npm audit | 8 (3 high, 4 moderate, 1 low) | 4 (1 high, 3 moderate), nenhuma alcançável em produção |
+
+---
+
+# Remedição — 08/09/2026
+
+As três ferramentas foram executadas de novo, por dois motivos. Primeiro, as
+versões das dependências foram fixadas nesta data (regra SEC-19), o que muda o
+que `pip-audit` e `npm audit` têm a dizer. Segundo, `bandit` e `pip-audit`
+estavam declarados em `requirements.txt` mas **nunca haviam sido instalados na
+imagem de desenvolvimento** — ela foi construída antes de a B12 acrescentá-los e
+não foi reconstruída desde então. A execução de agora foi feita numa imagem
+limpa, construída a partir do arquivo já fixado.
+
+## bandit — 17 achados baixos, nenhum médio ou alto
+
+| | 25/08/2026 | 08/09/2026 |
+|---|---|---|
+| Linhas analisadas | 6.436 | 7.684 |
+| High | 0 | 0 |
+| Medium | 0 | 0 |
+| Low | 18 | **17** |
+
+**A tabela de resultado consolidado da B12 registra "idem" na linha do bandit, e
+está errada.** A queda de 18 para 17 é exatamente a correção que aquela mesma
+seção lista como aplicada: o `try/except/pass` de `integrations/gemini.py` virou
+`logger.warning`, e o achado B110 deixou de existir. O documento corrigiu o
+defeito e não atualizou o número.
+
+Os 17 restantes foram verificados um a um no código desta data, e não herdados
+da classificação anterior. Todos são falso positivo:
+
+| Regra | Nº | Onde | Por que não é achado |
+|---|---|---|---|
+| B105 | 5 | `config.py:150,153,155,168,170` | Literais `test-*` da classe `TestConfig`, fixos de propósito para que a suíte não dependa do `.env` da máquina. Nenhum casa prefixo de credencial real. Exceção registrada no próprio arquivo. |
+| B105 | 4 | `google_oauth.py:19`, `microsoft_oauth.py:19`, `tiktok.py:30`, `youtube.py:29` | Constantes `TOKEN_URL` com o endereço público e documentado do endpoint de token de cada provedor. O detector reage ao nome da constante. |
+| B105/B106 | 5 | `jwt_utils.py:33,55,88,94,95` | As cadeias `"access"`, `"refresh"` e `"Bearer"` usadas como **tipo** de token, e o nome de uma chave de configuração. Nenhuma é valor de segredo. |
+| B311 | 3 | `sync_metrics.py:25`, `seed_data.py:173`, `integration_service.py:338` | `random.Random()` para gerar dado sintético — o seed, a simulação de sincronização e o job de métricas. |
+
+A classificação dos três B311 depende de uma afirmação que foi verificada e não
+presumida: **nenhum valor que precisa ser imprevisível usa `random`.** O `state`
+do OAuth usa `secrets.token_urlsafe(32)` (`auth_service.py:38`), os
+identificadores usam `uuid.uuid4`, e os tokens das APIs sociais em repouso usam
+Fernet (`utils/crypto.py`).
+
+## pip-audit — nenhuma vulnerabilidade conhecida
+
+`No known vulnerabilities found`, sobre as 27 dependências agora fixadas em
+`==`.
+
+## npm audit — o que é embarcado e o que não é
+
+A B12 argumentou em prosa que a maior parte das vulnerabilidades do front está
+na cadeia de compilação e não no que chega ao navegador. Esse argumento agora é
+medido, e não apenas afirmado: `npm audit --omit=dev` responde exatamente essa
+pergunta.
+
+| Recorte | Crítica | Alta | Moderada | Baixa | Total |
+|---|---|---|---|---|---|
+| Com dependências de desenvolvimento | 0 | 2 | 3 | 1 | 6 |
+| **Apenas o que é embarcado** (`--omit=dev`) | **0** | **0** | **2** | 0 | **2** |
+
+As duas embarcadas são `react-router` e `react-router-dom` — o mesmo open
+redirect analisado na B12, cuja alcançabilidade foi descartada ponto a ponto e
+cuja correção exige salto para a v7. A dívida segue aceita, pelos mesmos
+motivos.
+
+As quatro restantes são de compilação: `vite` e `esbuild` (path traversal no
+tratamento de `.map` e o servidor de desenvolvimento aceitando requisições
+cross-origin), `browserslist` (crescimento de memória sem limite) e
+`postcss-selector-parser` (negação de serviço). Nenhuma sobrevive ao `build`: o
+que vai para o navegador é o pacote estático que essas ferramentas produzem.
+
+O total com dependências de desenvolvimento subiu de 4 para 6 desde 25/08 —
+`browserslist` e `postcss-selector-parser` são novas. Nenhuma das duas é
+embarcada.
+
+## Resultado consolidado — 08/09/2026
+
+| Ferramenta | Resultado | Ação |
+|---|---|---|
+| bandit | 0 alta, 0 média, 17 baixas, todas verificadas como falso positivo | nenhuma |
+| pip-audit | 0 | nenhuma |
+| npm audit (embarcado) | 0 crítica, 0 alta, 2 moderadas, nenhuma alcançável | dívida aceita, ver B12 |
+| npm audit (com desenvolvimento) | 2 altas, 3 moderadas, 1 baixa, nenhuma embarcada | dívida aceita |
