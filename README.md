@@ -25,7 +25,7 @@ API REST em **Python + Flask** que serve o front-end do SaaS de auditoria de per
 | Jobs | APScheduler (in-process, jobstore SQLAlchemy) |
 | Cripto | `cryptography` (Fernet) — tokens sociais em repouso |
 | PDF | xhtml2pdf (HTML→PDF puro Python) |
-| Testes | pytest + pytest-cov (190 testes, 84% de cobertura) |
+| Testes | pytest + pytest-cov (441 testes, 95% de cobertura) |
 | Docs | OpenAPI 3.1 + Swagger UI |
 
 ---
@@ -148,7 +148,7 @@ src/
   config.py           # Dev/Test/Staging/Prod
   extensions.py       # db, migrate, cors, scheduler
   api/                # blueprints REST (1 por recurso)
-  models/             # SQLAlchemy 2.x (13 tabelas)
+  models/             # SQLAlchemy 2.x (14 tabelas)
   schemas/            # Pydantic DTOs (In/Out)
   services/           # lógica de negócio (auth, metric, dashboard, ai_analysis, report, integration)
   integrations/       # adaptadores externos (gemini, instagram, tiktok, youtube, media, oauth)
@@ -156,7 +156,7 @@ src/
   utils/              # crypto, pagination, authz, rate_limit, pdf_generator, errors
   seed/               # fixtures JSON + seed_data.py
 migrations/           # Alembic
-tests/                # pytest (190 testes)
+tests/                # pytest (441 testes)
 docs/adr/             # Architecture Decision Records
 docs/arquitetura/     # diagramas (camadas, análise de IA, dados, autenticação)
 docs/security/        # relatórios de análise estática e de IDOR
