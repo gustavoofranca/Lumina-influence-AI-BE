@@ -107,7 +107,11 @@ def find_or_create_user_from_oauth(
         if not user.name:
             user.name = name
         db.session.commit()
-        logger.info("Login: usuário existente %s via %s", user.email, provider.value)
+        # O log identifica pelo id, não pelo email. Email é dado pessoal sob a
+        # LGPD, e o log sai da fronteira de retenção do banco: vai para arquivo,
+        # para o agregador e para o backup, onde a exclusão de conta não alcança.
+        # O id resolve o mesmo diagnóstico e não carrega identificação direta.
+        logger.info("Login: usuário existente %s via %s", user.id, provider.value)
         return user, False
 
     # Email novo → cria agência + user admin
@@ -124,7 +128,7 @@ def find_or_create_user_from_oauth(
     db.session.add(agency)
     db.session.add(user)
     db.session.commit()
-    logger.info("Signup: novo usuário %s + agência %s", user.email, agency.id)
+    logger.info("Signup: novo usuário %s + agência %s", user.id, agency.id)
     return user, True
 
 
