@@ -1,35 +1,51 @@
-flask>=3.0
-flask-cors>=4.0
-flask-sqlalchemy>=3.1
-flask-migrate>=4.0
-flask-apscheduler>=1.13
-psycopg2-binary>=2.9
-alembic>=1.13
-sqlalchemy>=2.0
-pydantic[email]>=2.5
-pydantic-settings>=2.1
-email-validator>=2.1
-authlib>=1.3
-pyjwt>=2.8
-requests>=2.31
-google-genai>=1.0
-python-dotenv>=1.0
-cryptography>=42.0
-apscheduler>=3.10
-flasgger>=0.9.7.1
-xhtml2pdf>=0.2.17
-pytest>=8.0
-pytest-flask>=1.3
-pytest-cov>=5.0
+# Versões fixadas em 08/09/2026 (regra SEC-19). Com `>=`, dois builds da mesma
+# revisão do código podiam instalar bibliotecas diferentes — e um clone feito
+# amanhã podia trazer uma versão maior, com quebra ou vulnerabilidade, sem que
+# nada no repositório tivesse mudado.
+#
+# As versões abaixo são as que estavam instaladas no ambiente em que os 441
+# testes passam, com quatro exceções assinaladas no fim do arquivo.
+#
+# Ao atualizar: mude a linha, rode a suíte, e só então faça o commit.
+flask==3.1.3
+flask-cors==6.0.5
+flask-sqlalchemy==3.1.1
+flask-migrate==4.1.0
+flask-apscheduler==1.13.1
+psycopg2-binary==2.9.12
+alembic==1.19.1
+sqlalchemy==2.0.52
+pydantic[email]==2.13.4
+pydantic-settings==2.15.0
+email-validator==2.3.0
+authlib==1.7.2
+pyjwt==2.13.0
+requests==2.34.2
+google-genai==2.19.0
+python-dotenv==1.2.3
+cryptography==50.0.0
+apscheduler==3.11.3
+flasgger==0.9.7.1
+xhtml2pdf==0.2.17
+pytest==9.1.1
+pytest-flask==1.3.0
+pytest-cov==7.1.0
 
 # Ferramentas da B12 — análise estática, auditoria de dependências e carga.
 # Ficam aqui, junto do pytest, para que um clone limpo reproduza os relatórios
 # de docs/security/ e docs/testes/ sem instalação avulsa.
-bandit>=1.9
-pip-audit>=2.10
-locust>=2.31
+#
+# Estas quatro, mais o gunicorn abaixo, foram acrescentadas depois da última
+# construção da imagem de desenvolvimento e por isso não estavam instaladas
+# nela — foi o que impediu a auditoria de 08/09/2026 de executar bandit e
+# pip-audit. As versões vêm da resolução do índice na mesma data, e não de um
+# ambiente exercitado pela suíte: nenhuma delas é importada pelo código da
+# aplicação. Reconstruir a imagem passa a instalá-las.
+bandit==1.9.4
+pip-audit==2.10.1
+locust==2.46.5
 
 # Servidor WSGI de produção. O container de desenvolvimento continua subindo
 # com `flask run`; gunicorn existe para medir carga sobre múltiplos processos —
 # o servidor de dev atende num processo só e o GIL limita a vazão a um núcleo.
-gunicorn>=23.0
+gunicorn==26.2.0
