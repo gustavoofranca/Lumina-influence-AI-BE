@@ -379,3 +379,60 @@ perigoso. Ficam registrados para não serem rediagnosticados a cada execução.
   `'text-text-primary'` e `'text-tint-rose'` são valores de classe dentro de uma
   constante de faixa, não texto de interface. O filtro reconhece classe em
   `className=`, mas não em literal solto dentro de objeto.
+
+## Verificações 2 e 3, rodadas depois — e um defeito real
+
+Voltei às duas que tinham ficado de fora por dependerem do navegador. As duas
+são automatizáveis, e a cobertura que existia era menor do que parecia.
+
+### 3 · Vazamento de largura em 390px — 23 rotas
+
+**1 estouro, e fora do produto:** `/design-system`, a 543px. Os culpados são
+uma fileira de botões que não quebra linha, um `inline-flex` de 470px e uma
+`<table class="w-full">` de 479px sem envoltório com rolagem. A página é a
+vitrine interna; não está em fluxo de usuário nem no caminho da demonstração.
+
+Nenhuma das 22 rotas restantes estoura. Detalhe de método que vale registrar:
+depois que a viewport expande, `element.right > window.innerWidth` não acha
+culpado nenhum, porque a janela cresceu junto. Compare contra os 390 fixos.
+
+### 2 · Contraste — 15 rotas em vez de 3, nos dois temas
+
+O teste automatizado de 01/09 cobre `/app/dashboard`, `/app/influenciadores` e
+`/app/campanhas`. Reaproveitei a função `medirContraste` do próprio spec — lida
+do arquivo, não transcrita — sobre as 15 rotas internas: **550 elementos
+medidos por tema, 8 rótulos em SVG.**
+
+**Um defeito real, só no tema escuro:** em `/app/configuracoes/plano`, a linha
+"Benchmarking entre criadores" mede **4,39:1** contra os 4,5 que o WCAG AA exige
+para texto pequeno. O `<li>` estava com `text-text-muted` enquanto os **dois
+irmãos imediatos** da mesma lista usam `text-text-secondary` — não é uma nota
+rebaixada, é o terceiro item da lista de características do plano. Corrigido
+para acompanhar os irmãos.
+
+Verificado com controle: revertendo a classe, a reprovação volta; com a
+correção, os dois temas fecham em 0. No tema claro a linha sempre passou, o que
+explica ela ter sobrevivido às execuções anteriores.
+
+### O defeito de método que essa rodada expôs
+
+**A guarda de tema do `contraste.spec.js` não podia falhar.** Ela era:
+
+```js
+expect.poll(() => document.documentElement.classList.contains('dark')).toBe(false)
+```
+
+O tema não mora em classe: `lib/theme.js` faz
+`document.documentElement.setAttribute('data-theme', alvo)`. A classe `dark`
+**nunca existe**, então a asserção passava qualquer que fosse o tema — inclusive
+se a troca não tivesse acontecido.
+
+Na prática nada passou despercebido, porque o clique no botão falharia alto se
+o controle sumisse. Mas é o mesmo modo de falha que este documento descreve como
+o mais caro: **a varredura falha em silêncio pelo lado da verificação, e um
+relatório limpo é indistinguível de um sistema são.** Corrigido para exigir
+`data-theme === "light"`.
+
+O mesmo erro derrubou a minha primeira medição: rotulei de "escuro" uma rodada
+que estava clara, porque conferi a classe em vez do atributo. Só apareceu porque
+a varredura imprimia o tema efetivo por rota.
