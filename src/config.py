@@ -93,6 +93,19 @@ class Config:
     # Habilita POST /auth/dev-login (atalho de login local sem OAuth). Off em prod.
     DEV_LOGIN_ENABLED: bool = os.getenv("DEV_LOGIN_ENABLED", "true").lower() == "true"
 
+    # Teto do corpo da requisição. O Flask recusa com 413 antes de ler o
+    # restante do fluxo, então o custo de um corpo gigante para no soquete e
+    # não na memória do processo.
+    #
+    # 1 MB é folgado de propósito. Nenhum endpoint recebe arquivo — não existe
+    # `request.files` no projeto, o vídeo é baixado pelo servidor em
+    # `integrations/media.py`, não enviado pelo cliente. O maior corpo legítimo
+    # é a criação de campanha: cerca de 600 bytes por participante (UUID,
+    # cachê e entregáveis de até 500 caracteres), o que dá 60 KB para uma
+    # campanha de cem influenciadores. O teto deixa folga de mais de mil
+    # participantes e ainda corta pela raiz o corpo abusivo.
+    MAX_CONTENT_LENGTH: int = int(os.getenv("MAX_CONTENT_LENGTH_BYTES", str(1024 * 1024)))
+
     # Rate limit por agência em endpoints caros (in-memory, janela em segundos).
     RATE_LIMIT_ANALYZE: dict = {"limit": 20, "window": 60}
     RATE_LIMIT_REPORTS: dict = {"limit": 10, "window": 60}
