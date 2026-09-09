@@ -44,6 +44,7 @@ linha cita o arquivo onde estão o método e os dados brutos.
 |---|---|---|---|
 | O gargalo de consulta foi identificado e corrigido | `/dashboard/overview`: **70 → 13 consultas**, **15 s → 3,2 s** contra o banco gerenciado | comparação local × gerenciado com **um único usuário** — sem fila, a diferença é round trip puro | [`testes/carga.md`](testes/carga.md) |
 | A correção melhorou a vazão | **9,49 → 23,22 req/s** (50 usuários, local) | Locust 2.46 | idem |
+| Os endpoints não multiplicam consulta com o tamanho da coleção | 13 das 15 rotas de leitura entre **2 e 7 consultas**; o N+1 restante (`/campaigns/{id}/benchmarking`, `3 + 5n`) foi corrigido para **7 constante**, 3.597 → 1.406 ms | contagem por requisição instrumentando o `Engine`; linearidade provada variando o número de participantes; resposta comparada campo a campo antes e depois | [`testes/carga.md`](testes/carga.md) |
 | A arquitetura de processos multiplica a capacidade | latência com 50 usuários: **880 ms → 64 ms** de 1 para 4 workers | `gunicorn` | idem |
 | O sistema satura sem falhar | **~43 req/s**, **0 falhas até 600 usuários** — degrada em tempo, não em erro | concorrência empurrada até a latência crescer | idem |
 

@@ -302,17 +302,38 @@ O custo não está no banco, está no **número de idas até ele**. É o mesmo m
 falha do `/dashboard/overview`, e pela mesma razão ele não aparece sob carga
 concorrente: com fila, o tempo de espera encobre o tempo de round trip.
 
-### Não corrigido, e por quê
+### Corrigido no mesmo dia
 
-`campaign_benchmarking` tem 101 linhas e complexidade ciclomática 16 — está na
-lista de refatoração adiada da auditoria de 08/09. Corrigir o N+1 é reescrever o
-laço como consulta única com `join`/`selectinload`, o que mexe no coração de uma
-função complexa a poucos dias da entrega, sem que nenhum cenário de demonstração
-chegue perto do volume onde o defeito dói.
+A correção acabou sendo menor do que a estimativa: **os auxiliares em lote já
+existiam.** `fetch_posts_by_influencer` e `fetch_analyses_by_influencer`
+nasceram da correção do N+1 do `/dashboard/overview`, em 31/08, e já eram usados
+por `influencer_metrics_bulk`. O `campaign_benchmarking` era a última função a
+não usá-los — buscava influencer, posts e análises um por um, e as contas
+sociais vinham por acesso preguiçoso duas vezes.
 
-Fica registrado como **dívida medida**: identificada, quantificada, com a
-relação exata e a projeção. É o que separa limite conhecido de defeito
-escondido.
+Passou a carregar as três coleções de uma vez, com `selectinload` nas contas
+sociais, e a agrupar em memória. Nenhuma linha de cálculo mudou.
+
+| | Antes | Depois |
+|---|---|---|
+| Consultas, 3 participantes | 18 | **7** |
+| Consultas, 4 participantes | 23 | **7** |
+| Relação com o número de participantes | `3 + 5n` | **constante** |
+| Latência (mediana de 5 execuções) | 3.597 ms | **1.406 ms** |
+| Projeção com 20 participantes | 103 consultas | 7 |
+
+O ganho real não é o 2,6× medido, é a inclinação: a rota deixou de piorar
+conforme a campanha cresce.
+
+**Verificação de que nada mudou na resposta.** Contagem de consulta menor não
+prova correção — prova que se buscou menos, e buscar menos pode ser buscar
+errado. As respostas das cinco campanhas do seed foram capturadas com o código
+anterior e com o novo e comparadas campo a campo: **idênticas nas cinco**. A
+suíte fechou em 441 aprovados.
+
+Ficou de fora, de propósito, a refatoração de complexidade: a função continua
+com 101 linhas e CC 16, e segue na lista adiada da auditoria de 08/09. Foram
+tratados o N+1 e só ele.
 
 ## Como reproduzir
 
