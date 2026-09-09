@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Iterator
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -231,39 +232,88 @@ def _count_campaign_posts(campaign_id: uuid.UUID, period_start: date, period_end
     return int(db.session.scalar(select(func.count()).select_from(subq)) or 0)
 
 
+LIMITE_DE_RECOMENDACOES = 5
+
+SEM_RECOMENDACAO = {
+    "title": "Manter monitoramento contínuo",
+    "description": (
+        "Sem recomendações de IA registradas para o período. "
+        "Rode análises nos posts da campanha."
+    ),
+}
+
+
+def _analises_do_periodo(
+    rows: list[dict],
+    por_influencer: dict,
+    ids_do_periodo: set,
+) -> Iterator:
+    """As análises dos participantes, na ordem das linhas, só as do intervalo.
+
+    Devolve o model de análise sem nomeá-lo no tipo: `report_service` não
+    importa model de outro módulo (regra ARQ-01), e o agrupamento já chega
+    pronto de `metric_service`.
+    """
+    for linha in rows:
+        for analise in por_influencer.get(uuid.UUID(linha["influencer_id"]), []):
+            if analise.post_id in ids_do_periodo:
+                yield analise
+
+
+def _sugestoes_da_analise(analise) -> Iterator[tuple[str, str]]:
+    """Pares (título, descrição) utilizáveis de uma análise.
+
+    O campo vem do modelo generativo e é JSON livre: pode trazer string solta,
+    número ou objeto sem título. O que não tem título não vira recomendação —
+    um item sem rótulo apareceria no PDF como marcador vazio.
+    """
+    for item in analise.recommendations or []:
+        if not isinstance(item, dict):
+            continue
+        titulo = item.get("title", "")
+        if titulo:
+            yield titulo, item.get("description", "")
+
+
 def _gather_recommendations(rows: list[dict], posts: list[Post]) -> list[dict]:
     """Recomendações das análises dos posts do período, não da vida do criador.
 
     Ler todas as análises de cada participante fazia um relatório de março
     listar sugestões geradas em janeiro, sob uma capa que promete março. Busca
     em lote e filtra pelos posts que entraram no intervalo.
+
+    Duas coisas diferentes limitam a lista, e vale não confundi-las:
+
+    - O `break` interrompe a leitura assim que já há recomendações suficientes.
+      É **economia de trabalho e nada mais** — como a lista é truncada no fim
+      de qualquer jeito, tirá-lo não muda uma vírgula da saída. Foi conferido
+      removendo-o: o teste continua passando.
+    - O fatiamento no `return` é o que de fato define o que sai, e ele **pode**
+      cortar uma análise no meio, se a última a entrar trouxer mais itens do
+      que cabe.
     """
     ids_do_periodo = {p.id for p in posts}
     por_influencer = M.fetch_analyses_by_influencer(
         [uuid.UUID(r["influencer_id"]) for r in rows]
     )
-    recs: list[dict] = []
-    seen = set()
-    for r in rows:
-        analyses = [
-            a for a in por_influencer.get(uuid.UUID(r["influencer_id"]), [])
-            if a.post_id in ids_do_periodo
-        ]
-        for a in analyses:
-            for item in (a.recommendations or []):
-                if isinstance(item, dict):
-                    title = item.get("title", "")
-                    if title and title not in seen:
-                        seen.add(title)
-                        recs.append({"title": title, "description": item.get("description", "")})
-            if len(recs) >= 5:
-                break
-        if len(recs) >= 5:
+
+    recomendacoes: list[dict] = []
+    titulos_vistos: set[str] = set()
+    for analise in _analises_do_periodo(rows, por_influencer, ids_do_periodo):
+        for titulo, descricao in _sugestoes_da_analise(analise):
+            if titulo in titulos_vistos:
+                continue
+            titulos_vistos.add(titulo)
+            recomendacoes.append({"title": titulo, "description": descricao})
+        if len(recomendacoes) >= LIMITE_DE_RECOMENDACOES:
             break
-    if not recs:
-        recs = [{"title": "Manter monitoramento contínuo",
-                 "description": "Sem recomendações de IA registradas para o período. Rode análises nos posts da campanha."}]
-    return recs[:5]
+
+    if not recomendacoes:
+        # Cópia: o original montava o dicionário a cada chamada, e quem
+        # consome o contexto do relatório não deve conseguir escrever numa
+        # constante do módulo.
+        return [dict(SEM_RECOMENDACAO)]
+    return recomendacoes[:LIMITE_DE_RECOMENDACOES]
 
 
 # ==========================================================================

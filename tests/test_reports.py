@@ -510,3 +510,76 @@ def test_recomendacoes_saem_so_das_analises_do_periodo(client, ctx, app):
     titulos = [r["title"] for r in previa["recommendations"]]
     assert "DENTRO" in titulos
     assert "FORA" not in titulos
+
+
+def test_recomendacoes_deduplicam_respeitam_o_limite_e_ignoram_item_malformado(
+    client, ctx, app
+):
+    """Três comportamentos que o seed nunca alcança, e que a lista precisa ter.
+
+    O campo `recommendations` vem do modelo generativo e é JSON livre: pode
+    trazer string solta, número ou objeto sem título. E o mesmo conselho
+    aparece em análises de criadores diferentes o tempo todo — repeti-lo faria
+    o relatório parecer mais denso do que é.
+
+    Sobre o limite, este teste cobre o **truncamento** — conferido removendo o
+    fatiamento do `return`, e aí ele reprova. Não cobre o `break` do laço, e
+    não teria como: removendo o `break` o teste continua passando, porque o
+    fatiamento produz a mesma lista. O `break` é economia de trabalho, não
+    comportamento, e afirmar que um teste o cobre seria pior do que não testá-lo.
+    """
+    from src.models import AIAnalysis, SentimentLabel, SocialAccount
+
+    with app.app_context():
+        sa = db.session.scalar(select(SocialAccount))
+        camp_id = uuid.UUID(ctx.camp_id)
+
+        def analise_com(marcador, itens, quando):
+            p = Post(social_account_id=sa.id, campaign_id=camp_id,
+                     platform_post_id=f"lim-{marcador}", post_type=PostType.REEL,
+                     posted_at=quando, reach_total=1000, reach_organic=700,
+                     reach_paid=300, impressions=1200, likes=50, comments_count=5,
+                     shares=2, saves=3)
+            db.session.add(p)
+            db.session.flush()
+            db.session.add(AIAnalysis(
+                post_id=p.id, model_version="teste", sentiment_score=0.5,
+                sentiment_label=SentimentLabel.POSITIVE, analyzed_at=quando,
+                recommendations=itens,
+            ))
+
+        dentro = datetime(2026, 2, 1, tzinfo=timezone.utc)
+        analise_com("a", [
+            {"title": "REPETIDA", "description": "primeira vez"},
+            {"title": "UNICA-B", "description": "b"},
+            "string solta, não é objeto",
+            {"description": "objeto sem título"},
+            {"title": "", "description": "título vazio"},
+        ], dentro)
+        analise_com("b", [
+            {"title": "REPETIDA", "description": "segunda vez"},
+            {"title": "UNICA-C", "description": "c"},
+        ], dentro - timedelta(days=1))
+        analise_com("c", [
+            {"title": f"UNICA-{n}", "description": "d"} for n in ("D", "E", "F")
+        ], dentro - timedelta(days=2))
+        db.session.commit()
+
+    previa = client.post(
+        "/api/v1/reports/preview", headers=ctx.h_admin,
+        json=_create_payload(ctx.camp_id, sections=list(report_service.SECTION_KEYS)),
+    ).get_json()["data"]
+
+    recs = previa["recommendations"]
+    titulos = [r["title"] for r in recs]
+
+    # Limite respeitado, mesmo com seis títulos utilizáveis disponíveis.
+    assert len(recs) == report_service.LIMITE_DE_RECOMENDACOES
+
+    # Deduplicado por título: a segunda ocorrência não entra.
+    assert titulos.count("REPETIDA") <= 1
+    assert len(titulos) == len(set(titulos))
+
+    # Item malformado não vira recomendação de título vazio.
+    assert all(r["title"] for r in recs)
+    assert "objeto sem título" not in [r["description"] for r in recs]
