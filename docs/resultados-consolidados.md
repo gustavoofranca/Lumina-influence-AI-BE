@@ -36,6 +36,8 @@ linha cita o arquivo onde estão o método e os dados brutos.
 | O corpo de requisição tem teto | **1 MB**, resposta 413 | `MAX_CONTENT_LENGTH`, conferido enviando 2 MB a um endpoint que lê o corpo | `src/config.py` |
 | Log de autenticação não guarda dado pessoal | e-mail substituído por **id** nos 2 pontos | conferido nos registros emitidos pela suíte, não na leitura do código | `src/services/auth_service.py` |
 | As vulnerabilidades do front não alcançam o produto | no que é **embarcado**: 0 crítica, **0 alta**, 2 moderadas, nenhuma alcançável. Com as dependências de compilação: 6 | `npm audit --omit=dev` separa embarcado de cadeia de build; a inalcançabilidade vem da inspeção dos 12 pontos de navegação dinâmica | idem |
+| Toda rota que muda estado exige autenticação, e o papel é exigido onde deve | **27 rotas** que mudam estado, 0 sem autenticação; as 6 sem decorador de papel foram lidas uma a uma | varredura por AST dos decoradores + leitura do corpo das exceções | [`security/autorizacao.md`](security/autorizacao.md) |
+| O esquema tem índice onde as consultas filtram | **18 de 18** chaves estrangeiras indexadas; com `enable_seqscan` desligado, **0 de 17** consultas quentes caem em varredura — há plano por índice para todas | inspeção do esquema + `EXPLAIN` nas consultas que os dois endpoints mais pesados disparam | [`testes/carga.md`](testes/carga.md) |
 | Não há referência direta insegura a objeto (IDOR) | **26 endpoints e 6 listagens, 0 vazamentos** | sondagem com identidade de outra agência, sem token e com id inexistente | [`security/idor.md`](security/idor.md) |
 | O modelo resiste a injeção de prompt | **7 famílias de ataque, 7 resistiram**; schema íntegro em todas | cargas contra o `gemini-3.6-flash` real, em container isolado | [`security/prompt-injection.md`](security/prompt-injection.md) |
 
@@ -74,6 +76,7 @@ declarados.
 | A vazão medida é de um servidor com 4 workers | número de arquitetura, não de produto; o platô inicial de 32 req/s era teto do **gerador de carga**, não do servidor | idem |
 | O que o **leitor de tela anuncia** é medido só em parte | desde 09/09 o **nome acessível** de todo controle é lido da árvore de acessibilidade por CDP, o que achou 4 interruptores sem nome; **ordem de leitura, `aria-live` e agrupamento continuam fora de alcance** | [`testes/verificacao-pre-entrega.md`](testes/verificacao-pre-entrega.md) |
 | Um botão da landing fica em **3,39:1** na ponta escura do gradiente | veio assim do arquivo de design; a ponta clara dá 7,08:1 | mesmo relatório |
+| A **interface não esconde ação por papel** | há exatamente uma renderização condicional a papel em todo o `src/` (gestão de equipe); nas demais telas o botão aparece para qualquer papel e o servidor recusa com 403 | [`security/autorizacao.md`](security/autorizacao.md) |
 | Emoji no título do relatório vira quadrado no PDF | embarcar fonte com cobertura de emoji pesaria em todo PDF gerado | [`testes/robustez-pdf.md`](testes/robustez-pdf.md) |
 
 ## O que o método achou, que é o resultado menos óbvio
