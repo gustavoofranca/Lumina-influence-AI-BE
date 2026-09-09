@@ -352,3 +352,67 @@ Com o `app.test_client()` e um token do `dev-login`, percorrer as rotas de
 leitura zerando o contador antes de cada uma. Para provar N+1, **varie o
 tamanho da coleção** e confira a inclinação: contagem única não distingue laço
 de consulta naturalmente cara.
+
+
+---
+
+# Índices — verificação de BE-03, 09/09/2026
+
+A auditoria declarou esta regra não verificada. Ela pergunta duas coisas
+diferentes, e as duas foram medidas.
+
+## Toda chave estrangeira tem índice?
+
+Inspeção do esquema em execução, contando índice, chave primária e restrição
+única como cobertura:
+
+**18 chaves estrangeiras, 0 sem índice.**
+
+As colunas de filtro quente também estão cobertas — `influencers.status` e
+`.niche`, `posts.posted_at` e `.needs_analysis`, `campaigns.period_start`,
+`.period_end` e `.status`, `ai_analyses.analyzed_at`.
+
+## O planejador usa esses índices?
+
+Índice que existe e o planejador ignora é decoração. `EXPLAIN` nas 17 consultas
+que `/dashboard/overview` e `/influencers` disparam:
+
+**16 das 17 usam varredura sequencial.** E isso *não* é achado — é a leitura
+errada do número.
+
+Os planos dizem por quê: `rows=16` em `influencers`, `rows=18` em
+`social_accounts`, `rows=207` em `posts`. Com tabelas desse tamanho, ler a
+tabela inteira é mais barato que consultar índice, e o Postgres está certo em
+escolher a varredura. **Neste volume de dado, a medição não distingue "índice
+desnecessário" de "índice ausente".**
+
+O teste decisivo é forçar a mão do planejador. Repetindo os mesmos 17 `EXPLAIN`
+com `SET LOCAL enable_seqscan = off`:
+
+| | Plano padrão | Com varredura desencorajada |
+|---|---:|---:|
+| Consultas explicadas | 17 | 17 |
+| Com varredura sequencial | 16 | **0** |
+
+Zero. Existe plano por índice disponível para todas as 17 — o que prova que a
+cobertura é real e que as varreduras do plano padrão são escolha, não falta de
+alternativa.
+
+**BE-03 é conforme**, verificada nas duas pontas: estrutural (18 de 18) e
+funcional (17 de 17).
+
+### Uma armadilha de método, registrada
+
+A primeira tentativa passou o SQL capturado por `text()` do SQLAlchemy, e os 17
+`EXPLAIN` falharam com erro de sintaxe — o `%(nome)s` do psycopg2 é
+reinterpretado. O relatório dizia "0 consultas com varredura sequencial", que
+era ausência de medição e não ausência de varredura, e nada no resultado
+denunciava isso.
+
+Só apareceu porque o script passou a contar quantas foram explicadas **com
+sucesso** e a comparar com quantas foram capturadas. Toda varredura precisa
+dizer quanto ela mediu, e não só o que achou — é o mesmo princípio do relatório
+de descartes das varreduras estáticas.
+
+A forma que funciona é ir pelo driver:
+`conn.exec_driver_sql("EXPLAIN " + sql, params)`.
