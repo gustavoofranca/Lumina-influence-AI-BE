@@ -5,7 +5,7 @@ número que a sustenta, como ele foi obtido e onde está o relatório completo.
 **Nada aqui é estimativa** — todo valor foi medido e está reproduzível pelo
 relatório de origem.
 
-Última consolidação: 31 de agosto de 2026.
+Última consolidação: 9 de setembro de 2026.
 
 ## Como usar
 
@@ -18,19 +18,23 @@ linha cita o arquivo onde estão o método e os dados brutos.
 
 | Afirmação | Número | Como foi obtido | Evidência |
 |---|---|---|---|
-| O back-end tem cobertura automatizada | **438 testes, 95%** de `src/` | `pytest --cov=src` | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
+| O back-end tem cobertura automatizada | **441 testes, 95%** de `src/` | `pytest --cov=src` | [`testes/robustez-adaptadores.md`](testes/robustez-adaptadores.md) |
 | A camada que fala com serviços externos é coberta | **os 5 adaptadores a 100%** (`instagram`, `tiktok`, `youtube`, `gemini`, `media`); `google_oauth` 96%; `microsoft_oauth` 91% | 133 cenários com dublês, sem rede | idem |
-| A interface tem teste ponta a ponta | **70 testes**, 7,8 min | Playwright sobre a aplicação em funcionamento | [`testes/e2e-front.md`](testes/e2e-front.md) |
-| A interface é verificada além do teste automatizado | **7 verificações**, com defeito real registrado em cada uma | bateria manual sobre 22 rotas, 2 temas, 2 idiomas | [`testes/verificacao-pre-entrega.md`](testes/verificacao-pre-entrega.md) |
+| A interface tem teste ponta a ponta | **80 testes** — 78 executados e 2 pulados —, ~9 min | Playwright sobre a aplicação em funcionamento | [`testes/e2e-front.md`](testes/e2e-front.md) |
+| A interface é verificada além do teste automatizado | **7 verificações**, com defeito real registrado em cada uma; na execução de 08–09/09 as 7 rodaram sobre **25 rotas** e acharam 2 defeitos, ambos corrigidos | 6 das 7 já automatizadas; 2 temas, 2 idiomas | [`testes/verificacao-pre-entrega.md`](testes/verificacao-pre-entrega.md) |
+| As decisões de arquitetura estão registradas | **12 ADRs**, cobrindo monolito modular, UUID como chave, três camadas e banco gerenciado | auditoria normativa de 08/09 apontou as 4 ausentes; escritas no formato das 7 anteriores | [`adr/`](adr/) |
 | A bateria fechou os limites que declarou sobre si | **3 pontos cegos**, os 3 automatizados; cada teste validado reintroduzindo o defeito histórico | contraste com SVG e composição de camadas; carregamento com a resposta segurada; i18n com dois alvos novos | idem |
 
 ## Segurança
 
 | Afirmação | Número | Como foi obtido | Evidência |
 |---|---|---|---|
-| Não há vulnerabilidade de severidade média ou alta no código | **0** achados Medium/High em **6.436 linhas** | `bandit` 1.9.4; os 18 Low foram verificados um a um e são falso positivo | [`security/analise-estatica.md`](security/analise-estatica.md) |
+| Não há vulnerabilidade de severidade média ou alta no código | **0** achados Medium/High em **7.684 linhas** | `bandit` 1.9.4; os 17 Low foram verificados um a um, em 25/08 e de novo em 08/09, e são falso positivo | [`security/analise-estatica.md`](security/analise-estatica.md) |
 | As dependências Python não têm vulnerabilidade conhecida | **0** | `pip-audit` 2.10.1 | idem |
-| As vulnerabilidades do front não alcançam o produto | 8 → **4**, nenhuma alcançável | `npm audit` + inspeção manual dos 12 pontos de navegação dinâmica | idem |
+| O ambiente é reproduzível | **27 de 27** dependências fixadas em `==` | congeladas a partir do ambiente que passa nos 441 testes; imagem limpa construída do arquivo passa nos mesmos 441 | `requirements.txt` |
+| O corpo de requisição tem teto | **1 MB**, resposta 413 | `MAX_CONTENT_LENGTH`, conferido enviando 2 MB a um endpoint que lê o corpo | `src/config.py` |
+| Log de autenticação não guarda dado pessoal | e-mail substituído por **id** nos 2 pontos | conferido nos registros emitidos pela suíte, não na leitura do código | `src/services/auth_service.py` |
+| As vulnerabilidades do front não alcançam o produto | no que é **embarcado**: 0 crítica, **0 alta**, 2 moderadas, nenhuma alcançável. Com as dependências de compilação: 6 | `npm audit --omit=dev` separa embarcado de cadeia de build; a inalcançabilidade vem da inspeção dos 12 pontos de navegação dinâmica | idem |
 | Não há referência direta insegura a objeto (IDOR) | **26 endpoints e 6 listagens, 0 vazamentos** | sondagem com identidade de outra agência, sem token e com id inexistente | [`security/idor.md`](security/idor.md) |
 | O modelo resiste a injeção de prompt | **7 famílias de ataque, 7 resistiram**; schema íntegro em todas | cargas contra o `gemini-3.6-flash` real, em container isolado | [`security/prompt-injection.md`](security/prompt-injection.md) |
 
@@ -66,7 +70,7 @@ declarados.
 | A separação entre alcance **orgânico e pago vem do seed** | nenhuma API concede essa métrica sem programa comercial; a Data API v3 do YouTube não separa origem | idem |
 | Não há teste de carga sobre o endpoint de análise | o free tier do Gemini dá **20 requisições por dia**; medir p95 com carga esgotaria a cota | [`testes/carga.md`](testes/carga.md) |
 | A vazão medida é de um servidor com 4 workers | número de arquitetura, não de produto; o platô inicial de 32 req/s era teto do **gerador de carga**, não do servidor | idem |
-| Nenhuma verificação mede o que o **leitor de tela anuncia** | as sete medem o que o navegador renderiza; ordem de leitura, `aria-live` e agrupamento ficam fora de alcance | [`testes/verificacao-pre-entrega.md`](testes/verificacao-pre-entrega.md) |
+| O que o **leitor de tela anuncia** é medido só em parte | desde 09/09 o **nome acessível** de todo controle é lido da árvore de acessibilidade por CDP, o que achou 4 interruptores sem nome; **ordem de leitura, `aria-live` e agrupamento continuam fora de alcance** | [`testes/verificacao-pre-entrega.md`](testes/verificacao-pre-entrega.md) |
 | Um botão da landing fica em **3,39:1** na ponta escura do gradiente | veio assim do arquivo de design; a ponta clara dá 7,08:1 | mesmo relatório |
 | Emoji no título do relatório vira quadrado no PDF | embarcar fonte com cobertura de emoji pesaria em todo PDF gerado | [`testes/robustez-pdf.md`](testes/robustez-pdf.md) |
 
@@ -114,3 +118,29 @@ que confirmaram o esperado, e sim as que expuseram limite do próprio método.**
 - A resposta do modelo **varia entre execuções idênticas**: a mesma carga
   repetida 3× produziu o marcador em 1. Teste sobre modelo generativo exige
   repetição.
+- **Guarda que não pode falhar não guarda nada.** O teste de contraste
+  verificava a troca de tema com
+  `classList.contains('dark') === false`. O tema não mora em classe: o app usa
+  `data-theme` no `<html>`. Aquela classe **nunca existe**, então a asserção
+  passava qualquer que fosse o tema — e o mesmo erro me fez rotular de "escuro"
+  uma medição que estava clara. Só apareceu porque a varredura passou a imprimir
+  o tema **efetivo** por rota. É o mesmo modo de falha da exclusão larga, do
+  outro lado: ali o filtro esvazia a detecção, aqui a asserção esvazia a
+  verificação.
+- **Código que parece correto pela API errada.** O componente de interruptor
+  envolvia o `<button role="switch">` num `<label htmlFor>`. Clicar no texto
+  alternava o controle, o que dava a impressão de rótulo resolvido — mas
+  `<label>` não nomeia `<button>`: pelo HTML-AAM o nome vem de
+  `aria-labelledby`, de `aria-label` ou do conteúdo do próprio botão. Os quatro
+  interruptores tinham nome **vazio** na árvore de acessibilidade. Nenhuma
+  inspeção de código pegaria; leu-se a árvore que o leitor de tela recebe.
+- **Medir o retângulo errado inventa defeito.** Na varredura de alvo de toque, o
+  link "Nova Campanha" media 223×20 e reprovava. É um `<a>` `display: inline`
+  envolvendo um `<button>` de 223×**40** — o alvo é o botão. Elemento inline
+  não descreve a área do filho em bloco, do mesmo jeito que a viewport expandida
+  não descreve o vazamento de largura.
+- **O limite fixo de espera é uma aposta sobre a máquina.** A bateria mandava
+  esperar 2 s por rota antes de medir se a tela renderizou. Medido: a tela de
+  detalhe tem `<main>` no DOM e **0 caractere** aos 2,5 s, e 2.190 aos 5 s.
+  Seguir a instrução reprovaria duas telas sãs. A correção não foi aumentar o
+  número — foi esperar por **condição**, com o estouro do tempo virando o sinal.
