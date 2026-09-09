@@ -114,6 +114,36 @@ def test_reports_rate_limited(client, report_ctx, app, monkeypatch):
     assert r3.get_json()["error"]["code"] == "rate_limit_exceeded"
 
 
+def test_previa_de_relatorio_tem_limite_proprio(client, report_ctx, app, monkeypatch):
+    """A prévia custa quase o mesmo que gerar, e ficava sem limite nenhum.
+
+    Ela monta o mesmo contexto do PDF — dez consultas e cerca de dois segundos,
+    medidos em 09/09 — e só não grava arquivo. A geração ao lado é limitada e
+    restrita a admin e membro; a prévia estava aberta a qualquer papel e sem
+    teto. A proteção guardava a porta cara e deixava a vizinha aberta.
+
+    O orçamento é **próprio**, e não o mesmo da geração: são baldes separados,
+    então esgotar a prévia não impede gerar o relatório de verdade.
+    """
+    reset_rate_limits()
+    monkeypatch.setitem(app.config, "RATE_LIMIT_REPORT_PREVIEW", {"limit": 2, "window": 60})
+    monkeypatch.setitem(app.config, "RATE_LIMIT_REPORTS", {"limit": 10, "window": 60})
+
+    payload = {
+        "campaign_id": report_ctx.camp_id, "title": "P",
+        "period_start": "2026-01-01", "period_end": "2026-02-01", "sections": ["kpis"],
+    }
+    assert client.post("/api/v1/reports/preview", headers=report_ctx.h, json=payload).status_code == 200
+    assert client.post("/api/v1/reports/preview", headers=report_ctx.h, json=payload).status_code == 200
+
+    estourou = client.post("/api/v1/reports/preview", headers=report_ctx.h, json=payload)
+    assert estourou.status_code == 429
+    assert estourou.get_json()["error"]["code"] == "rate_limit_exceeded"
+
+    # Balde separado: a geração continua disponível depois da prévia esgotar.
+    assert client.post("/api/v1/reports", headers=report_ctx.h, json=payload).status_code == 201
+
+
 # ==========================================================================
 # OpenAPI / Swagger
 # ==========================================================================

@@ -56,6 +56,7 @@ def create_report():
 
 @bp.post("/preview")
 @require_auth
+@rate_limit("RATE_LIMIT_REPORT_PREVIEW")
 def preview_report():
     """Conteúdo do relatório sem gerar nem gravar nada.
 

@@ -109,6 +109,16 @@ class Config:
     # Rate limit por agência em endpoints caros (in-memory, janela em segundos).
     RATE_LIMIT_ANALYZE: dict = {"limit": 20, "window": 60}
     RATE_LIMIT_REPORTS: dict = {"limit": 10, "window": 60}
+    # A prévia monta o mesmo contexto que o PDF — 10 consultas e cerca de dois
+    # segundos, medidos em 09/09 — e só não grava arquivo. Ficava sem limite
+    # nenhum, e aberta a qualquer papel, enquanto a geração ao lado era limitada
+    # e restrita a admin e membro: a proteção guardava a porta cara e deixava a
+    # vizinha aberta.
+    #
+    # Orçamento próprio, e mais folgado que o da geração: a prévia é mais barata
+    # e é interativa — o assistente a refaz ao voltar um passo e mudar seção ou
+    # período. Trinta por minuto cobre isso com sobra e ainda corta o abuso.
+    RATE_LIMIT_REPORT_PREVIEW: dict = {"limit": 30, "window": 60}
 
     # Scheduler
     SCHEDULER_API_ENABLED: bool = False
