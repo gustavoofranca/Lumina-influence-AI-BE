@@ -506,7 +506,7 @@ def test_criador_sem_analise_nao_afirma_audiencia_organica(client, seeded, app):
     Zero inventado já é ruim; este inventava um número favorável ao criador,
     que é exatamente o que um sistema de auditoria não pode fazer.
     """
-    from src.models import AIAnalysis
+    from src.models import AIAnalysis, SentimentLabel
 
     with app.app_context():
         influencer = db.session.scalar(select(Influencer))
@@ -530,7 +530,7 @@ def test_analise_devolve_a_transcricao_quando_existe(client, seeded, app):
     /influencers/:id/analysis não trazia o campo — o componente de transcrição
     do front mostrava estado vazio para dado que existia.
     """
-    from src.models import AIAnalysis, SocialAccount
+    from src.models import AIAnalysis, SentimentLabel, SocialAccount
 
     with app.app_context():
         # Zera as transcrições e planta uma só, para saber qual deve voltar —
@@ -558,7 +558,7 @@ def test_analise_devolve_a_transcricao_quando_existe(client, seeded, app):
 
 def test_analise_sem_transcricao_devolve_nulo(client, seeded, app):
     """Análise só de texto não transcreve nada — e nulo é diferente de vazio."""
-    from src.models import AIAnalysis
+    from src.models import AIAnalysis, SentimentLabel
 
     with app.app_context():
         influencer = db.session.scalar(select(Influencer))
@@ -602,3 +602,55 @@ def test_pills_do_diagnostico_carregam_o_valor_que_as_justifica(client, seeded):
     for pill in destaque["pills"]:
         assert "value_pct" in pill, f"pill {pill['key']} sem o número que a justifica"
         assert isinstance(pill["value_pct"], (int, float))
+
+
+def test_destaque_do_painel_ignora_a_analise_sem_dado(client, seeded, app):
+    """Uma análise vazia recém-chegada não pode roubar o destaque.
+
+    O cartão desenha a nota de coerência numa barra e um trecho da
+    transcrição. Sem esses campos ele mostra "0%" com a barra vazia e um
+    travessão — e "0%" é uma afirmação, não uma ausência. A página pública
+    promete o contrário: campo sem dado aparece vazio em vez de preenchido com
+    estimativa.
+
+    O defeito era real e invisível: a escolha era só `ORDER BY analyzed_at
+    DESC`, então bastava a última análise ter falhado para a primeira tela do
+    produto abrir afirmando coerência zero. Foi o que aconteceu na base de
+    demonstração — de 179 análises, a única sem dados era a mais recente.
+
+    O teste insere exatamente essa análise, com data no futuro para garantir
+    que ela seja a mais recente independente do que o seed criou.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from src.models import AIAnalysis, SentimentLabel
+
+    with app.app_context():
+        post = db.session.scalars(select(Post).limit(1)).one()
+        vazia = AIAnalysis(
+            post_id=post.id,
+            model_version="teste-sem-dado",
+            # Sentimento é obrigatório no modelo. O que se testa aqui é a
+            # ausência de coerência e de transcrição, que são os dois campos
+            # que o cartão desenha — e é justamente por a análise ter *alguns*
+            # campos que ela passava no filtro anterior.
+            sentiment_score=0.5,
+            sentiment_label=SentimentLabel.POSITIVE,
+            brand_coherence_score=0,
+            transcript_text=None,
+            analyzed_at=datetime.now(timezone.utc) + timedelta(days=1),
+        )
+        db.session.add(vazia)
+        db.session.commit()
+        id_da_vazia = str(vazia.id)
+
+    r = client.get("/api/v1/dashboard/overview", headers=seeded.header)
+    destaque = r.get_json()["data"]["featured_diagnosis"]
+
+    assert destaque is not None, "o seed tem análise completa; o destaque não pode vir vazio"
+    assert destaque["analysis_id"] != id_da_vazia, (
+        "o painel destacou a análise sem coerência nem transcrição só por ser a "
+        "mais recente — a tela vai afirmar 0% sobre quem não foi medido"
+    )
+    assert destaque["brand_coherence"], "destaque sem nota: a barra fica em zero"
+    assert destaque["transcript"], "destaque sem transcrição: o trecho vira travessão"

@@ -134,15 +134,44 @@ def overview(agency_id: uuid.UUID, *, period: str = "30d", campaign_id: uuid.UUI
 # Featured diagnosis (análise mais recente da agência)
 # ==========================================================================
 def featured_diagnosis(agency_id: uuid.UUID) -> dict | None:
-    analysis = db.session.scalar(
+    """A análise em destaque do painel.
+
+    Mais recente **entre as que têm o que a tela mostra**, e não simplesmente a
+    mais recente. A distinção não é cosmética: o cartão exibe a nota de
+    coerência e um trecho da transcrição, e uma análise sem esses dois campos
+    desenha "0%" com a barra vazia e um travessão no lugar do texto.
+
+    Isso aconteceu de verdade. Das 179 análises da agência de demonstração,
+    exatamente uma não tinha nem coerência nem transcrição — e era a mais
+    recente, então era ela que o painel destacava. A primeira tela do produto
+    afirmava coerência zero sobre uma criadora cuja média é 63%.
+
+    Pior: zero não é "não medido". A página pública promete que campo sem dado
+    aparece vazio em vez de preenchido com estimativa, e aqui o produto fazia o
+    contrário do que a promessa diz — dava um número onde não havia medição.
+
+    O recuo para a mais recente existe para uma agência nova, cujas primeiras
+    análises ainda não terminaram: melhor um cartão incompleto do que nenhum,
+    porque aí o vazio é a informação correta.
+    """
+    base = (
         select(AIAnalysis)
         .join(Post, AIAnalysis.post_id == Post.id)
         .join(SocialAccount, Post.social_account_id == SocialAccount.id)
         .join(Influencer, SocialAccount.influencer_id == Influencer.id)
         .where(Influencer.agency_id == agency_id)
         .order_by(AIAnalysis.analyzed_at.desc())
-        .limit(1)
     )
+
+    analysis = db.session.scalar(
+        base.where(
+            AIAnalysis.brand_coherence_score.is_not(None),
+            AIAnalysis.brand_coherence_score > 0,
+            AIAnalysis.transcript_text.is_not(None),
+        ).limit(1)
+    )
+    if analysis is None:
+        analysis = db.session.scalar(base.limit(1))
     if analysis is None:
         return None
 
