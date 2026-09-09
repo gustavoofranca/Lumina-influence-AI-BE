@@ -610,6 +610,31 @@ def campaign_benchmarking(
         select(CampaignInfluencer).where(CampaignInfluencer.campaign_id == campaign.id)
     ).all()
 
+    # Um carregamento por coleção, e não um por participante.
+    #
+    # A varredura de 09/09 contou as consultas desta rota e achou a relação
+    # exata `3 + 5n`: cinco idas ao banco para cada participante — o influencer,
+    # os posts, as análises e as contas sociais, duas vezes. Com quatro
+    # participantes são 23 consultas; com vinte seriam 103, e contra banco
+    # gerenciado o custo não é a consulta, é o número de idas até ele.
+    #
+    # Os auxiliares em lote já existiam: nasceram da correção do mesmo defeito
+    # em `/dashboard/overview` e estão em uso em `influencer_metrics_bulk`.
+    # Esta função era a última a não usá-los.
+    ids = [link.influencer_id for link in links]
+    influencer_por_id = {
+        inf.id: inf
+        for inf in db.session.scalars(
+            select(Influencer)
+            .where(Influencer.id.in_(ids))
+            # As contas vêm junto porque cada linha usa handle, plataforma e
+            # seguidores; sem isto, o acesso preguiçoso reabriria o laço.
+            .options(selectinload(Influencer.social_accounts))
+        ).all()
+    }
+    posts_por_inf = M.fetch_posts_by_influencer(ids)
+    analises_por_inf = M.fetch_analyses_by_influencer(ids)
+
     def _in_period(post) -> bool:
         if period_start is None and period_end is None:
             return True
@@ -623,17 +648,17 @@ def campaign_benchmarking(
     rows = []
     radar_series = []
     for link in links:
-        influencer = db.session.get(Influencer, link.influencer_id)
+        influencer = influencer_por_id[link.influencer_id]
         # Só o que é desta campanha. Sem fallback para o histórico completo:
         # atribuir posts de outra campanha a esta inflaria os números dela.
         posts = [
             p
-            for p in M.fetch_influencer_posts(influencer.id)
+            for p in posts_por_inf.get(influencer.id, [])
             if p.campaign_id == campaign.id and _in_period(p)
         ]
         post_ids = {p.id for p in posts}
         analyses = [
-            a for a in M.fetch_influencer_analyses(influencer.id) if a.post_id in post_ids
+            a for a in analises_por_inf.get(influencer.id, []) if a.post_id in post_ids
         ]
         eng = M.engagement_rate(posts)
         ai = M.ai_aggregates(analyses)
