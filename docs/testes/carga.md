@@ -232,3 +232,102 @@ locust -f docs/testes/locustfile.py --host http://localhost:5000 \
 locust -f docs/testes/locustfile.py --host http://localhost:5000 \
        NavegacaoUser --headless -u 150 -r 50 -t 5m     # stress, tráfego misto
 ```
+
+---
+
+# Varredura de consultas por endpoint — 09/09/2026
+
+A bateria de 31/08 achou o N+1 do `/dashboard/overview` por acaso: ele apareceu
+na comparação local × gerenciado com um único usuário. Nenhum outro endpoint
+tinha sido contado. Esta varredura conta, para **15 rotas de leitura**, quantas
+consultas SQL cada requisição dispara — instrumentando o `Engine` do SQLAlchemy
+com `before_cursor_execute`, contra o banco gerenciado.
+
+Só GET. Nada foi escrito.
+
+| Consultas | ms | Rota |
+|---:|---:|---|
+| 18 | 3.686 | `/campaigns/{id}/benchmarking` |
+| 13 | 3.573 | `/dashboard/overview?period=30d` |
+| 7 | 1.428 | `/influencers/{id}/analysis` |
+| 5 | 1.090 | `/influencers/{id}/posts?per_page=20` |
+| 4 | 866 | `/campaigns?per_page=20` |
+| 4 | 808 | `/influencers?per_page=20` |
+| 4 | 806 | `/influencers?per_page=5` |
+| 3 | 713 | `/dashboard/network-density` |
+| 3 | 630 | `/influencers/{id}` |
+| 3 | 617 | `/social-accounts` |
+| 3 | 614 | `/users` |
+| 3 | 612 | `/reports?per_page=20` |
+| 3 | 610 | `/campaigns/{id}` |
+| 2 | 406 | `/plans` |
+
+Treze das quinze ficam entre 2 e 7 consultas, e o `/influencers` custa o mesmo
+com 5 ou com 20 itens — a paginação não multiplica consulta, que é o que se quer
+ver. O `/dashboard/overview` está nas 13 em que a correção de 31/08 o deixou.
+
+## Um N+1 restante: `/campaigns/{id}/benchmarking`
+
+As 18 consultas se distribuem assim: 6× `social_accounts`, 3× `influencers`,
+3× `posts`, 3× `ai_analyses`, mais 3 de contexto. A campanha medida tem três
+participantes.
+
+A distribuição sugere laço por participante, e a suspeita foi testada em vez de
+aceita — medindo o mesmo endpoint em campanhas com contagens diferentes:
+
+| Participantes | Consultas |
+|---:|---:|
+| 3 | 18 |
+| 3 | 18 |
+| 3 | 18 |
+| 4 | 23 |
+| 4 | 23 |
+
+**Inclinação de 5,0 consultas por participante**, com intercepto de 3. A relação
+é linear e exata: `consultas = 3 + 5n`. Não é variação de dado, é laço.
+
+### Por que importa mais do que os 3,7 s medidos
+
+O seed tem no máximo quatro participantes por campanha. A projeção é o que
+assusta:
+
+| Participantes | Consultas | Tempo estimado a ~200 ms de round trip |
+|---:|---:|---|
+| 4 | 23 | ~3,7 s (medido) |
+| 10 | 53 | ~8 s |
+| 20 | 103 | ~16 s |
+| 50 | 253 | ~40 s |
+
+O custo não está no banco, está no **número de idas até ele**. É o mesmo modo de
+falha do `/dashboard/overview`, e pela mesma razão ele não aparece sob carga
+concorrente: com fila, o tempo de espera encobre o tempo de round trip.
+
+### Não corrigido, e por quê
+
+`campaign_benchmarking` tem 101 linhas e complexidade ciclomática 16 — está na
+lista de refatoração adiada da auditoria de 08/09. Corrigir o N+1 é reescrever o
+laço como consulta única com `join`/`selectinload`, o que mexe no coração de uma
+função complexa a poucos dias da entrega, sem que nenhum cenário de demonstração
+chegue perto do volume onde o defeito dói.
+
+Fica registrado como **dívida medida**: identificada, quantificada, com a
+relação exata e a projeção. É o que separa limite conhecido de defeito
+escondido.
+
+## Como reproduzir
+
+Instrumentar o `Engine` e contar por requisição:
+
+```python
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
+
+@event.listens_for(Engine, "before_cursor_execute")
+def _contar(conn, cursor, statement, parameters, context, executemany):
+    contador["n"] += 1
+```
+
+Com o `app.test_client()` e um token do `dev-login`, percorrer as rotas de
+leitura zerando o contador antes de cada uma. Para provar N+1, **varie o
+tamanho da coleção** e confira a inclinação: contagem única não distingue laço
+de consulta naturalmente cara.
