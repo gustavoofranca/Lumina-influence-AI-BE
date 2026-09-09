@@ -352,7 +352,22 @@ def seed_run() -> dict[str, int]:
                 posted_at=posted_at,
                 caption=f"Post #{i + 1} de {data['display_name']} — {data['niche']}.",
                 video_url=f"https://cdn.lumina.example/{slug}/{i}.mp4" if avg_watch else None,
-                thumbnail_url=f"https://cdn.lumina.example/{slug}/{i}-thumb.jpg",
+                # Sem miniatura, e não com uma URL inventada.
+                #
+                # `cdn.lumina.example` não existe — o domínio é reservado para
+                # documentação. Enquanto a tela desenhava um degradê no lugar da
+                # miniatura, o campo nunca era buscado e o endereço falso não
+                # incomodava ninguém. Desde 08/09 o cartão de destaque do painel
+                # renderiza um `<img>` de verdade, e aí cada post semeado passou
+                # a disparar uma requisição que morre em DNS: imagem quebrada na
+                # tela e erro no console. Foi o primeiro CI de ponta a ponta que
+                # expôs isso, porque lá o banco é semeado do zero.
+                #
+                # `None` é a resposta honesta: o seed não tem miniatura para
+                # oferecer, e o componente já desenha o vazio de propósito. É a
+                # mesma regra da ADR-003 — ausência de dado não vira dado
+                # inventado, e endereço que não resolve é dado inventado.
+                thumbnail_url=None,
                 reach_total=reach_total,
                 reach_organic=reach_organic,
                 reach_paid=reach_paid,
