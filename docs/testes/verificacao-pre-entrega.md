@@ -365,20 +365,58 @@ relógio ser o juiz. É o mesmo modo de falha que este documento já registra em
 outro lugar: **um atalho de método que inventa tela quebrada é pior que a
 varredura manual que ele substitui.**
 
-## Dois falsos positivos das varreduras estáticas, a corrigir quando houver folga
+## Dois falsos positivos das varreduras estáticas — corrigidos em 09/09
 
-Nenhum dos dois esconde defeito — ambos acrescentam ruído, que é o lado menos
-perigoso. Ficam registrados para não serem rediagnosticados a cada execução.
+Nenhum dos dois escondia defeito; ambos acrescentavam ruído, que é o lado menos
+perigoso. Ainda assim custam caro do jeito certo: ruído recorrente treina quem
+lê o relatório a ignorá-lo.
 
-- **`botao_morto.py` lê JSX dentro de comentário.** O único achado fora da
-  vitrine é `landing/FaqSection.jsx:19`, que é a linha `<button aria-expanded>`
-  escrita no comentário do arquivo explicando por que não se usou `<details>`.
-  O botão real, na linha 29, tem `onClick={aoAlternar}`.
-- **`texto_fora_do_i18n.py` lê nome de classe do Tailwind como texto.** Em
-  `dashboard/TopNetworksTable.jsx:40-42`, as cadeias `'text-positive'`,
-  `'text-text-primary'` e `'text-tint-rose'` são valores de classe dentro de uma
-  constante de faixa, não texto de interface. O filtro reconhece classe em
-  `className=`, mas não em literal solto dentro de objeto.
+**`botao_morto.py` lia JSX dentro de comentário.** O único achado fora da
+vitrine era `landing/FaqSection.jsx:19`, que é a linha `<button aria-expanded>`
+escrita no comentário do arquivo, explicando por que não se usou `<details>`.
+O botão real, dez linhas abaixo, tem `onClick={aoAlternar}`.
+
+O conserto virou `varredura.sem_comentarios`, compartilhado pelas duas
+varreduras: apaga comentário de linha e de bloco **preservando tamanho e
+quebras**, para que offset e número de linha continuem batendo com o arquivo
+original. Respeita estado de string — sem isso, `"https://exemplo"` perderia
+metade da URL para a regra de `//`, que seria o mesmo erro de exclusão larga,
+agora do lado do detector.
+
+Comentário é onde o autor escreve o código que **não** existe: exemplo,
+alternativa descartada, trecho antigo. Varredura que lê comentário acha
+justamente o que foi decidido não fazer.
+
+**`texto_fora_do_i18n.py` lia nome de classe do Tailwind como texto.** O alvo 4
+procura as chaves `texto:`, `label:` e `message:` porque toast e alerta usam
+esses nomes; a constante de faixa do `TopNetworksTable` também usa `texto:`, só
+que o valor é `'text-positive'`.
+
+A regra nova é estreita de propósito. Não basta parecer minúscula com hífen —
+"bem-vindo" cairia fora. Exige que todo pedaço tenha forma de classe **e** que
+pelo menos um comece por prefixo de utilitário conhecido. Foi testada nos
+limites antes de entrar: `text-positive` e `flex items-center` descartados;
+`bem-vindo`, `sem-teto` e `Exportar PDF` mantidos.
+
+Acrescentada também a marca "Lumina AI" à lista de exceções — a lista já tinha
+"Lumina" e "Lumina Influence AI", e a forma do meio faltava.
+
+### Efeito medido
+
+| Varredura | Antes | Depois | Fora da vitrine |
+|---|---:|---:|---|
+| `botao_morto.py` | 13 | **12** | 1 → **0** |
+| `texto_fora_do_i18n.py` | 58 | **51** | 11 → **4** |
+
+Os 12 botões restantes são todos da página de vitrine. Os 4 textos são
+`OAuth 2.0` e as três cadeias da tela interna `Welcome`, aceitas como exceção
+na auditoria de 08/09.
+
+**As duas passaram na prova de regressão embutida depois da mudança**, que é o
+que separa "filtro melhor" de "filtro cego": `--verificar-regressao` reintroduz
+os defeitos históricos — "seguidores" fixo em português, "Download iniciado" e o
+botão sem ação — e confere que continuam visíveis. Afinar exclusão sem essa
+prova é como o defeito original nasceu.
 
 ## Verificações 2 e 3, rodadas depois — e um defeito real
 

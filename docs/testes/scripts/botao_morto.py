@@ -11,7 +11,7 @@ import re
 import sys
 from pathlib import Path
 
-from varredura import Filtro, verificar_regressao
+from varredura import Filtro, sem_comentarios, verificar_regressao
 
 ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
 MODO_REGRESSAO = "--verificar-regressao" in sys.argv
@@ -63,7 +63,9 @@ def _varrer(raiz: Path):
     """
     achados = []
     for arq in sorted(raiz.rglob("*.jsx")):
-        texto = arq.read_text(encoding="utf-8")
+        # Comentario e onde se escreve o codigo que nao existe. Apagado antes
+        # de varrer, preservando offset e linha — ver `sem_comentarios`.
+        texto = sem_comentarios(arq.read_text(encoding="utf-8"))
         for m in ABERTURA.finditer(texto):
             tag, _ = tag_completa(texto, m.start())
             resumo = " ".join(tag.split())[:90]

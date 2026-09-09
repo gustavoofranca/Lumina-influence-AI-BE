@@ -79,3 +79,61 @@ def verificar_regressao(nome: str, coletar) -> int:
         return 1
     print(f"\n[regressao] {len(esperado)} defeito(s) conhecido(s) continuam visíveis.")
     return 0
+
+
+def sem_comentarios(texto: str) -> str:
+    """Apaga comentario de JS/JSX preservando tamanho e quebras de linha.
+
+    Existe por um falso positivo real: a varredura de botao morto reportou
+    `landing/FaqSection.jsx:19`, que e a linha `<button aria-expanded>` escrita
+    **dentro do comentario** do arquivo, explicando por que nao se usou
+    `<details>`. O botao de verdade, dez linhas abaixo, tem `onClick`.
+
+    Comentario e onde o autor escreve o codigo que **nao** existe — exemplo,
+    alternativa descartada, trecho antigo. Varredura que le comentario acha
+    justamente o que foi decidido nao fazer.
+
+    Cada caractere apagado vira espaco e cada `\n` sobrevive, entao offset e
+    numero de linha continuam batendo com o arquivo original — quem chama
+    reporta a posicao certa sem precisar de mapa de conversao.
+
+    O estado de string e respeitado, senao `"https://exemplo"` perderia metade
+    da URL para a regra de `//` — que e o mesmo erro de exclusao larga, agora do
+    lado do detector.
+    """
+    saida = []
+    i = 0
+    n = len(texto)
+    aspas = None
+    while i < n:
+        c = texto[i]
+        if aspas:
+            saida.append(c)
+            if c == "\\" and i + 1 < n:      # escape dentro de string
+                saida.append(texto[i + 1])
+                i += 2
+                continue
+            if c == aspas:
+                aspas = None
+            i += 1
+            continue
+        if c in "\"'`":
+            aspas = c
+            saida.append(c)
+            i += 1
+            continue
+        if c == "/" and i + 1 < n and texto[i + 1] == "/":
+            while i < n and texto[i] != "\n":
+                saida.append(" ")
+                i += 1
+            continue
+        if c == "/" and i + 1 < n and texto[i + 1] == "*":
+            fim = texto.find("*/", i + 2)
+            fim = n if fim == -1 else fim + 2
+            for j in range(i, fim):
+                saida.append("\n" if texto[j] == "\n" else " ")
+            i = fim
+            continue
+        saida.append(c)
+        i += 1
+    return "".join(saida)

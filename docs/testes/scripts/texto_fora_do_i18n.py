@@ -22,7 +22,7 @@ import re
 import sys
 from pathlib import Path
 
-from varredura import Filtro, verificar_regressao
+from varredura import Filtro, sem_comentarios, verificar_regressao
 
 ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
 MODO_REGRESSAO = "--verificar-regressao" in sys.argv
@@ -39,7 +39,7 @@ EM_CHAMADA = re.compile(
 )
 # Marca, nome de fonte e termos de identidade nao sao interface traduzivel.
 EXCECOES = {
-    "Lumina", "Lumina Influence AI", "Influence AI", "React", "Vite", "Tailwind",
+    "Lumina", "Lumina Influence AI", "Influence AI", "Lumina AI", "React", "Vite", "Tailwind",
     "i18next", "Space Grotesk", "Inter", "JetBrains Mono", "Growth Trajectory",
     "Network Resonance",
 }
@@ -63,6 +63,35 @@ SO_TECNICO = re.compile(r"^[\s\d\W_]+$|^[a-z][a-z]{0,2}$|^[a-z]+[A-Z]\w*$|^https
 #
 # Sem IGNORECASE de proposito: palavra-chave de JavaScript e minuscula, e
 # "Export", "Import", "New", "Case" e "Delete" sao rotulos de botao.
+# Valor que e lista de classe do Tailwind, e nao texto.
+#
+# O alvo 4 procura as chaves `texto:` e `label:` porque toast e alerta usam
+# esses nomes. No `TopNetworksTable` a constante de faixa tambem usa `texto:`,
+# so que o valor e `'text-positive'` — nome de classe. Tres achados de ruido
+# por execucao, e a proxima pessoa rediagnostica os tres.
+#
+# A regra e estreita de proposito: **nao basta** parecer minuscula com hifen,
+# senao "bem-vindo" cairia fora. Exige que pelo menos um pedaco comece por
+# prefixo de utilitario conhecido — que e o que distingue classe de palavra.
+PREFIXOS_TAILWIND = {
+    "text", "bg", "border", "ring", "shadow", "rounded", "flex", "grid", "gap",
+    "p", "px", "py", "pt", "pb", "pl", "pr", "m", "mx", "my", "mt", "mb", "ml",
+    "mr", "w", "h", "min", "max", "inline", "absolute", "relative", "fixed",
+    "sticky", "hover", "focus", "font", "leading", "tracking", "opacity", "z",
+    "overflow", "items", "justify", "self", "col", "row", "space", "divide",
+    "transition", "duration", "ease", "animate", "cursor", "select", "truncate",
+    "line", "backdrop", "from", "via", "to", "fill", "stroke", "aspect", "order",
+}
+FORMA_DE_CLASSE = re.compile(r"^[a-z0-9][a-z0-9:./\[\]%\-]*$")
+
+
+def parece_classe(t: str) -> bool:
+    pedacos = t.split()
+    if not pedacos or not all(FORMA_DE_CLASSE.match(x) for x in pedacos):
+        return False
+    return any(x.split(":")[-1].split("-")[0] in PREFIXOS_TAILWIND for x in pedacos)
+
+
 ALVOS_COM_CODIGO_CRU = ("entre_tags", "apos_expressao")
 PARECE_CODIGO = re.compile(
     r"[{}=;]|&&|\|\||=>|"
@@ -118,6 +147,8 @@ def relevante(texto: str, *, alvo: str = "") -> bool:
         return not FILTRO.descarta("parece identificador ou fragmento técnico", t)
     if alvo in ALVOS_COM_CODIGO_CRU and PARECE_CODIGO.search(t):
         return not FILTRO.descarta("parece código (só nos alvos que leem JSX cru)", t)
+    if parece_classe(t):
+        return not FILTRO.descarta("é lista de classe do Tailwind, não texto", t)
     if t in CHAVES:
         return not FILTRO.descarta("é nome de chave do i18n", t)
     if not re.search(r"[A-Za-zÀ-ÿ]{3,}", t):
@@ -141,7 +172,9 @@ def _varrer(raiz: Path):
     # `.js` entra por causa do alvo 4: servico e hook tambem montam mensagem.
     arquivos = sorted([*raiz.rglob("*.jsx"), *raiz.rglob("*.js")])
     for arq in arquivos:
-        texto = arq.read_text(encoding="utf-8")
+        # Comentario apagado antes de varrer: e onde se escreve o codigo que
+        # nao existe. Offset e linha sao preservados — ver `sem_comentarios`.
+        texto = sem_comentarios(arq.read_text(encoding="utf-8"))
         for regex, grupos, alvo in (
             (ENTRE_TAGS, (1,), "entre_tags"),
             (ATRIBUTO, (2,), "atributo"),
