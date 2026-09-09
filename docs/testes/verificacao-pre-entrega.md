@@ -436,3 +436,64 @@ relatório limpo é indistinguível de um sistema são.** Corrigido para exigir
 O mesmo erro derrubou a minha primeira medição: rotulei de "escuro" uma rodada
 que estava clara, porque conferi a classe em vez do atributo. Só apareceu porque
 a varredura imprimia o tema efetivo por rota.
+
+## 6 · Teclado e foco — 09/09/2026, 15 rotas
+
+**363 controles medidos.** O teste `teclado.spec.js` cobria as abas do criador;
+esta passagem percorreu todo controle interativo das 15 rotas internas,
+verificando nome acessível e alvo de toque.
+
+### Um defeito real: quatro interruptores sem nome
+
+Em `/app/configuracoes/preferencias`, os quatro `role="switch"` de notificação
+tinham **nome acessível vazio**. Um leitor de tela anunciava "switch, ligado"
+sem dizer do que — falha do critério 4.1.2 (Nome, Função, Valor).
+
+A causa é sutil e vale registrar, porque o código *parecia* correto: o
+componente `ui/Switch.jsx` envolvia o `<button role="switch">` num
+`<label htmlFor={id}>`. **`<label>` não nomeia `<button>`.** Pelo HTML-AAM, o
+nome de um botão sai de `aria-labelledby`, de `aria-label` ou do próprio
+conteúdo — e o conteúdo ali é só o `<span>` da bolinha. A associação por
+`htmlFor` faz o clique no texto alternar o controle, o que funcionava e dava a
+impressão de que o rótulo estava resolvido.
+
+Além disso, o único consumidor — `NotificationToggleRow` — desenhava o rótulo
+**fora** do `Switch` e não passava a prop `label`, então nem o caminho interno
+do componente chegava a ser usado.
+
+**Correção:** `Switch` passou a aceitar `ariaLabel` e `ariaLabelledBy`, e o
+consumidor aponta para o `<p>` do rótulo que já está na tela. O nome falado
+passa a ser exatamente o texto visto, que é o que o critério de rótulo no nome
+pede — melhor do que repetir a string num `aria-label`, que sairia de sincronia
+na primeira tradução.
+
+Foi acrescentado também um aviso de console em desenvolvimento quando nenhum
+dos três caminhos de nome é fornecido. Controle sem nome não reprova build nem
+teste: some em silêncio e só aparece com leitor de tela.
+
+**Verificação:** a árvore de acessibilidade lida por CDP, antes e depois.
+
+| | Antes | Depois |
+|---|---|---|
+| `role=switch` na árvore | 4 | 4 |
+| com nome não vazio | **0** | **4** |
+
+Os nomes agora são "E-mail — relatórios e alertas críticos", "Notificações no
+app", "Resumo semanal" e "Alertas de bot detection".
+
+### Dezenove alvos pequenos, todos isentos ou falso positivo
+
+Nenhum é defeito, e o motivo importa para quem repetir a varredura:
+
+- **12 × "Nova Campanha"** (uma por rota): o `<a>` é `display: inline` e
+  envolve um `<button>` de **223×40**. Medir o retângulo do `<a>` dá 223×20 e
+  não descreve o alvo — a área clicável é a do botão. Meça o descendente
+  quando o elemento for inline.
+- **7 links de trilha de navegação**, com 16px de altura: o critério 2.5.8 isenta
+  alvo em linha de texto.
+
+### Um controle sem nome que não é do produto
+
+`recharts-layer recharts-pie` — a biblioteca de gráficos põe `tabindex` numa
+camada `<g>` do SVG, que fica alcançável por Tab sem nome. É de terceiro, e
+mexer nisso exige contornar a API do Recharts. Registrado, não corrigido.
