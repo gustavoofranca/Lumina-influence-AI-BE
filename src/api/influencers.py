@@ -1,9 +1,12 @@
 """Blueprint /api/v1/influencers — CRUD com filtros, escopado por agência."""
 from __future__ import annotations
 
+import uuid
+
 from flask import Blueprint, g, request
 
 from src.models import Influencer, InfluencerStatus, Platform, UserRole
+from src.schemas.analysis import AIAnalysisOut
 from src.schemas.influencer import (
     InfluencerCreateIn,
     InfluencerOut,
@@ -15,6 +18,7 @@ from src.services.influencer_service import build_influencer_query
 from src.utils.auth_decorators import require_auth
 from src.utils.authz import current_agency_id, get_scoped_or_404, require_role
 from src.utils.pagination import paginate
+from src.utils.rate_limit import rate_limit
 from src.utils.responses import created, no_content, ok, paginated
 from src.utils.errors import ValidationError
 from src.utils.validation import parse_enum_arg, parse_json
@@ -169,9 +173,58 @@ def influencer_posts(influencer_id):
     """Grid de posts analisados do influencer (tab Posts Analisados)."""
     inf = get_scoped_or_404(Influencer, influencer_id)
     limit = request.args.get("limit", 20, type=int) or 20
-    limit = min(max(limit, 1), 100)
+    # 500: a aba de posts pagina no navegador, e uma criadora ativa passa de
+    # cem publicações coletadas.
+    limit = min(max(limit, 1), 500)
     data = dashboard_service.influencer_posts(inf, limit=limit)
     return ok(data, meta={"limit": limit, "count": len(data)})
+
+
+@bp.post("/<influencer_id>/video-analysis")
+@require_auth
+@require_role(UserRole.ADMIN, UserRole.MEMBER)
+@rate_limit("RATE_LIMIT_ANALYZE")
+def analisar_video_enviado(influencer_id):
+    """Recebe um arquivo de vídeo e devolve a análise multimodal dele.
+
+    É o **único** endpoint da API que aceita arquivo. O teto global de corpo
+    (`MAX_CONTENT_LENGTH`, 1 MB) protege todos os outros e continua valendo: o
+    que sobe aqui é o limite *desta requisição*, via `request.max_content_length`,
+    que o Werkzeug 3.1 permite ajustar por requisição. Elevar o teto global
+    serviria a esta rota e desprotegeria as outras cinquenta e poucas.
+    """
+    from src.integrations.media import MAX_BYTES
+    from src.services import video_upload_service
+
+    # Folga de 1 MB sobre o teto de mídia para caber o envelope multipart: o
+    # corpo carrega separadores e campos de texto além do arquivo, e recusar por
+    # causa do envelope daria erro de tamanho num vídeo que cabe.
+    request.max_content_length = MAX_BYTES + 1024 * 1024
+
+    inf = get_scoped_or_404(Influencer, influencer_id)
+
+    arquivo = request.files.get("video")
+    if arquivo is None or not arquivo.filename:
+        raise ValidationError("Envie o arquivo no campo `video`")
+
+    campaign_id = request.form.get("campaign_id") or None
+    if campaign_id:
+        try:
+            campaign_id = uuid.UUID(campaign_id)
+        except ValueError as exc:
+            raise ValidationError("campaign_id inválido") from exc
+
+    post, analise = video_upload_service.analisar_video_enviado(
+        influencer=inf,
+        agency_id=current_agency_id(),
+        arquivo=arquivo,
+        caption=request.form.get("caption"),
+        campaign_id=campaign_id,
+    )
+    return created({
+        "post_id": str(post.id),
+        "analysis": AIAnalysisOut.model_validate(analise).model_dump(mode="json"),
+    })
 
 
 @bp.post("/<influencer_id>/sync")

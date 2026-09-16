@@ -58,8 +58,17 @@ class Post(Base, TimestampMixin):
         DateTime(timezone=True), nullable=False, index=True
     )
     caption: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    video_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
-    thumbnail_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    # `Text` e não `String(1000)`: a CDN do Instagram devolve URL assinada, com
+    # dezenas de parâmetros de autenticação e expiração, que passa de mil
+    # caracteres com folga. O teto quebrava a coleta inteira do criador com
+    # `StringDataRightTruncation` — e só aparecia contra conta real, porque
+    # nenhuma URL de teste chega perto desse tamanho.
+    #
+    # Não há limite defensável para escolher aqui: o tamanho é decidido pela
+    # plataforma, muda sem aviso, e qualquer número que a gente fixasse seria
+    # um palpite esperando quebrar de novo.
+    video_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    thumbnail_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Métricas — alcance e engajamento
     reach_total: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)

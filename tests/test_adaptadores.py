@@ -925,7 +925,7 @@ def test_instagram_sem_credencial_recusa_antes_de_chamar_a_rede(app, monkeypatch
             InstagramAdapter().build_auth_url(state="s", redirect_uri="http://cb")
 
 
-def test_instagram_pede_os_quatro_escopos_da_configuracao_com_facebook_login(app):
+def test_instagram_pede_os_escopos_da_configuracao_com_facebook_login(app):
     with app.app_context():
         url = InstagramAdapter().build_auth_url(state="s", redirect_uri="http://cb")
     # instagram_manage_insights só existe nesta configuração, e sem
@@ -933,6 +933,22 @@ def test_instagram_pede_os_quatro_escopos_da_configuracao_com_facebook_login(app
     for escopo in ("instagram_basic", "instagram_manage_insights",
                    "pages_show_list", "pages_read_engagement"):
         assert escopo in url
+
+
+def test_instagram_pede_business_management_para_achar_pagina_de_portfolio(app):
+    """Sem este escopo, Página sob portfólio empresarial é invisível.
+
+    Medido contra a conta real em 16/09/2026: com os quatro escopos anteriores,
+    `/me/accounts` devolvia lista vazia mesmo com a Página criada e o Instagram
+    profissional vinculado a ela. Acrescentando `business_management`, a mesma
+    conta passou a devolver a Página com `instagram_business_account`.
+
+    O teste existe porque a falha é silenciosa do lado errado: o consentimento
+    dá certo, as permissões aparecem como concedidas, e a coleta volta vazia.
+    """
+    with app.app_context():
+        url = InstagramAdapter().build_auth_url(state="s", redirect_uri="http://cb")
+    assert "business_management" in url
 
 
 def test_instagram_usa_versao_da_graph_ainda_suportada(app):
@@ -1078,6 +1094,20 @@ def test_instagram_pede_views_e_nunca_a_metrica_removida(app, monkeypatch):
     campos = http.calls[-1][1]["params"]["fields"]
     assert "views" in campos
     assert "impressions" not in campos
+
+
+def test_instagram_deixa_de_fora_o_reel_de_teste(app, monkeypatch):
+    # "Testar Reel" só chega a quem não segue e não aparece no perfil; a Graph
+    # o marca com `trial_params`.
+    base = {"media_type": "VIDEO", "media_product_type": "REELS",
+            "timestamp": "2026-08-01T12:00:00+0000", "like_count": 1, "comments_count": 0}
+    _com_conta(monkeypatch, _midia(
+        {**base, "id": "publicado"},
+        {**base, "id": "teste", "trial_params": {"graduation_strategy": "MANUAL"}},
+    ))
+    with app.app_context():
+        posts = InstagramAdapter().fetch_recent_posts("t")
+    assert [p.platform_post_id for p in posts] == ["publicado"]
 
 
 def test_instagram_normaliza_post_com_views_no_lugar_de_impressoes(app, monkeypatch):
@@ -1535,3 +1565,97 @@ def test_youtube_linha_curta_da_analytics_e_ignorada(app, monkeypatch):
         post = YouTubeAdapter().fetch_recent_posts("t")[0]
     assert post.retention_rate is None
     assert post.avg_watch_time is None
+
+
+# ==========================================================================
+# 503 do Gemini — sobrecarga do modelo, não defeito nosso (16/09)
+# ==========================================================================
+def test_video_com_5xx_do_gemini_vira_erro_de_indisponibilidade(app, monkeypatch, tmp_path):
+    """503 no caminho de vídeo precisa dizer que é temporário e do lado do Google.
+
+    Antes caía no `except Exception` genérico e virava "Falha na análise
+    multimodal" — mensagem que mandou quem operava procurar problema de token e
+    de configuração num incidente de capacidade do Google.
+    """
+    from google.genai import errors as genai_errors
+
+    from src.integrations.gemini import GeminiClient, GeminiUnavailableError
+
+    arquivo = tmp_path / "v.mp4"
+    arquivo.write_bytes(b"\x00\x01")
+
+    class ArquivoFalso:
+        name = "files/abc"
+        state = type("S", (), {"name": "ACTIVE"})()
+
+    class FilesFalso:
+        def upload(self, **kwargs):
+            return ArquivoFalso()
+
+        def get(self, **kwargs):
+            return ArquivoFalso()
+
+        def delete(self, **kwargs):
+            return None
+
+    class ModelsFalso:
+        def generate_content(self, **kwargs):
+            raise genai_errors.ServerError(503, {"error": {"message": "high demand"}})
+
+    class ClienteFalso:
+        files = FilesFalso()
+        models = ModelsFalso()
+
+    with app.app_context():
+        monkeypatch.setitem(app.config, "GEMINI_API_KEY", "test-key")
+        cliente = GeminiClient()
+        monkeypatch.setattr(cliente, "_client", ClienteFalso(), raising=False)
+
+        with pytest.raises(GeminiUnavailableError) as erro:
+            cliente.generate_json_with_video("prompt", str(arquivo), "video/mp4")
+
+        # A mensagem precisa dizer o que fazer, e o código precisa ser próprio:
+        # a tela distingue isto de cota estourada e de credencial faltando.
+        assert "sobrecarregado" in str(erro.value)
+        assert erro.value.code == "gemini_unavailable"
+        assert erro.value.status_code == 503
+
+
+def test_gemini_tenta_de_novo_e_cai_na_reserva_em_503(app, monkeypatch):
+    """Sobrecarga do principal não pode derrubar a análise se a reserva responde.
+
+    E o resultado precisa dizer quem respondeu: gravar o modelo principal numa
+    análise feita pela reserva seria procedência falsa sobre o próprio número.
+    """
+    from google.genai import errors as genai_errors
+
+    from src.integrations.gemini import GeminiClient
+
+    chamados = []
+
+    class Resposta:
+        text = '{"ok": true}'
+        usage_metadata = None
+
+    class ModelsFalso:
+        def generate_content(self, *, model, contents, config):
+            chamados.append(model)
+            if model == "principal":
+                raise genai_errors.ServerError(503, {"error": {"message": "high demand"}})
+            return Resposta()
+
+    class ClienteFalso:
+        models = ModelsFalso()
+
+    with app.app_context():
+        monkeypatch.setitem(app.config, "GEMINI_API_KEY", "test-key")
+        monkeypatch.setitem(app.config, "GEMINI_MODEL", "principal")
+        monkeypatch.setitem(app.config, "GEMINI_FALLBACK_MODEL", "reserva")
+        monkeypatch.setitem(app.config, "GEMINI_RETRIES", 2)
+        cliente = GeminiClient()
+        monkeypatch.setattr(cliente, "_client", ClienteFalso(), raising=False)
+
+        r = cliente.generate_json("prompt")
+
+    assert chamados == ["principal", "principal", "reserva"]
+    assert r.model == "reserva"
