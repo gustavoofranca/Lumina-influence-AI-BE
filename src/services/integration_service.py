@@ -24,6 +24,7 @@ from src.integrations.base import (
     SocialAdapter,
     TokenRevokedError,
 )
+from src.integrations.demo import DemoAdapter
 from src.integrations.instagram import InstagramAdapter
 from src.integrations.tiktok import TikTokAdapter
 from src.integrations.youtube import YouTubeAdapter
@@ -44,24 +45,84 @@ _ADAPTERS = {
 }
 
 # Provedor OAuth de cada plataforma, para registrar o nonce do state na tabela
-# `oauth_states` — a mesma que o login usa para garantir uso único. O enum
-# `oauth_provider` só conhece google e microsoft: o YouTube cabe porque seu
-# provedor é literalmente accounts.google.com. Instagram e TikTok exigiriam
-# ampliar o enum, o que é migration; até lá ficam de fora do mapa e o
-# consumo do nonce falha fechado, em vez de seguir sem garantia.
+# `oauth_states` — a mesma que o login usa para garantir uso único. O YouTube
+# cabe em `google` porque seu provedor é literalmente accounts.google.com;
+# Instagram e TikTok exigiram ampliar o enum `oauth_provider`, feito na
+# migration 4f2c81aa9e07. Enquanto não estavam no mapa o consumo do nonce falhava
+# fechado — a escolha certa, mas que tornava as duas plataformas inalcançáveis
+# depois do consentimento, com credencial válida e tudo.
+#
+# `META` e não `INSTAGRAM` porque é quem emite o token na configuração escolhida
+# (ADR-007): quem autoriza é uma conta do Facebook.
 _STATE_NONCE_PROVIDER = {
     Platform.YOUTUBE: OAuthProvider.GOOGLE,
+    Platform.INSTAGRAM: OAuthProvider.META,
+    Platform.TIKTOK: OAuthProvider.TIKTOK,
 }
+
+# Plataformas que aceitam o provedor local de demonstração quando a credencial
+# real falta. O YouTube fica de fora de propósito: ele conecta de verdade com as
+# credenciais do Google já configuradas, e oferecer o atalho ali trocaria coleta
+# real por simulada.
+_DEMO_PLATFORMS = (Platform.INSTAGRAM, Platform.TIKTOK)
 
 
 # ==========================================================================
 # Registry
 # ==========================================================================
 def get_adapter(platform: Platform) -> SocialAdapter:
+    """Adaptador da plataforma — o real sempre que houver credencial.
+
+    Quem decide se há credencial é o próprio adaptador real, por `configurado()`:
+    perguntar aqui quais variáveis cada plataforma exige duplicaria essa regra em
+    dois lugares, e a cópia envelheceria na primeira vez que uma delas mudasse de
+    nome. Só depois de ele responder que não é que o provedor de demonstração
+    entra, e só onde as duas condições valem — ambiente de dev e plataforma sem
+    provedor real validado.
+
+    Credencial configurada tem precedência incondicional: preencher
+    `META_CLIENT_ID` e `META_CLIENT_SECRET` no `.env` desliga a demonstração do
+    Instagram sem tocar em mais nada.
+    """
     cls = _ADAPTERS.get(platform)
     if cls is None:
         raise ValidationError(f"Plataforma não suportada: {platform}")
-    return cls()
+
+    real = cls()
+    if real.configurado():
+        return real
+    if platform in _DEMO_PLATFORMS and current_app.config.get("DEMO_SOCIAL_ENABLED"):
+        logger.info(
+            "Plataforma %s sem credencial: usando provedor de demonstração", platform.value
+        )
+        return DemoAdapter(platform.value)
+    # Sem demonstração habilitada, devolve o adaptador real assim mesmo: o erro
+    # de credencial pertence ao ponto de uso, onde sempre esteve, e a interface
+    # tem estado próprio para "plataforma não configurada neste ambiente" — que
+    # é diferente de "ninguém conectou ainda".
+    return real
+
+
+def get_adapter_for_account(account: SocialAccount) -> SocialAdapter:
+    """O adaptador que atende **esta conta**, pela origem gravada nela.
+
+    `get_adapter` decide pela configuração do ambiente, e é o certo para
+    *iniciar* uma conexão: a pergunta ali é "com quem este ambiente consegue
+    falar agora". Para uma conta que já existe a pergunta é outra — **quem
+    emitiu o token que ela guarda**.
+
+    Confundir as duas custou um defeito de produção: preencher `META_CLIENT_ID`
+    passou a rotear para a Graph API real as contas ligadas pelo provedor local,
+    que respondia `OAuthException 190 Bad signature` e derrubava o sync inteiro
+    do criador — inclusive as outras redes dele, porque o erro sobe.
+
+    É a mesma regra de `SocialAccount.connection_mode`, aplicada onde ela também
+    valia: uma conta ligada por demonstração continua sendo de demonstração
+    depois que a credencial real aparece, porque o token dela não mudou de dono.
+    """
+    if account.connection_mode == "demo":
+        return DemoAdapter(account.platform.value)
+    return get_adapter(account.platform)
 
 
 def parse_platform(raw: str) -> Platform:
@@ -275,12 +336,16 @@ def sync_influencer(
 ) -> dict:
     """Sincroniza todas as contas do influencer. Retorna resumo por conta.
 
-    adapter_factory=None usa `get_adapter` resolvido em runtime (permite monkeypatch).
+    `adapter_factory` existe para os testes trocarem o adaptador; sem ele, a
+    escolha é por conta (`get_adapter_for_account`) e não por plataforma, para
+    que token de demonstração não vá parar na API real.
     """
-    factory = adapter_factory or get_adapter
     results = []
     for account in influencer.social_accounts:
-        adapter = factory(account.platform)
+        adapter = (
+            adapter_factory(account.platform) if adapter_factory
+            else get_adapter_for_account(account)
+        )
         try:
             token = _valid_access_token(account, adapter)
             if token is None:
@@ -306,9 +371,15 @@ def sync_influencer(
 
 
 def _real_sync(account: SocialAccount, adapter: SocialAdapter, token: str) -> dict:
-    posts = adapter.fetch_recent_posts(token, limit=10)
+    limite = current_app.config.get("SYNC_POSTS_LIMIT", 10)
+    posts = adapter.fetch_recent_posts(token, limit=limite)
+    # Posts que a agência pediu para não exibir (conteúdo pessoal, luto). Apagar
+    # do banco não basta: a coleta seguinte traria o post de volta.
+    ignorados = current_app.config.get("SYNC_POSTS_IGNORADOS", frozenset())
     created, updated = 0, 0
     for np in posts:
+        if np.platform_post_id in ignorados:
+            continue
         existing = db.session.scalar(
             select(Post).where(
                 Post.social_account_id == account.id,
@@ -322,12 +393,19 @@ def _real_sync(account: SocialAccount, adapter: SocialAdapter, token: str) -> di
             created += 1
         else:
             post = existing
-            _apply_metrics(existing, np)
+            _apply_collected(existing, np)
             updated += 1
         # Também nos posts que já existiam: a amostra de comentários é o que
         # alimenta o sentimento, e coletá-la só na criação a congelaria no
         # primeiro sync.
-        _ingest_comments(adapter, token, post, np.platform_post_id)
+        #
+        # Mas só quando a plataforma diz que há comentário. Era uma chamada por
+        # post, incondicional, e a maioria dos Reels tem zero: sessenta posts
+        # levavam 115 segundos, com o botão "Sincronizar agora" girando dois
+        # minutos na tela. Pedir a lista de algo que a própria plataforma
+        # acabou de informar que está vazio não coleta nada.
+        if np.comments_count:
+            _ingest_comments(adapter, token, post, np.platform_post_id)
 
     account.last_synced_at = datetime.now(timezone.utc)
     return {"status": "synced", "mode": "real", "posts_created": created, "posts_updated": updated}
@@ -414,7 +492,38 @@ def _post_from_normalized(account_id: uuid.UUID, np: NormalizedPost) -> Post:
     )
 
 
-def _apply_metrics(post: Post, np: NormalizedPost) -> None:
+def _apply_collected(post: Post, np: NormalizedPost) -> None:
+    """Traz para o post tudo que a plataforma acabou de devolver.
+
+    Chamava-se `_apply_metrics` e fazia jus ao nome: copiava os oito números e
+    mais nada. O efeito era o título do vídeo congelar na primeira coleta —
+    renomear no YouTube não mudava nada na tela, para sempre. Junto com ele
+    ficavam parados a miniatura, o endereço da mídia e as duas métricas de
+    retenção, que também mudam com o tempo.
+
+    O que tornava o defeito caro não era o dado velho, era o relato: o sync
+    respondia `posts_updated: N`, afirmando ter atualizado N publicações
+    enquanto mantinha o conteúdo delas intacto. Interface que anuncia um
+    acontecimento que não aconteceu é o defeito catalogado em
+    `docs/acoes-que-nao-aconteciam.md`.
+
+    **Sobrescreve inclusive com vazio.** Se a plataforma devolve legenda nula, é
+    porque a legenda foi apagada lá, e preservar a antiga mostraria texto que
+    não existe mais. Os três adaptadores buscam esses campos em toda coleta, de
+    modo que `None` aqui significa ausência real, não resposta parcial.
+
+    **Não mexe em `posted_at` nem em `post_type`.** A data de publicação define
+    em qual relatório o post entra; deixá-la mudar sozinha moveria publicação
+    para dentro e para fora de períodos já apresentados. Se um dia a plataforma
+    permitir republicar com data nova, isso vira decisão consciente, não efeito
+    colateral de um sync.
+    """
+    # Conteúdo — o que estava congelado.
+    post.caption = np.caption
+    post.video_url = np.video_url
+    post.thumbnail_url = np.thumbnail_url
+
+    # Números de alcance e engajamento.
     post.reach_total = np.reach_total
     post.reach_organic = np.reach_organic
     post.reach_paid = np.reach_paid
@@ -423,6 +532,10 @@ def _apply_metrics(post: Post, np: NormalizedPost) -> None:
     post.comments_count = np.comments_count
     post.shares = np.shares
     post.saves = np.saves
+
+    # Retenção: também muda a cada coleta, e também estava parada na criação.
+    post.avg_watch_time = np.avg_watch_time
+    post.retention_rate = np.retention_rate
 
 
 def _as_aware(dt: datetime) -> datetime:

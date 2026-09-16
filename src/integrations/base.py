@@ -155,6 +155,30 @@ class SocialAdapter(abc.ABC):
 
     platform: str
 
+    def _require_creds(self) -> None:
+        """Levanta `PlatformNotConfiguredError` se falta credencial do app.
+
+        Cada adaptador que fala com a rede sobrescreve; o default não exige
+        nada, que é o caso de um adaptador sem credencial para ter.
+        """
+        return None
+
+    def configurado(self) -> bool:
+        """Este ambiente tem credencial para falar com a plataforma?
+
+        A checagem de credencial é preguiçosa de propósito — construir o
+        adaptador não deve falhar, o erro pertence ao momento da chamada —, e
+        isso deixava quem precisa *decidir* antes da chamada sem pergunta a
+        fazer. Sem este método, o roteador de adaptadores teria que repetir
+        quais variáveis cada plataforma exige, e a cópia envelheceria na
+        primeira vez que uma delas mudasse de nome.
+        """
+        try:
+            self._require_creds()
+        except PlatformNotConfiguredError:
+            return False
+        return True
+
     @abc.abstractmethod
     def build_auth_url(self, *, state: str, redirect_uri: str) -> str: ...
 

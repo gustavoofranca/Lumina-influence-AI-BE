@@ -68,6 +68,13 @@ class Config:
     GEMINI_TIMEOUT_SECONDS: int = int(os.getenv("GEMINI_TIMEOUT_SECONDS", "90"))
     # Máximo de comentários enviados no prompt (controle de custo/contexto)
     GEMINI_MAX_COMMENTS: int = int(os.getenv("GEMINI_MAX_COMMENTS", "30"))
+    # Sobrecarga do Google (503 "high demand") é temporária e por modelo. Antes
+    # a primeira falha ia direto para a tela; agora insiste e, esgotadas as
+    # tentativas, cai no modelo de reserva. A análise registra qual dos dois
+    # respondeu. Crédito na conta não evita o 503 — só isto ajuda.
+    GEMINI_FALLBACK_MODEL: str | None = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash")
+    GEMINI_RETRIES: int = int(os.getenv("GEMINI_RETRIES", "2"))
+    GEMINI_RETRY_BACKOFF_SECONDS: float = float(os.getenv("GEMINI_RETRY_BACKOFF_SECONDS", "3"))
     # No free tier o Google pode usar o conteúdo enviado para melhorar seus
     # produtos; no tier pago, não. A Política de Privacidade publicada afirma
     # que os dados **não** são usados para treinar modelo, então rodar em free
@@ -92,6 +99,15 @@ class Config:
     AUTH_SUCCESS_REDIRECT: str | None = os.getenv("AUTH_SUCCESS_REDIRECT")
     # Habilita POST /auth/dev-login (atalho de login local sem OAuth). Off em prod.
     DEV_LOGIN_ENABLED: bool = os.getenv("DEV_LOGIN_ENABLED", "true").lower() == "true"
+
+    # Habilita o provedor OAuth local que substitui Instagram e TikTok enquanto
+    # não há app aprovado nas plataformas (ver `src/integrations/demo.py`). Off
+    # em staging e produção pelo mesmo motivo do `dev-login`: é atalho de
+    # desenvolvimento, e fora de dev ele produziria conexão que não coleta nada
+    # real. O roteador só cai no provedor local quando a credencial verdadeira
+    # da plataforma está ausente — configurar a credencial desliga o atalho
+    # sozinho, sem depender de ninguém lembrar desta variável.
+    DEMO_SOCIAL_ENABLED: bool = os.getenv("DEMO_SOCIAL_ENABLED", "true").lower() == "true"
 
     # Teto do corpo da requisição. O Flask recusa com 413 antes de ler o
     # restante do fluxo, então o custo de um corpo gigante para no soquete e
@@ -119,6 +135,22 @@ class Config:
     # e é interativa — o assistente a refaz ao voltar um passo e mudar seção ou
     # período. Trinta por minuto cobre isso com sobra e ainda corta o abuso.
     RATE_LIMIT_REPORT_PREVIEW: dict = {"limit": 30, "window": 60}
+
+    # Quantas publicações cada sync traz por conta. Era 10 fixo no código, o
+    # que bastava para demonstrar e era pouco para auditar: um criador com
+    # trezentas publicações tinha três por cento delas analisadas.
+    #
+    # Cada publicação custa uma chamada de comentários além da listagem, então
+    # subir isso sem limite transforma um clique em centenas de requisições à
+    # plataforma — daí ser configuração, e não um número maior chutado.
+    SYNC_POSTS_LIMIT: int = int(os.getenv("SYNC_POSTS_LIMIT", "25"))
+
+    # IDs de post na plataforma que a coleta pula, separados por vírgula.
+    # Fica no ambiente e não no código: é decisão sobre conteúdo de uma pessoa
+    # específica, não regra do produto.
+    SYNC_POSTS_IGNORADOS: frozenset = frozenset(
+        p.strip() for p in os.getenv("SYNC_POSTS_IGNORADOS", "").split(",") if p.strip()
+    )
 
     # Scheduler
     SCHEDULER_API_ENABLED: bool = False
@@ -171,6 +203,8 @@ class TestConfig(Config):
     AUTH_SUCCESS_REDIRECT = None
     # Nunca usa a key real do .env em testes — força mock/NotConfigured.
     GEMINI_API_KEY = None
+    # A suíte exercita a nova tentativa sem esperar de verdade.
+    GEMINI_RETRY_BACKOFF_SECONDS = 0
     # Fernet key fixa e válida (32 bytes → base64), independente do .env.
     FERNET_KEY = base64.urlsafe_b64encode(b"0123456789abcdef0123456789abcdef").decode()
     # Credenciais de teste pras plataformas sociais (adapters montam auth URL).
@@ -184,6 +218,7 @@ class StagingConfig(Config):
     ENV = "staging"
     DEBUG = False
     DEV_LOGIN_ENABLED = False  # atalho de login vale só em dev e nos testes
+    DEMO_SOCIAL_ENABLED = False  # provedor social local, idem
 
     @classmethod
     def from_env(cls) -> "StagingConfig":
@@ -197,6 +232,7 @@ class ProdConfig(Config):
     DEBUG = False
     TESTING = False
     DEV_LOGIN_ENABLED = False  # nunca habilita atalho de login em produção
+    DEMO_SOCIAL_ENABLED = False  # nem provedor social de demonstração
 
     SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "")
     JWT_SECRET = os.getenv("JWT_SECRET", "")

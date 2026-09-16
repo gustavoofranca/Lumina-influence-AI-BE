@@ -90,6 +90,25 @@ class SocialAccount(Base, TimestampMixin):
             validade = validade.replace(tzinfo=timezone.utc)
         return validade > datetime.now(timezone.utc)
 
+    @property
+    def connection_mode(self) -> Optional[str]:
+        """De onde vem o dado desta conta: `real` ou `demo`. `None` se desligada.
+
+        Sai do `platform_user_id`, que o provedor de demonstração prefixa com
+        `demo-`, e não da configuração do ambiente. A diferença importa: uma
+        conta ligada por demonstração continua sendo de demonstração depois que
+        alguém preencher a credencial real no `.env`, porque os posts que ela
+        já gravou não passaram a vir da plataforma. Ler a configuração aqui
+        faria o rótulo mudar sozinho e passaria dado simulado por real — o
+        defeito exato que a ADR-003 existe para impedir.
+        """
+        if not self.connected:
+            return None
+        # Espelha `TOKEN_PREFIX` de `src/integrations/demo.py`. Repetido em vez
+        # de importado para o modelo não depender da camada de integração; um
+        # teste trava os dois juntos.
+        return "demo" if (self.platform_user_id or "").startswith("demo-") else "real"
+
     influencer: Mapped["Influencer"] = relationship(back_populates="social_accounts")
     posts: Mapped[list["Post"]] = relationship(
         back_populates="social_account", cascade="all, delete-orphan"

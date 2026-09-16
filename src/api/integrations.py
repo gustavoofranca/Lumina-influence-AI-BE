@@ -16,7 +16,13 @@ from src.models import Influencer
 bp = Blueprint("integrations", __name__, url_prefix="/api/v1/integrations")
 
 
-def _redirect_uri(platform: str) -> str:
+def callback_uri(platform: str) -> str:
+    """O `redirect_uri` que esta aplicacao registra e espera de volta.
+
+    Publica porque o provedor de demonstracao precisa comparar o valor recebido
+    com este antes de redirecionar: e a checagem que substitui, localmente, a
+    lista de URIs registradas no painel do provedor real.
+    """
     base = current_app.config.get("OAUTH_REDIRECT_BASE")
     path = url_for("integrations.callback", platform=platform)
     if base:
@@ -39,7 +45,7 @@ def connect(platform):
         influencer=influencer,
         platform=plat,
         agency_id=current_agency_id(),
-        redirect_uri=_redirect_uri(platform),
+        redirect_uri=callback_uri(platform),
     )
     return ok({"auth_url": auth_url, "platform": platform})
 
@@ -70,7 +76,7 @@ def callback(platform):
         platform=plat,
         code=code,
         state=state,
-        redirect_uri=_redirect_uri(platform),
+        redirect_uri=callback_uri(platform),
     )
     # O browser está nesta aba: devolver JSON deixaria o usuário olhando para um
     # payload. Volta para a tela do criador, na origem do front — e não em

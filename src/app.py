@@ -82,6 +82,13 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(reports_bp)
     app.register_blueprint(docs_bp)
 
+    # Provedor OAuth local que substitui Instagram e TikTok enquanto nao ha app
+    # aprovado nas plataformas. Registrado so quando habilitado: fora de dev a
+    # rota nem existe, em vez de existir e recusar.
+    if app.config.get("DEMO_SOCIAL_ENABLED"):
+        from src.api.demo_oauth import bp as demo_oauth_bp
+        app.register_blueprint(demo_oauth_bp)
+
 
 def _register_error_handlers(app: Flask) -> None:
     def _payload(code: str, message: str, details: dict | None = None) -> dict:

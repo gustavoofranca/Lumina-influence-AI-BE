@@ -55,6 +55,24 @@ SCOPES = [
     "instagram_manage_insights",
     "pages_show_list",
     "pages_read_engagement",
+    # Acrescentado em 16/09/2026, contra a intenção de manter o conjunto mínimo.
+    #
+    # `/me/accounts` lista as Páginas que a pessoa administra **diretamente**.
+    # Página que pertence a um *portfólio empresarial* não aparece ali sem este
+    # escopo: o token enxerga a pessoa, não o portfólio. O sintoma era
+    # `AccountNotLinkedError` com `pages_found: 0` logo depois de um
+    # consentimento em que as quatro permissões acima foram concedidas — ou
+    # seja, autorização correta e coleta vazia, que é o pior par possível.
+    #
+    # Não é caso de borda: Página de criador profissional costuma nascer dentro
+    # de um portfólio, porque é o que o próprio fluxo da Meta sugere ao criá-la.
+    # Sem este escopo o produto funcionaria só para quem tem Página solta.
+    #
+    # O custo está declarado em `docs/meta-app-review.md`: são cinco escopos, e
+    # este é mais amplo que os outros quatro. Continua sendo só de leitura no
+    # que o adaptador faz com ele — descobrir a Página —, mas a permissão em si
+    # concede mais que isso, e o App Review vai perguntar.
+    "business_management",
 ]
 
 # `impressions` foi removida na v22.0 (21/04/2025) e hoje devolve erro para
@@ -63,6 +81,10 @@ SCOPES = [
 MEDIA_INSIGHTS = ("reach", "views", "saved", "shares")
 
 TIMEOUT = 15
+
+# Teto de páginas seguidas numa coleta. Com 50 por página, cobre 1000
+# publicações — mais que qualquer criador que o produto audita numa rodada.
+MAX_PAGINAS = 20
 
 
 class InstagramAdapter(SocialAdapter):
@@ -196,21 +218,50 @@ class InstagramAdapter(SocialAdapter):
         )
 
     def fetch_recent_posts(self, access_token: str, limit: int = 10) -> list[NormalizedPost]:
+        """As publicações do perfil, da mais recente para a mais antiga.
+
+        A Graph devolve no máximo algumas dezenas por página e entrega o resto
+        em `paging.next`; parar na primeira página limitava a coleta a um
+        punhado de publicações por mais que se pedisse. Aqui a paginação é
+        seguida até completar `limit`.
+
+        O que a `/media` devolve é o que está no ar: story e arquivado não
+        entram. A exceção é o Reel de teste ("Testar Reel"), que só aparece para
+        quem não segue e não está no perfil. A Graph o marca com `trial_params`,
+        e ele fica de fora. Fora isso não há como distinguir publicação "de
+        teste" de publicação comum, e inventar o filtro seria adivinhar a
+        intenção de quem publicou.
+        """
         ig_id, token_pagina = self._conta_instagram(access_token)
-        r = requests.get(
-            f"{GRAPH}/{ig_id}/media",
-            params={
-                "fields": "id,caption,media_type,media_product_type,timestamp,"
-                "thumbnail_url,media_url,like_count,comments_count,"
-                f"insights.metric({','.join(MEDIA_INSIGHTS)})",
-                "limit": limit,
-                "access_token": token_pagina,
-            },
-            timeout=TIMEOUT,
+
+        campos = (
+            "id,caption,media_type,media_product_type,timestamp,"
+            "thumbnail_url,media_url,like_count,comments_count,trial_params,"
+            f"insights.metric({','.join(MEDIA_INSIGHTS)})"
         )
-        raise_for_social_status(r, platform=self.platform)
+        # Teto por página imposto pela Graph; pedir mais devolve o mesmo.
+        por_pagina = min(limit, 50)
+        url = f"{GRAPH}/{ig_id}/media"
+        params = {"fields": campos, "limit": por_pagina, "access_token": token_pagina}
+
+        itens: list[dict] = []
+        # Trava de segurança: uma resposta malformada que sempre devolvesse
+        # `next` faria este laço rodar para sempre contra a API da Meta.
+        for _ in range(MAX_PAGINAS):
+            r = requests.get(url, params=params, timeout=TIMEOUT)
+            raise_for_social_status(r, platform=self.platform)
+            corpo = r.json()
+            itens.extend(i for i in corpo.get("data", []) if not i.get("trial_params"))
+            if len(itens) >= limit:
+                break
+            proxima = (corpo.get("paging") or {}).get("next")
+            if not proxima:
+                break
+            # `next` já vem com token e cursor embutidos.
+            url, params = proxima, None
+
         out = []
-        for item in r.json().get("data", []):
+        for item in itens[:limit]:
             insights = _flatten_ig_insights(item.get("insights", {}))
             reach = insights.get("reach", 0)
             eh_video = item.get("media_type") == "VIDEO"

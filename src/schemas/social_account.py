@@ -23,6 +23,10 @@ class SocialAccountOut(BaseModel):
     # Deriva da presença do token, não da existência da conta: a conta sobrevive
     # à desconexão para preservar os posts já coletados.
     connected: bool
+    # `real` ou `demo` — de onde o dado desta conta veio. Vai no payload porque
+    # a tela precisa rotular a conexão de demonstração: mostrar métrica simulada
+    # sem dizer que é simulada é apresentar dado inventado como medido.
+    connection_mode: Optional[str] = None
     last_synced_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime

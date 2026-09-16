@@ -5,8 +5,20 @@ import enum
 
 
 class OAuthProvider(str, enum.Enum):
+    """Provedor que emitiu o `state` cujo uso único registramos.
+
+    Nasceu servindo só ao login (Google e Microsoft). As redes sociais entraram
+    depois porque o callback de integração usa a mesma tabela `oauth_states`
+    para gastar o `jti` do state, e sem valor no enum o consumo do nonce falhava
+    fechado — Instagram e TikTok ficavam inalcançáveis mesmo com credencial
+    configurada. `meta` em vez de `instagram` por fidelidade: o token que volta
+    do consentimento é de usuário do Facebook, não do perfil do Instagram.
+    """
+
     GOOGLE = "google"
     MICROSOFT = "microsoft"
+    META = "meta"
+    TIKTOK = "tiktok"
 
 
 class UserRole(str, enum.Enum):

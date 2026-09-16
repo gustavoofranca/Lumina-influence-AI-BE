@@ -738,3 +738,162 @@ def test_comentario_desativado_no_post_nao_vira_alerta(app, ctx, monkeypatch, ca
     relevantes = [r for r in caplog.records if "Comentários não coletados" in r.getMessage()]
     assert relevantes, "o motivo continua registrado"
     assert all(r.levelname == "INFO" for r in relevantes)
+
+
+# ==========================================================================
+# Sync que atualiza conteúdo, não só número (defeito de 16/09)
+# ==========================================================================
+class _AdaptadorQueDevolve:
+    """Adaptador de mentira que devolve o post que o teste mandar."""
+
+    platform = "youtube"
+
+    def __init__(self, post: NormalizedPost):
+        self._post = post
+
+    def fetch_recent_posts(self, token, limit=10):
+        return [self._post]
+
+    def fetch_post_comments(self, token, platform_post_id, limit=15):
+        return []
+
+
+def _conta_conectada_com_post(caption="titulo antigo"):
+    """Conta com token vivo e uma publicação já coletada."""
+    from src.models import Agency
+
+    agencia = Agency(name="Ag sync")
+    db.session.add(agencia)
+    db.session.flush()
+    inf = Influencer(agency=agencia, display_name="Criador", niche="tech")
+    db.session.add(inf)
+    db.session.flush()
+    conta = SocialAccount(
+        influencer=inf, platform=Platform.YOUTUBE, handle="canal", follower_count=10,
+        access_token_encrypted=encrypt_token("token-vivo"),
+        refresh_token_encrypted=encrypt_token("refresh"),
+    )
+    db.session.add(conta)
+    db.session.flush()
+    db.session.add(Post(
+        social_account=conta, platform_post_id="vid-1", post_type=PostType.VIDEO,
+        posted_at=datetime(2026, 5, 1, tzinfo=timezone.utc), caption=caption,
+        reach_total=1, reach_organic=1, reach_paid=0, impressions=1,
+        likes=1, comments_count=0, shares=0, saves=0,
+    ))
+    db.session.commit()
+    post = db.session.scalar(
+        select(Post).where(Post.social_account_id == conta.id)
+    )
+    return inf, post.id
+
+
+def test_sync_traz_titulo_novo_da_plataforma(app, monkeypatch):
+    """Renomear o vídeo na plataforma precisa chegar na tela.
+
+    O sync copiava os oito números e mais nada: o título vinha da primeira
+    coleta e congelava ali — renomear no YouTube não mudava nada, para sempre.
+    E o sync ainda respondia `posts_updated`, afirmando ter atualizado o que não
+    tinha tocado. Interface que anuncia o que não aconteceu.
+    """
+    with app.app_context():
+        inf, post_id = _conta_conectada_com_post()
+        coletado = NormalizedPost(
+            platform_post_id="vid-1", post_type=PostType.VIDEO,
+            posted_at=datetime.now(timezone.utc),
+            caption="Titulo novo, editado na plataforma",
+            thumbnail_url="https://exemplo/nova.jpg",
+            reach_total=900, reach_organic=900, reach_paid=0, impressions=1200,
+            likes=90, comments_count=9, shares=3, saves=4,
+            avg_watch_time=42.5, retention_rate=0.61,
+        )
+        monkeypatch.setattr(
+            isvc, "get_adapter_for_account",
+            lambda conta: _AdaptadorQueDevolve(coletado),
+        )
+
+        r = isvc.sync_influencer(inf)
+        conta = r["accounts"][0]
+        assert conta["mode"] == "real" and conta["posts_updated"] == 1, conta
+
+        post = db.session.get(Post, post_id)
+        assert post.caption == "Titulo novo, editado na plataforma"
+        assert post.thumbnail_url == "https://exemplo/nova.jpg"
+        # Retenção também muda a cada coleta e também estava congelada.
+        assert post.avg_watch_time == 42.5
+        assert post.retention_rate == 0.61
+        # Os números continuam vindo — isso já funcionava e não pode regredir.
+        assert post.likes == 90
+
+
+def test_sync_nao_traz_de_volta_post_ignorado(app, monkeypatch):
+    """Post apagado a pedido (conteúdo pessoal) não pode voltar na coleta seguinte."""
+    with app.app_context():
+        inf, _ = _conta_conectada_com_post()
+        coletado = NormalizedPost(
+            platform_post_id="post-pessoal", post_type=PostType.IMAGE,
+            posted_at=datetime.now(timezone.utc), caption="não exibir",
+            reach_total=10, reach_organic=10, reach_paid=0, impressions=10,
+            likes=1, comments_count=0, shares=0, saves=0,
+        )
+        monkeypatch.setattr(
+            isvc, "get_adapter_for_account",
+            lambda conta: _AdaptadorQueDevolve(coletado),
+        )
+        monkeypatch.setitem(app.config, "SYNC_POSTS_IGNORADOS", frozenset({"post-pessoal"}))
+
+        r = isvc.sync_influencer(inf)
+
+        assert r["accounts"][0]["posts_created"] == 0
+        assert db.session.scalar(
+            select(Post).where(Post.platform_post_id == "post-pessoal")
+        ) is None
+
+
+def test_sync_apaga_legenda_que_foi_apagada_na_plataforma(app, monkeypatch):
+    """Legenda removida lá precisa sumir aqui.
+
+    Preservar a antiga mostraria na tela um texto que não existe mais. Os três
+    adaptadores buscam o campo em toda coleta, então `None` é ausência real e
+    não resposta parcial.
+    """
+    with app.app_context():
+        inf, post_id = _conta_conectada_com_post(caption="legenda que sera apagada")
+        monkeypatch.setattr(
+            isvc, "get_adapter_for_account",
+            lambda conta: _AdaptadorQueDevolve(NormalizedPost(
+                platform_post_id="vid-1", post_type=PostType.VIDEO,
+                posted_at=datetime.now(timezone.utc), caption=None,
+                reach_total=1, reach_organic=1, reach_paid=0, impressions=1,
+                likes=1, comments_count=0, shares=0, saves=0,
+            )),
+        )
+        isvc.sync_influencer(inf)
+
+        post = db.session.get(Post, post_id)
+        assert post.caption is None
+
+
+def test_sync_nao_move_a_data_de_publicacao(app, monkeypatch):
+    """`posted_at` define em qual relatório o post entra.
+
+    Deixá-la mudar num sync moveria publicação para dentro e para fora de
+    períodos já apresentados, sem ninguém pedir.
+    """
+    with app.app_context():
+        inf, post_id = _conta_conectada_com_post()
+        original = db.session.get(Post, post_id).posted_at
+
+        monkeypatch.setattr(
+            isvc, "get_adapter_for_account",
+            lambda conta: _AdaptadorQueDevolve(NormalizedPost(
+                platform_post_id="vid-1", post_type=PostType.VIDEO,
+                posted_at=datetime(2020, 1, 1, tzinfo=timezone.utc), caption="x",
+                reach_total=1, reach_organic=1, reach_paid=0, impressions=1,
+                likes=1, comments_count=0, shares=0, saves=0,
+            )),
+        )
+        isvc.sync_influencer(inf)
+
+        post = db.session.get(Post, post_id)
+        assert post.posted_at.date() == original.date()
