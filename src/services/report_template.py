@@ -31,21 +31,29 @@ REPORT_HTML = """\
   .meta-table td { padding: 8px 6px; border-top: 1px solid #E2E8F0; vertical-align: top; }
   .meta-label { color: #64748B; font-size: 7.5pt; text-transform: uppercase; letter-spacing: 1px; }
   .meta-value { color: #0F172A; font-size: 10pt; font-weight: bold; }
-  h2.section { font-size: 12pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;
-               border-bottom: 2px solid #7C3AED; padding-bottom: 4px; margin: 0 0 8px 0; }
-  .section-wrap { margin-bottom: 18px; }
+  h2.section { -pdf-keep-with-next: true; font-size: 12pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;
+               border-bottom: 2px solid #7C3AED; padding-bottom: 4px; margin: 18px 0 8px 0; }
+  h3.sub { -pdf-keep-with-next: true; font-size: 9pt; font-weight: bold; color: #475569; text-transform: uppercase;
+           letter-spacing: 0.5px; margin: 12px 0 4px 0; }
+  .section-wrap { margin: 0; }
   table.data { width: 100%; border-collapse: collapse; font-size: 9pt; }
   table.data th { text-align: left; color: #64748B; font-size: 7.5pt; text-transform: uppercase;
                   letter-spacing: 0.5px; border-bottom: 1px solid #CBD5E1; padding: 5px 4px; }
   table.data td { padding: 6px 4px; border-bottom: 1px solid #EEF2F7; }
   .num { text-align: right; }
   .score { color: #7C3AED; font-weight: bold; }
-  .kpi-box { background-color: #F8FAFC; border: 1px solid #E2E8F0; padding: 8px; }
+  td.kpi-box { background-color: #F8FAFC; border: 1px solid #E2E8F0; padding: 8px; }
   .kpi-label { color: #64748B; font-size: 7pt; text-transform: uppercase; letter-spacing: 0.5px; }
   .kpi-value { font-size: 15pt; font-weight: bold; color: #0F172A; }
   .pos { color: #16A34A; } .neg { color: #E11D48; }
-  .card { background-color: #F8FAFC; border: 1px solid #E2E8F0; padding: 8px; margin-bottom: 6px; }
+  table.card { margin-bottom: 6px; }
+  table.card td.card-body { background-color: #F8FAFC; border: 1px solid #E2E8F0; padding: 8px 10px; }
   .muted { color: #64748B; font-size: 8.5pt; }
+  /* A transcrição é fala, não conclusão do sistema: o itálico com barra à
+     esquerda marca essa diferença na página, do mesmo jeito que uma citação. */
+  .transcript { border-left: 3px solid #7C3AED; background-color: #FFFFFF;
+                padding: 6px 8px; font-style: italic; color: #334155;
+                font-size: 9pt; line-height: 1.45; }
   ol.recs { padding-left: 16px; }
   ol.recs li { margin-bottom: 7px; }
   ol.recs .title { font-weight: bold; }
@@ -70,7 +78,7 @@ REPORT_HTML = """\
 
 <span class="eyebrow">Relatório de Auditoria de Performance</span>
 <h1 class="cover">{{ report_title }}</h1>
-<p class="desc">{{ campaign.title or campaign.brand_name }} — auditoria de performance dos criadores da campanha, com separação de alcance orgânico e pago e análise de sentimento.</p>
+<p class="desc">{{ campaign.title or campaign.brand_name }} — auditoria de performance dos criadores da campanha{% if summary.avg_organic_pct is not none %}, com separação de alcance orgânico e pago{% endif %} e análise de sentimento.</p>
 
 <table class="meta-table" width="100%">
   <tr>
@@ -92,8 +100,11 @@ REPORT_HTML = """\
   <h2 class="section">Sumário Executivo</h2>
   {% if summary.has_data %}
   <p class="desc">Esta auditoria cobre <b>{{ summary.influencer_count }} criadores</b> da campanha
-  <b>{{ campaign.brand_name }}</b>. Em média, <b>{{ summary.avg_organic_pct_fmt }}</b> do alcance foi
+  <b>{{ campaign.brand_name }}</b>.
+  {% if summary.avg_organic_pct is not none %}Em média, <b>{{ summary.avg_organic_pct_fmt }}</b> do alcance foi
   orgânico e o índice de sentimento ficou em <b>{{ summary.avg_sentiment_pct_fmt }}</b>.
+  {% else %}O índice de sentimento ficou em <b>{{ summary.avg_sentiment_pct_fmt }}</b>. A divisão entre
+  alcance orgânico e pago não é informada pela API da plataforma e não foi medida.{% endif %}
   Alcance total auditado: <b>{{ summary.total_reach_fmt }}</b> em <b>{{ summary.posts_count }}</b> posts.</p>
   {% else %}
   <p class="desc">A campanha <b>{{ campaign.brand_name }}</b> tem
@@ -105,22 +116,36 @@ REPORT_HTML = """\
 
 <!-- ================= SEÇÕES ================= -->
 {% for section in sections %}
-  <div class="section-wrap {% if not loop.first or true %}pagebreak{% endif %}">
+  {# Sem quebra de página por seção: KPIs e trajetória cabem em poucas linhas,
+     e uma página para cada uma deixava o PDF com sete folhas quase em branco.
+     As seções seguem em fluxo; o título não fica órfão no pé da página. #}
+  <div class="section-wrap">
 
   {% if section == 'kpis' %}
     <h2 class="section">KPIs da Campanha</h2>
-    <table width="100%"><tr>
+    {# Uma célula por caixa: com <div> dentro da célula o conversor desenhava
+       rótulo e valor como duas caixas separadas. #}
+    <table width="100%" cellspacing="4"><tr>
       {% for k in kpis %}
-      <td width="25%" style="padding:3px;">
-        <div class="kpi-box">
-          <div class="kpi-label">{{ k.label }}</div>
-          <div class="kpi-value">{% if k.depends_on_posts and not summary.has_data %}—{% else %}{{ k.value }}{% endif %}</div>
-          {% if k.change is not none %}<div class="{{ 'pos' if k.change >= 0 else 'neg' }}" style="font-size:8pt;">
-            {{ '+' if k.change >= 0 else '' }}{{ k.change }}%</div>{% endif %}
-        </div>
+      <td width="25%" class="kpi-box">
+        <span class="kpi-label">{{ k.label }}</span><br/>
+        <span class="kpi-value">{% if k.depends_on_posts and not summary.has_data %}—{% else %}{{ k.value }}{% endif %}</span>
+        {% if k.change is not none %}<br/><span class="{{ 'pos' if k.change >= 0 else 'neg' }}" style="font-size:8pt;">
+          {{ '+' if k.change >= 0 else '' }}{{ k.change }}%</span>{% endif %}
       </td>
       {% endfor %}
-    </tr></table>
+    </tr>
+    {% if summary.has_data %}
+    <tr>
+      {% for k in kpis_detalhe %}
+      <td width="25%" class="kpi-box">
+        <span class="kpi-label">{{ k.label }}</span><br/>
+        <span class="kpi-value">{{ k.value }}</span>
+      </td>
+      {% endfor %}
+    </tr>
+    {% endif %}
+    </table>
 
   {% elif section == 'growth' %}
     <h2 class="section">Trajetória de Crescimento (orgânico vs pago)</h2>
@@ -134,6 +159,10 @@ REPORT_HTML = """\
       {% endfor %}
       </tbody>
     </table>
+    {% if summary.has_data and summary.avg_organic_pct is none %}
+    <p class="muted" style="margin:4px 0 0 0;">Orgânico e pago sem divisão: a API da plataforma
+      informa só o alcance total ({{ summary.total_reach_fmt }}).</p>
+    {% endif %}
 
   {% elif section == 'benchmark' %}
     <h2 class="section">Benchmarking de Criadores</h2>
@@ -161,6 +190,26 @@ REPORT_HTML = """\
       </tbody>
     </table>
 
+    {% if posts_tabela %}
+    <h3 class="sub">Posts auditados</h3>
+    <table class="data">
+      <thead><tr>
+        <th>Data</th><th>Criador</th><th>Post</th><th class="num">Alcance</th>
+        <th class="num">Curt.</th><th class="num">Coment.</th><th class="num">Compart.</th><th class="num">Salvos</th>
+      </tr></thead>
+      <tbody>
+      {% for p in posts_tabela %}
+        <tr>
+          <td>{{ p.data }}</td><td>{{ p.criador }}</td><td class="muted">{{ p.legenda }}</td>
+          <td class="num">{{ p.alcance }}</td><td class="num">{{ p.curtidas }}</td>
+          <td class="num">{{ p.comentarios }}</td><td class="num">{{ p.compartilhamentos }}</td>
+          <td class="num">{{ p.salvos }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
   {% elif section == 'diagnostic' %}
     <h2 class="section">Diagnóstico de IA</h2>
     {% if not summary.has_data %}
@@ -168,14 +217,54 @@ REPORT_HTML = """\
       apresentar para esta janela.</p>
     {% endif %}
     {% for d in diagnostic %}{% if summary.has_data %}
-      <div class="card">
+      <table class="card" width="100%" cellspacing="0"><tr><td class="card-body">
         <table width="100%"><tr>
           <td><b>{{ d.display_name }}</b> <span class="muted">— {{ d.niche }}</span></td>
           <td align="right" class="score" style="font-size:8pt;">Bot {{ d.bot_probability }}% · Coerência {{ d.brand_coherence }}</td>
         </tr></table>
         <p class="muted" style="margin:4px 0 0 0;">{{ d.note }}</p>
-      </div>
+      </td></tr></table>
     {% endif %}{% endfor %}
+
+  {% elif section == 'video' %}
+    <h2 class="section">Análise de vídeo</h2>
+    {% if video %}
+      {% for v in video %}
+        <table class="card" width="100%" cellspacing="0"><tr><td class="card-body">
+          <table width="100%"><tr>
+            <td><b>{{ v.display_name }}</b>
+              {% if v.caption %}<span class="muted">— {{ v.caption }}</span>{% endif %}
+            </td>
+            <td align="right" class="score" style="font-size:8pt;">Roteiro {{ v.script_score_fmt }}</td>
+          </tr></table>
+
+          <p class="muted" style="margin:6px 0 2px 0;">Transcrição gerada pelo modelo</p>
+          <div class="transcript">
+            &ldquo;{{ v.transcript }}{% if v.transcript_truncated %}…{% endif %}&rdquo;
+          </div>
+
+          {% if v.key_phrases %}
+            <p class="muted" style="margin:6px 0 0 0;">
+              <b>Trechos destacados:</b>
+              {% for f in v.key_phrases %}{{ f }}{% if not loop.last %} · {% endif %}{% endfor %}
+            </p>
+          {% endif %}
+
+          <p class="muted" style="margin:4px 0 0 0; font-size:7.5pt;">
+            Sentimento {{ v.sentiment_label }} · analisado em {{ v.analyzed_at }}
+            · modelo {{ v.model_version }}
+          </p>
+        </td></tr></table>
+      {% endfor %}
+    {% elif not summary.has_data %}
+      <p class="muted">Nenhum post publicado no período — não há vídeo a analisar
+      nesta janela.</p>
+    {% else %}
+      {# Há post no período, mas nenhum foi analisado com vídeo. Dizer "sem
+         vídeo" seria afirmar sobre o conteúdo; o que falta é a análise. #}
+      <p class="muted">Nenhuma análise com vídeo registrada no período. A
+      transcrição só existe para posts analisados em modo multimodal.</p>
+    {% endif %}
 
   {% elif section == 'recommendations' %}
     <h2 class="section">Recomendações</h2>

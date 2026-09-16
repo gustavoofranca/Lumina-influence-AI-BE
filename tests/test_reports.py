@@ -583,3 +583,126 @@ def test_recomendacoes_deduplicam_respeitam_o_limite_e_ignoram_item_malformado(
     # Item malformado não vira recomendação de título vazio.
     assert all(r["title"] for r in recs)
     assert "objeto sem título" not in [r["description"] for r in recs]
+
+
+# ==========================================================================
+# Seção de vídeo — o que o modelo ouviu, e não só o que concluiu
+# ==========================================================================
+def _analise_com_video(app, *, transcricao, script=7.5):
+    """Grava uma análise multimodal no primeiro post do período."""
+    from src.models import AIAnalysis, SentimentLabel
+
+    with app.app_context():
+        post = db.session.scalar(select(Post))
+        analise = AIAnalysis(
+            post_id=post.id, model_version="gemini-teste-multimodal",
+            sentiment_score=0.7, sentiment_label=SentimentLabel.POSITIVE,
+            script_score=script, brand_coherence_score=88.0, bot_probability=4.0,
+            transcript_text=transcricao,
+            key_phrases=["entrega rápida", "achei caro", 42, None],
+        )
+        db.session.add(analise)
+        db.session.commit()
+        return post.id
+
+
+def _previa_com_video(client, ctx):
+    payload = _create_payload(ctx.camp_id, sections=list(report_service.SECTION_KEYS))
+    hoje = date.today()
+    payload["period_start"] = (hoje - timedelta(days=7)).isoformat()
+    payload["period_end"] = (hoje + timedelta(days=1)).isoformat()
+    return client.post(
+        "/api/v1/reports/preview", headers=ctx.h_admin, json=payload
+    ).get_json()["data"]
+
+
+def test_secao_de_video_traz_a_transcricao(client, ctx, app):
+    """A transcrição é a única parte conferível contra o vídeo.
+
+    Sem ela o relatório afirma notas de roteiro e coerência que o leitor tem de
+    aceitar no escuro — o documento diz o que a IA concluiu, e não o que ouviu.
+    """
+    _analise_com_video(app, transcricao="Gente, testei por duas semanas antes de falar.")
+
+    previa = _previa_com_video(client, ctx)
+
+    assert previa["video"], "há análise multimodal no período"
+    v = previa["video"][0]
+    assert "testei por duas semanas" in v["transcript"]
+    assert v["transcript_truncated"] is False
+    assert v["script_score_fmt"] == "8"
+    assert v["model_version"].endswith("-multimodal")
+    # Item que não é texto não vira "trecho destacado": apareceria no PDF como
+    # marcador vazio ou como o literal `None`.
+    assert v["key_phrases"] == ["entrega rápida", "achei caro"]
+
+
+def test_analise_sem_video_fica_fora_da_secao(client, ctx, app):
+    """Só o caminho multimodal preenche `transcript_text`.
+
+    Uma análise de texto entrando aqui faria a seção "Análise de vídeo" descrever
+    um vídeo que o modelo nunca viu.
+    """
+    from src.models import AIAnalysis, SentimentLabel
+
+    with app.app_context():
+        post = db.session.scalar(select(Post))
+        db.session.add(AIAnalysis(
+            post_id=post.id, model_version="gemini-teste", sentiment_score=0.5,
+            sentiment_label=SentimentLabel.NEUTRAL, script_score=6.0,
+            brand_coherence_score=70.0, bot_probability=5.0,
+            transcript_text=None,
+        ))
+        db.session.commit()
+
+    assert _previa_com_video(client, ctx)["video"] == []
+
+
+def test_transcricao_longa_e_cortada_e_o_corte_e_anunciado(client, ctx, app):
+    """Transcrição inteira engoliria a página; o corte precisa ser visível.
+
+    Sem o aviso, o leitor lê um trecho interrompido como se fosse a fala
+    completa — e conclui coisas sobre um roteiro que não terminou ali.
+    """
+    _analise_com_video(app, transcricao="palavra " * 400)
+
+    v = _previa_com_video(client, ctx)["video"][0]
+    assert len(v["transcript"]) <= report_service.LIMITE_DA_TRANSCRICAO
+    assert v["transcript_truncated"] is True
+    assert not v["transcript"].endswith("palavr"), "o corte não parte palavra ao meio"
+
+
+def test_nota_de_roteiro_ausente_nao_vira_zero(client, ctx, app):
+    """ADR-003 na seção nova: sem medição, travessão — nunca `0`."""
+    _analise_com_video(app, transcricao="Sem nota de roteiro nesta.", script=None)
+
+    v = _previa_com_video(client, ctx)["video"][0]
+    assert v["script_score"] is None
+    assert v["script_score_fmt"] == "—"
+
+
+def test_pdf_com_secao_de_video_e_gerado(client, ctx, app):
+    """O template precisa renderizar a seção nova sem quebrar o arquivo."""
+    _analise_com_video(app, transcricao="Fala transcrita que vai para o PDF.")
+
+    payload = _create_payload(ctx.camp_id, sections=list(report_service.SECTION_KEYS))
+    hoje = date.today()
+    payload["period_start"] = (hoje - timedelta(days=7)).isoformat()
+    payload["period_end"] = (hoje + timedelta(days=1)).isoformat()
+
+    r = client.post("/api/v1/reports", headers=ctx.h_admin, json=payload)
+    assert r.status_code == 201
+
+    baixado = client.get(
+        f"/api/v1/reports/{r.get_json()['data']['id']}/download", headers=ctx.h_admin
+    )
+    assert baixado.status_code == 200
+    assert baixado.data.startswith(b"%PDF-")
+
+
+def test_video_e_secao_valida_do_contrato(client, ctx):
+    """`video` precisa ser aceita pelo schema, senão o front não consegue pedi-la."""
+    payload = _create_payload(ctx.camp_id, sections=["video"])
+    r = client.post("/api/v1/reports/preview", headers=ctx.h_admin, json=payload)
+    assert r.status_code == 200
+    assert r.get_json()["data"]["sections"] == ["video"]

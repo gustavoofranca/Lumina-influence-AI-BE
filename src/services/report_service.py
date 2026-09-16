@@ -32,7 +32,7 @@ from src.utils.pdf_generator import render_pdf
 
 logger = logging.getLogger(__name__)
 
-SECTION_KEYS = ["kpis", "growth", "benchmark", "diagnostic", "recommendations"]
+SECTION_KEYS = ["kpis", "growth", "benchmark", "diagnostic", "video", "recommendations"]
 
 
 def build_report_query(agency_id: uuid.UUID):
@@ -127,14 +127,18 @@ def build_report_context(
     # Growth (orgânico vs pago por bucket) — só dos posts da campanha
     posts = _campaign_posts(campaign.id, period_start, period_end)
     growth_raw = M.growth_trajectory(posts, "90d")
+    # Sem divisão medida, a coluna "orgânico" repetiria o total e "pago" diria
+    # zero — as duas afirmações que a ADR-005 proíbe apresentar como coleta.
+    sem_divisao = has_data and summary["avg_organic_pct"] is None
     growth = [
         {
-            "x": g["x"],
+            # O rótulo mensal sai de `%b`, que é inglês ("Aug") num PDF em português.
+            "x": _MESES_PT.get(g["x"], g["x"]),
             # Cru para o gráfico da pré-visualização, formatado para o PDF.
             "organic": g["organic"],
             "paid": g["paid"],
-            "organic_fmt": _fmt_compact(g["organic"]),
-            "paid_fmt": _fmt_compact(g["paid"]),
+            "organic_fmt": "—" if sem_divisao else _fmt_compact(g["organic"]),
+            "paid_fmt": "—" if sem_divisao else _fmt_compact(g["paid"]),
         }
         for g in growth_raw
     ]
@@ -188,8 +192,43 @@ def build_report_context(
             "brand_coherence": coh, "bot_probability": bot, "note": note,
         })
 
+    # Engajamento bruto e custo. Com poucos criadores o relatório ficava com
+    # meia página em branco, e esses números já estavam no banco — é dado
+    # medido, não preenchimento. O custo por mil só existe com orçamento e
+    # alcance: sem um dos dois, travessão, nunca "R$ 0,00".
+    soma = lambda campo: sum(getattr(p, campo) or 0 for p in posts)  # noqa: E731
+    cpm = (
+        "R$ " + _fmt_brl(round(campaign.budget_brl_cents * 1000 / total_reach))
+        if has_data and total_reach > 0 and campaign.budget_brl_cents > 0 else "—"
+    )
+    kpis_detalhe = [
+        {"label": "Curtidas", "value": _fmt_compact(soma("likes"))},
+        {"label": "Comentários", "value": _fmt_compact(soma("comments_count"))},
+        {"label": "Compartilhamentos", "value": _fmt_compact(soma("shares"))},
+        {"label": "Custo por mil alcançados", "value": cpm},
+    ]
+
+    nomes = {r["influencer_id"]: r["display_name"] for r in rows if r.get("influencer_id")}
+    posts_tabela = []
+    for p in sorted(posts, key=lambda x: x.posted_at, reverse=True)[:LIMITE_DE_POSTS_NA_TABELA]:
+        legenda = " ".join((p.caption or "").split())
+        posts_tabela.append({
+            "data": p.posted_at.strftime("%d/%m/%Y"),
+            "criador": nomes.get(str(p.social_account.influencer_id), "—")
+                       if p.social_account else "—",
+            "legenda": (legenda[:70] + "…") if len(legenda) > 70 else (legenda or "—"),
+            "alcance": _fmt_compact(p.reach_total) if p.reach_total else "—",
+            "curtidas": _fmt_compact(p.likes),
+            "comentarios": _fmt_compact(p.comments_count),
+            "compartilhamentos": _fmt_compact(p.shares),
+            "salvos": _fmt_compact(p.saves),
+        })
+
     # Recommendations — das análises dos posts que entraram no período
     recommendations = _gather_recommendations(rows, posts)
+
+    # Vídeo — o que a IA ouviu, e não só o que concluiu.
+    video = _gather_video_analyses(rows, posts)
 
     return {
         "report_title": title,
@@ -206,11 +245,22 @@ def build_report_context(
         "summary": summary,
         "sections": [s for s in sections if s in SECTION_KEYS],
         "kpis": kpis,
+        "kpis_detalhe": kpis_detalhe,
+        "posts_tabela": posts_tabela,
         "growth": growth,
         "benchmark": benchmark,
         "diagnostic": diagnostic,
+        "video": video,
         "recommendations": recommendations,
     }
+
+
+LIMITE_DE_POSTS_NA_TABELA = 15
+
+_MESES_PT = dict(zip(
+    ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+    ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"],
+))
 
 
 def _posts_in_period(campaign_id: uuid.UUID, period_start: date, period_end: date):
@@ -314,6 +364,80 @@ def _gather_recommendations(rows: list[dict], posts: list[Post]) -> list[dict]:
         # constante do módulo.
         return [dict(SEM_RECOMENDACAO)]
     return recomendacoes[:LIMITE_DE_RECOMENDACOES]
+
+
+# Quantas análises de vídeo entram no documento. Duas cabem numa página sem
+# empurrar as recomendações para a seguinte, e o relatório é um resumo — quem
+# quer o conjunto inteiro abre a aba do criador.
+LIMITE_DE_VIDEOS = 2
+
+# Teto do trecho de transcrição impresso. A transcrição inteira de um vídeo de
+# um minuto passa de três mil caracteres e engoliria a página; o corte é
+# anunciado com reticências para ninguém ler o trecho como fala completa.
+LIMITE_DA_TRANSCRICAO = 600
+
+
+def _trecho_da_transcricao(texto: str) -> tuple[str, bool]:
+    """Corta a transcrição no limite, sem partir palavra. Diz se cortou."""
+    limpo = " ".join((texto or "").split())
+    if len(limpo) <= LIMITE_DA_TRANSCRICAO:
+        return limpo, False
+    corte = limpo[:LIMITE_DA_TRANSCRICAO]
+    espaco = corte.rfind(" ")
+    if espaco > 0:
+        corte = corte[:espaco]
+    return corte, True
+
+
+def _gather_video_analyses(rows: list[dict], posts: list[Post]) -> list[dict]:
+    """As análises multimodais do período — as que o modelo assistiu, não só leu.
+
+    O relatório já trazia o que a IA *concluiu* sobre cada criador, em número:
+    coerência, sentimento, probabilidade de bot. Não trazia nada do que ela
+    *ouviu*. A transcrição é a única parte do documento em que dá para conferir
+    o trabalho do modelo contra o vídeo — sem ela, o leitor precisa aceitar as
+    notas no escuro.
+
+    O que distingue uma análise multimodal é ter `transcript_text`: só o caminho
+    com vídeo o preenche. Filtrar por `model_version` seria mais direto, mas
+    quebraria na primeira vez que o sufixo mudasse.
+    """
+    ids_do_periodo = {p.id for p in posts}
+    legenda_por_post = {p.id: p.caption for p in posts}
+    nome_por_influencer = {r["influencer_id"]: r["display_name"] for r in rows}
+    por_influencer = M.fetch_analyses_by_influencer(
+        [uuid.UUID(r["influencer_id"]) for r in rows]
+    )
+
+    videos: list[dict] = []
+    for linha in rows:
+        for analise in por_influencer.get(uuid.UUID(linha["influencer_id"]), []):
+            if analise.post_id not in ids_do_periodo:
+                continue
+            if not (analise.transcript_text or "").strip():
+                continue
+            trecho, cortado = _trecho_da_transcricao(analise.transcript_text)
+            videos.append({
+                "display_name": nome_por_influencer.get(linha["influencer_id"], "—"),
+                "caption": (legenda_por_post.get(analise.post_id) or "").strip(),
+                # `None` e não zero quando o modelo não devolveu a nota: é a
+                # ADR-003 — ausência de medição não vira medição de zero.
+                "script_score": analise.script_score,
+                "script_score_fmt": (
+                    f"{analise.script_score:.0f}" if analise.script_score is not None else "—"
+                ),
+                "sentiment_label": analise.sentiment_label.value,
+                "transcript": trecho,
+                "transcript_truncated": cortado,
+                "key_phrases": [
+                    f for f in (analise.key_phrases or []) if isinstance(f, str)
+                ][:6],
+                "analyzed_at": analise.analyzed_at.strftime("%d/%m/%Y"),
+                "model_version": analise.model_version,
+            })
+            if len(videos) >= LIMITE_DE_VIDEOS:
+                return videos
+    return videos
 
 
 # ==========================================================================
