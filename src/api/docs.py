@@ -140,6 +140,60 @@ def build_openapi() -> dict:
             "get": {"tags": ["Dashboard"], "summary": "Grid de posts analisados",
                     "security": [{"bearerAuth": []}], "responses": {"200": {"description": "OK"}}},
         },
+        "/api/v1/dashboard/provenance": {
+            "get": {
+                "tags": ["Dashboard"],
+                "summary": "Procedência do dado: coleta real, demonstração ou carga inicial",
+                "description": (
+                    "Separa as contas e as publicações da agência por origem, para que "
+                    "o painel não some dado medido com dado de demonstração num "
+                    "indicador só. A classificação sai do que está gravado na conta — "
+                    "token vivo e identificador de plataforma —, nunca de configuração "
+                    "de ambiente."
+                ),
+                "security": [{"bearerAuth": []}],
+                "responses": {"200": {"description": "Contagem por origem"}},
+            },
+        },
+        "/api/v1/influencers/{id}/video-analysis": {
+            "post": {
+                "tags": ["AI"],
+                "summary": "Envia um vídeo e devolve a análise multimodal dele",
+                "description": (
+                    "Único endpoint da API que recebe arquivo. O corpo vai como "
+                    "multipart/form-data e o teto de tamanho é próprio desta rota "
+                    "(50 MB de mídia); o teto global de 1 MB segue valendo para as "
+                    "demais. Cria a publicação, guarda a mídia e roda a análise "
+                    "com vídeo, que é a que preenche a transcrição."
+                ),
+                "security": [{"bearerAuth": []}],
+                "requestBody": {
+                    "required": True,
+                    "content": {"multipart/form-data": {"schema": {
+                        "type": "object",
+                        "required": ["video"],
+                        "properties": {
+                            "video": {"type": "string", "format": "binary",
+                                      "description": "MP4, MOV ou WEBM, até 50 MB"},
+                            "caption": {"type": "string",
+                                        "description": "Legenda da publicação"},
+                            "campaign_id": {"type": "string", "format": "uuid",
+                                            "description": "Campanha a que a publicação pertence"},
+                        },
+                    }}},
+                },
+                "responses": {
+                    "201": {"description": "Publicação criada e análise concluída",
+                            "content": {"application/json": {"schema": {"type": "object",
+                            "properties": {"data": {"type": "object", "properties": {
+                                "post_id": {"type": "string", "format": "uuid"},
+                                "analysis": _ref("AIAnalysisOut"),
+                            }}}}}}},
+                    "422": {"description": "Arquivo ausente, vazio ou que não é vídeo"},
+                    "413": {"description": "Vídeo acima do teto de tamanho"},
+                },
+            },
+        },
         "/api/v1/influencers/{id}/sync": {
             "post": {"tags": ["Integrations"], "summary": "Sincroniza contas sociais (real ou simulado)",
                      "security": [{"bearerAuth": []}], "responses": {"200": {"description": "Resumo do sync"}}},

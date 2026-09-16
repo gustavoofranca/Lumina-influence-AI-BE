@@ -200,11 +200,16 @@ def test_dev_login_desligado_fora_de_desenvolvimento(config_cls, monkeypatch):
 
 # Rotas que ficam fora da spec de propósito. `/docs` e `/openapi.json` são a
 # própria infraestrutura da documentação; `dev-login` é atalho de ambiente de
-# desenvolvimento e não faz parte do contrato público da API.
+# desenvolvimento e não faz parte do contrato público da API. O provedor OAuth
+# de demonstração entra pelo mesmo motivo, com um a mais: ele imita o servidor
+# da plataforma, e anunciá-lo no contrato da API sugeriria que é endpoint para
+# alguém integrar — quem o chama é o browser, saindo do fluxo de consentimento.
 ROTAS_FORA_DA_SPEC = {
     ("get", "/api/v1/docs"),
     ("get", "/api/v1/openapi.json"),
     ("post", "/api/v1/auth/dev-login"),
+    ("get", "/api/v1/demo-oauth/{id}/authorize"),
+    ("post", "/api/v1/demo-oauth/{id}/authorize"),
 }
 
 

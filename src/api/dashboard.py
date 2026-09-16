@@ -32,6 +32,13 @@ def overview():
     return ok(data, meta={"period": period, "campaign_id": campaign_raw or "all"})
 
 
+@bp.get("/provenance")
+@require_auth
+def data_provenance():
+    """De onde vêm os números que a agência está vendo."""
+    return ok(dashboard_service.data_provenance(current_agency_id()))
+
+
 @bp.get("/network-density")
 @require_auth
 def network_density():

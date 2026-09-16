@@ -16,6 +16,7 @@ from src.models import (
     Influencer,
     InfluencerStatus,
     Post,
+    SocialAccount,
     User,
     UserRole,
 )
@@ -171,9 +172,29 @@ def test_influencer_posts(client, seeded):
         p = body["data"][0]
         assert set(p.keys()) >= {
             "id", "caption", "posted_at", "platform", "reach_total",
-            "sentiment_score", "bot_probability",
+            "sentiment_score", "bot_probability", "views", "campaign_title",
         }
     assert body["meta"]["limit"] == 5
+
+
+def test_post_de_collab_ou_upload_sai_sem_alcance(client, seeded):
+    """Alcance de post alheio não é entregue pela plataforma: vazio, não zero."""
+    with client.application.app_context():
+        post = db.session.scalar(
+            select(Post).join(SocialAccount)
+            .where(SocialAccount.influencer_id == uuid.UUID(seeded.influencer_id))
+            .limit(1)
+        )
+        post.platform_post_id = "collab-ABC123"
+        post_id = str(post.id)
+        db.session.commit()
+
+    r = client.get(
+        f"/api/v1/influencers/{seeded.influencer_id}/posts?limit=500", headers=seeded.header
+    )
+    item = next(p for p in r.get_json()["data"] if p["id"] == post_id)
+    assert item["reach_total"] is None
+    assert item["views"] is None
 
 
 # --------------------------------------------------------------------------
@@ -438,6 +459,31 @@ def test_metricas_de_performance_sem_base_vem_nulas(app):
     assert split["paid_pct"] is None
 
 
+def test_post_coletado_nao_afirma_100_por_cento_organico():
+    """API não separa pago (ADR-005): post de conta conectada não vira "100%".
+
+    O alcance soma normalmente; a proporção sai só dos posts com divisão (seed).
+    """
+    from types import SimpleNamespace
+
+    from src.services import metric_service as M
+
+    conta_real = SimpleNamespace(connection_mode="real")
+    conta_seed = SimpleNamespace(connection_mode=None)
+    coletado = SimpleNamespace(reach_organic=19_000, reach_paid=0, social_account=conta_real)
+    do_seed = SimpleNamespace(reach_organic=600, reach_paid=400, social_account=conta_seed)
+
+    so_coletado = M.reach_split([coletado])
+    assert so_coletado["total"] == 19_000
+    assert so_coletado["organic_pct"] is None
+    assert so_coletado["paid_pct"] is None
+
+    misto = M.reach_split([coletado, do_seed])
+    assert misto["total"] == 20_000
+    assert misto["organic_pct"] == 60.0
+    assert misto["paid_pct"] == 40.0
+
+
 def test_scores_derivados_de_metrica_ausente_tambem_vem_nulos(app):
     """Score composto sem nenhuma parcela medida não é zero, é indefinido."""
     from src.services import metric_service as M
@@ -654,3 +700,107 @@ def test_destaque_do_painel_ignora_a_analise_sem_dado(client, seeded, app):
     )
     assert destaque["brand_coherence"], "destaque sem nota: a barra fica em zero"
     assert destaque["transcript"], "destaque sem transcrição: o trecho vira travessão"
+
+
+# ==========================================================================
+# Procedência do dado — separar o medido do demonstrado
+# ==========================================================================
+def _conta_com_posts(db_session_app, *, influencer, platform, token, platform_user_id,
+                     quantos_posts, last_synced_at=None):
+    """Cria uma conta social com N publicações, para as contagens terem o que contar."""
+    from datetime import datetime, timezone
+
+    from src.models import Post, PostType, SocialAccount
+
+    conta = SocialAccount(
+        influencer_id=influencer.id, platform=platform, handle="conta",
+        platform_user_id=platform_user_id,
+        access_token_encrypted=token, refresh_token_encrypted=token,
+        last_synced_at=last_synced_at,
+    )
+    db.session.add(conta)
+    db.session.flush()
+    for i in range(quantos_posts):
+        db.session.add(Post(
+            social_account_id=conta.id, platform_post_id=f"{platform_user_id}-{i}",
+            post_type=PostType.VIDEO, posted_at=datetime.now(timezone.utc),
+            reach_total=100, reach_organic=100, reach_paid=0, impressions=120,
+            likes=10, comments_count=1, shares=0, saves=0,
+        ))
+    db.session.commit()
+    return conta
+
+
+def test_procedencia_separa_coleta_real_de_demonstracao(client, seeded, app):
+    """O painel soma tudo; este endpoint é o único que separa.
+
+    Juntar coleta real, dado de demonstração e carga inicial num indicador só
+    apresenta como medido o que não foi medido — o defeito que o produto existe
+    para acusar nos outros.
+    """
+    from datetime import datetime, timezone
+
+    from src.models import Influencer, Platform
+
+    with app.app_context():
+        inf = db.session.scalar(select(Influencer))
+        quando = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
+        # Real: identificador de plataforma, token vivo.
+        _conta_com_posts(app, influencer=inf, platform=Platform.YOUTUBE,
+                         token="cifrado", platform_user_id="UCsveg8W6R9a",
+                         quantos_posts=3, last_synced_at=quando)
+        # Demonstração: o prefixo `demo-` é o que o provedor local grava.
+        _conta_com_posts(app, influencer=inf, platform=Platform.INSTAGRAM,
+                         token="cifrado", platform_user_id="demo-instagram-abc",
+                         quantos_posts=2)
+        # Sem coleta: conta sem token — os números dela vieram da carga inicial.
+        _conta_com_posts(app, influencer=inf, platform=Platform.TIKTOK,
+                         token=None, platform_user_id="tk-1", quantos_posts=5)
+
+    r = client.get("/api/v1/dashboard/provenance", headers=seeded.header)
+    assert r.status_code == 200
+    d = r.get_json()["data"]
+
+    assert d["real"]["contas"] == 1 and d["real"]["posts"] == 3
+    assert d["demo"]["contas"] == 1 and d["demo"]["posts"] == 2
+    assert d["sem_coleta"]["contas"] >= 1 and d["sem_coleta"]["posts"] >= 5
+    assert d["total_posts"] == d["real"]["posts"] + d["demo"]["posts"] + d["sem_coleta"]["posts"]
+    assert d["ultima_coleta_real"].startswith("2026-09-01")
+    assert d["tudo_sem_coleta"] is False
+
+
+def test_procedencia_sem_coleta_real_nao_inventa_data(client, seeded, app):
+    """ADR-003: sem coleta real, a data é `None` — nunca uma de preenchimento."""
+    from src.models import Influencer, Platform
+
+    with app.app_context():
+        inf = db.session.scalar(select(Influencer))
+        _conta_com_posts(app, influencer=inf, platform=Platform.TIKTOK,
+                         token=None, platform_user_id="tk-x", quantos_posts=2)
+
+    d = client.get("/api/v1/dashboard/provenance", headers=seeded.header).get_json()["data"]
+    assert d["real"]["contas"] == 0
+    assert d["ultima_coleta_real"] is None
+    assert d["tudo_sem_coleta"] is True
+
+
+def test_procedencia_nao_enxerga_outra_agencia(client, seeded, app):
+    """Escopo de agência: o painel de uma não conta as contas da outra."""
+    from src.models import Agency, Influencer, Platform
+
+    with app.app_context():
+        minha = db.session.scalar(
+            select(Influencer).where(Influencer.id == uuid.UUID(seeded.influencer_id))
+        ).agency_id
+        outra = Agency(name="Agencia vizinha")
+        db.session.add(outra)
+        db.session.flush()
+        inf_outra = Influencer(agency=outra, display_name="De outra", niche="x")
+        db.session.add(inf_outra)
+        db.session.flush()
+        assert inf_outra.agency_id != minha
+        _conta_com_posts(app, influencer=inf_outra, platform=Platform.YOUTUBE,
+                         token="cifrado", platform_user_id="UC-outra", quantos_posts=9)
+
+    d = client.get("/api/v1/dashboard/provenance", headers=seeded.header).get_json()["data"]
+    assert d["real"]["posts"] == 0, "publicação de outra agência entrou na contagem"

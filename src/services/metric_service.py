@@ -171,12 +171,23 @@ def reach_split(posts: list[Post]) -> dict:
     organic = sum(p.reach_organic or 0 for p in posts)
     paid = sum(p.reach_paid or 0 for p in posts)
     total = organic + paid
+
+    # A proporção só existe onde a divisão existe. Post coletado (conta real ou
+    # de demonstração) grava pago = 0 porque a API não separa (ADR-005), e somá-
+    # lo aqui fazia o sistema afirmar "100% orgânico" de uma criadora real sem
+    # ter medido nada. Conta sem conexão é o seed, que traz a divisão.
+    com_divisao = [
+        p for p in posts
+        if p.social_account is None or p.social_account.connection_mode is None
+    ]
+    org_div = sum(p.reach_organic or 0 for p in com_divisao)
+    total_div = org_div + sum(p.reach_paid or 0 for p in com_divisao)
     return {
         "organic": organic,
         "paid": paid,
         "total": total,
-        "organic_pct": round(organic / total * 100, 1) if total else None,
-        "paid_pct": round(paid / total * 100, 1) if total else None,
+        "organic_pct": round(org_div / total_div * 100, 1) if total_div else None,
+        "paid_pct": round((total_div - org_div) / total_div * 100, 1) if total_div else None,
     }
 
 

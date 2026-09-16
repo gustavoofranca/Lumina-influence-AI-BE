@@ -346,6 +346,78 @@ def network_density(agency_id: uuid.UUID) -> dict:
 
 
 # ==========================================================================
+# Procedência do dado
+# ==========================================================================
+def data_provenance(agency_id: uuid.UUID) -> dict:
+    """De onde vêm os números que a agência está vendo.
+
+    Um painel de auditoria que soma coleta real, dado de demonstração e carga
+    inicial num KPI só, sem dizer qual é qual, comete exatamente o defeito que
+    este produto existe para apontar: apresentar como medido o que não foi
+    medido. O selo de demonstração já existia no cartão de conexão do criador —
+    mas os KPIs do painel somavam tudo em silêncio.
+
+    A classificação sai do que está **gravado**, não de configuração de
+    ambiente e não de suposição:
+
+    - `real`         conta com token vivo e `platform_user_id` de plataforma
+    - `demo`         conta com token vivo emitido pelo provedor local
+    - `sem_coleta`   conta sem token: os números dela vieram da carga inicial
+                     e nenhuma coleta os atualiza
+
+    A atribuição das publicações é pela conta a que pertencem, e o rótulo diz
+    isso com todas as letras — "publicações vinculadas a contas em X" — em vez
+    de afirmar que cada publicação individualmente foi coletada assim. A
+    diferença importa: uma conta hoje em demonstração pode ter publicação que
+    entrou pelo seed antes, e o payload não deve fingir saber separá-las.
+    """
+    contas = db.session.scalars(
+        select(SocialAccount)
+        .join(Influencer, Influencer.id == SocialAccount.influencer_id)
+        .where(Influencer.agency_id == agency_id)
+    ).all()
+
+    resumo = {
+        "real": {"contas": 0, "posts": 0},
+        "demo": {"contas": 0, "posts": 0},
+        "sem_coleta": {"contas": 0, "posts": 0},
+    }
+    ultima_coleta_real = None
+
+    ids_por_grupo: dict[str, list] = {"real": [], "demo": [], "sem_coleta": []}
+    for conta in contas:
+        modo = conta.connection_mode  # 'real' | 'demo' | None
+        grupo = modo if modo in ("real", "demo") else "sem_coleta"
+        resumo[grupo]["contas"] += 1
+        ids_por_grupo[grupo].append(conta.id)
+        if grupo == "real" and conta.last_synced_at is not None:
+            if ultima_coleta_real is None or conta.last_synced_at > ultima_coleta_real:
+                ultima_coleta_real = conta.last_synced_at
+
+    for grupo, ids in ids_por_grupo.items():
+        if not ids:
+            continue
+        resumo[grupo]["posts"] = int(db.session.scalar(
+            select(func.count(Post.id)).where(Post.social_account_id.in_(ids))
+        ) or 0)
+
+    total_contas = sum(g["contas"] for g in resumo.values())
+    total_posts = sum(g["posts"] for g in resumo.values())
+
+    return {
+        **resumo,
+        "total_contas": total_contas,
+        "total_posts": total_posts,
+        # `None` quando nunca houve coleta real: a tela mostra ausência, e não
+        # uma data de preenchimento (ADR-003).
+        "ultima_coleta_real": ultima_coleta_real.isoformat() if ultima_coleta_real else None,
+        # Verdadeiro quando **tudo** que a agência vê veio da carga inicial. É o
+        # aviso mais importante da tela, e some sozinho na primeira conexão.
+        "tudo_sem_coleta": total_contas > 0 and resumo["sem_coleta"]["contas"] == total_contas,
+    }
+
+
+# ==========================================================================
 # Influencer analysis (tela Diagnóstico IA)
 # ==========================================================================
 def influencer_analysis_history(influencer: Influencer) -> list[dict]:
@@ -565,6 +637,11 @@ def _recomendacoes_com_decisao(analysis) -> list[dict]:
 # ==========================================================================
 # Influencer posts (tab Posts Analisados)
 # ==========================================================================
+def _sem_alcance_medido(post) -> bool:
+    """Post que não veio da coleta da própria conta: vídeo enviado ou collab."""
+    return post.platform_post_id.startswith(("upload-", "collab-"))
+
+
 def influencer_posts(influencer: Influencer, *, limit: int = 20) -> list[dict]:
     posts = M.fetch_influencer_posts(influencer.id, limit=limit)
     # Mapeia análise mais recente por post (pra sentiment/bot)
@@ -583,7 +660,15 @@ def influencer_posts(influencer: Influencer, *, limit: int = 20) -> list[dict]:
                 "posted_at": p.posted_at.isoformat(),
                 "platform": p.social_account.platform.value,
                 "post_type": p.post_type.value,
-                "reach_total": p.reach_total,
+                # Collab e vídeo enviado não têm alcance: a plataforma só o
+                # entrega ao dono do post. Zero ali seria medição que não houve.
+                "reach_total": None if _sem_alcance_medido(p) else p.reach_total,
+                "views": None if _sem_alcance_medido(p) else p.impressions,
+                "campaign_title": (p.campaign.title or p.campaign.brand_name) if p.campaign else None,
+                "likes": p.likes,
+                # A análise mede sentimento e bot sobre os comentários: sem esta
+                # contagem na lista, escolher qual post analisar era às cegas.
+                "comments_count": p.comments_count,
                 "sentiment_score": a.sentiment_score if a else None,
                 "bot_probability": a.bot_probability if a else None,
             }
