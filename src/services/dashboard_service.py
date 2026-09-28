@@ -80,10 +80,14 @@ def overview(agency_id: uuid.UUID, *, period: str = "30d", campaign_id: uuid.UUI
     since_curr = now - timedelta(days=days)
     since_prev = now - timedelta(days=days * 2)
 
-    posts_curr = M.fetch_agency_posts(agency_id, since=since_curr, campaign_id=campaign_id)
+    # Uma busca só para os dois períodos. `fetch_agency_posts` traz todos os
+    # posts da agência e aplica o `since` em Python, então as duas chamadas que
+    # havia aqui faziam a mesma consulta duas vezes — quatro idas ao banco,
+    # contando o carregamento das contas, onde duas bastam.
+    janela = M.fetch_agency_posts(agency_id, since=since_prev, campaign_id=campaign_id)
+    posts_curr = [p for p in janela if M._as_aware(p.posted_at) >= since_curr]
     # período anterior = [now-2d, now-d)
-    all_prev = M.fetch_agency_posts(agency_id, since=since_prev, campaign_id=campaign_id)
-    posts_prev = [p for p in all_prev if M._as_aware(p.posted_at) < since_curr]
+    posts_prev = [p for p in janela if M._as_aware(p.posted_at) < since_curr]
 
     cost = _agency_cost_cents(
         agency_id, campaign_id, window_start=since_curr, window_end=now

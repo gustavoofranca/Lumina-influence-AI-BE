@@ -437,6 +437,44 @@ def test_engajamento_sem_post_no_periodo_vem_nulo(client, seeded, app):
     assert kpis["active_influencers"]["value"] >= 0
 
 
+def test_variacao_compara_o_periodo_atual_com_o_imediatamente_anterior(app, seeded):
+    """Cada post conta numa janela só: atual, anterior ou nenhuma.
+
+    Com período de 7 dias, o atual é [hoje-7d, hoje] e o anterior é
+    [hoje-14d, hoje-7d). Um post de 20 dias atrás não entra em nenhum dos dois.
+    Os engajamentos são escolhidos para que qualquer erro de separação apareça
+    no número: o post antigo tem 90%, e se vazar para uma das janelas a média
+    dela salta.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from src.models import Agency, Post, PostType, SocialAccount
+    from src.services import dashboard_service
+
+    agora = datetime.now(timezone.utc)
+    with app.app_context():
+        agencia = db.session.scalar(select(Agency))
+        conta = db.session.scalar(select(SocialAccount))
+        for p in db.session.scalars(select(Post)).all():
+            db.session.delete(p)
+        for dias, curtidas in ((3, 100), (10, 40), (20, 900)):
+            db.session.add(Post(
+                social_account_id=conta.id,
+                platform_post_id=f"janela-{dias}d",
+                post_type=PostType.VIDEO,
+                posted_at=agora - timedelta(days=dias),
+                reach_total=1000,
+                likes=curtidas,
+            ))
+        db.session.commit()
+
+        engajamento = dashboard_service.overview(agencia.id, period="7d")["kpis"]["engagement_rate"]
+
+    assert engajamento["value_pct"] == 10.0    # só o post de 3 dias
+    assert engajamento["change"] == 6.0        # 10% contra 4% do post de 10 dias
+    assert engajamento["change_type"] == "positive"
+
+
 # ==========================================================================
 # Ausência de dado nunca vira zero (ADR-003)
 # ==========================================================================
