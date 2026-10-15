@@ -897,3 +897,67 @@ def test_sync_nao_move_a_data_de_publicacao(app, monkeypatch):
 
         post = db.session.get(Post, post_id)
         assert post.posted_at.date() == original.date()
+
+
+# ==========================================================================
+# Conta real nunca é tratada como demonstração nem como carga inicial
+# ==========================================================================
+# Chamam o serviço direto, como o teste de credencial errada acima: estado
+# gravado num `app_context` do teste não é visto pela sessão que atende a
+# requisição do cliente de teste, e o teste mediria isolamento de sessão.
+def _tornar_real(conta, *, plataforma=Platform.INSTAGRAM, token="token-real-da-meta"):
+    """A conta vira uma conta ligada por OAuth de verdade."""
+    conta.platform = plataforma
+    conta.platform_user_id = "17841400000000001"
+    conta.access_token_encrypted = encrypt_token(token) if token else None
+    conta.token_expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+    db.session.commit()
+
+
+def _conta_e_criador(ctx):
+    conta = db.session.scalar(
+        select(SocialAccount).where(SocialAccount.influencer_id == uuid.UUID(ctx.inf_id))
+    )
+    return conta, db.session.get(Influencer, uuid.UUID(ctx.inf_id))
+
+
+def test_conta_real_sem_credencial_no_servidor_mantem_o_token(app, ctx, monkeypatch):
+    """O defeito que derrubou a conta real de Instagram em 15/10/2026.
+
+    Sem `META_CLIENT_ID` no servidor e com a demonstração ligada, a sincronização
+    entregava o token real ao provedor de demonstração. Ele não reconhecia o
+    token, respondia "revogado", e o sistema apagava a conexão verdadeira de uma
+    pessoa por causa de uma configuração que faltava no servidor.
+    """
+    monkeypatch.setitem(app.config, "META_CLIENT_ID", None)
+    monkeypatch.setitem(app.config, "META_CLIENT_SECRET", None)
+    monkeypatch.setitem(app.config, "DEMO_SOCIAL_ENABLED", True)
+    with app.app_context():
+        conta, criador = _conta_e_criador(ctx)
+        _tornar_real(conta)
+
+        with pytest.raises(PlatformNotConfiguredError):
+            isvc.sync_influencer(criador)
+
+        db.session.rollback()
+        conta, _ = _conta_e_criador(ctx)
+        assert decrypt_token(conta.access_token_encrypted) == "token-real-da-meta"
+
+
+def test_conta_real_sem_token_nao_ganha_metrica_simulada(app, ctx):
+    """A simulação infla curtidas e alcance ao acaso — só serve à carga inicial.
+
+    Numa conta real desconectada, cada sincronização somaria crescimento
+    inventado aos números que a plataforma mediu de verdade.
+    """
+    with app.app_context():
+        conta, criador = _conta_e_criador(ctx)
+        _tornar_real(conta, token=None)
+        posts = lambda: {p.platform_post_id: (p.likes, p.reach_total) for p in  # noqa: E731
+                         db.session.scalars(select(Post).where(Post.social_account_id == conta.id))}
+        antes = posts()
+
+        resultado = isvc.sync_influencer(criador)
+
+        assert resultado["accounts"][0]["status"] == "not_connected"
+        assert posts() == antes

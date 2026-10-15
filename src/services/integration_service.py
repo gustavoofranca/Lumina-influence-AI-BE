@@ -20,6 +20,7 @@ from src.integrations.base import (
     NormalizedComment,
     NormalizedPost,
     OAuthTokenBundle,
+    PlatformNotConfiguredError,
     RateLimitError,
     SocialAdapter,
     TokenRevokedError,
@@ -122,7 +123,38 @@ def get_adapter_for_account(account: SocialAccount) -> SocialAdapter:
     """
     if account.connection_mode == "demo":
         return DemoAdapter(account.platform.value)
+    if _conta_real(account):
+        return _adaptador_real(account.platform)
     return get_adapter(account.platform)
+
+
+def _conta_real(account: SocialAccount) -> bool:
+    """Conta que uma pessoa ligou por OAuth de verdade — conectada ou não.
+
+    A carga inicial não grava `platform_user_id`, e a demonstração grava com o
+    prefixo `demo-` (ver `SocialAccount.connection_mode`). Sobra a conta real, e
+    o identificador dela continua gravado depois que o token sai.
+    """
+    identificador = account.platform_user_id or ""
+    return bool(identificador) and not identificador.startswith("demo-")
+
+
+def _adaptador_real(platform: Platform) -> SocialAdapter:
+    """O adaptador real, ou erro de configuração — nunca a demonstração.
+
+    O defeito espelhado do que a docstring acima descreve: sem credencial no
+    servidor, `get_adapter` devolvia a demonstração, que recebia o token real,
+    não o reconhecia e respondia "revogado". O sync então apagava a conexão
+    verdadeira da pessoa. Derrubou uma conta real de Instagram em 15/10/2026.
+    Configuração que falta é problema do servidor, e o erro diz isso sem
+    tocar no token.
+    """
+    real = _ADAPTERS[platform]()
+    if not real.configurado():
+        raise PlatformNotConfiguredError(
+            f"{platform.value}: credencial do aplicativo não configurada neste servidor"
+        )
+    return real
 
 
 def parse_platform(raw: str) -> Platform:
@@ -342,19 +374,24 @@ def sync_influencer(
     """
     results = []
     for account in influencer.social_accounts:
+        if not account.access_token_encrypted:
+            # A simulação infla os números ao acaso e só serve à carga inicial.
+            # Conta real sem token fica como está: inventar crescimento sobre o
+            # que a plataforma mediu seria apresentar como medido o que não foi.
+            if simulate_if_no_token and not _conta_real(account):
+                r = _simulate_sync(account)
+            else:
+                r = {"status": "not_connected"}
+            results.append({"platform": account.platform.value, **r})
+            continue
+
         adapter = (
             adapter_factory(account.platform) if adapter_factory
             else get_adapter_for_account(account)
         )
         try:
             token = _valid_access_token(account, adapter)
-            if token is None:
-                if not simulate_if_no_token:
-                    r = {"status": "not_connected"}
-                else:
-                    r = _simulate_sync(account)
-            else:
-                r = _real_sync(account, adapter, token)
+            r = _real_sync(account, adapter, token)
         except TokenRevokedError:
             # Token revogado pelo usuário na plataforma — limpa pra forçar reconexão.
             db.session.rollback()
