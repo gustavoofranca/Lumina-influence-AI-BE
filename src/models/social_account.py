@@ -109,6 +109,20 @@ class SocialAccount(Base, TimestampMixin):
         # teste trava os dois juntos.
         return "demo" if (self.platform_user_id or "").startswith("demo-") else "real"
 
+    @property
+    def vinculo_real(self) -> bool:
+        """Conta que uma pessoa ligou por OAuth de verdade — conectada ou não.
+
+        Diferente de `connection_mode`, não depende do token: a carga inicial não
+        grava `platform_user_id`, a demonstração grava com o prefixo `demo-`, e
+        a conta real guarda o identificador da plataforma mesmo depois que o
+        token sai. É o que separa número medido de número que pode ser
+        simulado — e simular sobre conta real foi o que inflou as métricas de
+        uma conta de Instagram em 15/10/2026.
+        """
+        identificador = self.platform_user_id or ""
+        return bool(identificador) and not identificador.startswith("demo-")
+
     influencer: Mapped["Influencer"] = relationship(back_populates="social_accounts")
     posts: Mapped[list["Post"]] = relationship(
         back_populates="social_account", cascade="all, delete-orphan"

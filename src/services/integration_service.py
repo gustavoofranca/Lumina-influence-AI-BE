@@ -123,20 +123,9 @@ def get_adapter_for_account(account: SocialAccount) -> SocialAdapter:
     """
     if account.connection_mode == "demo":
         return DemoAdapter(account.platform.value)
-    if _conta_real(account):
+    if account.vinculo_real:
         return _adaptador_real(account.platform)
     return get_adapter(account.platform)
-
-
-def _conta_real(account: SocialAccount) -> bool:
-    """Conta que uma pessoa ligou por OAuth de verdade — conectada ou não.
-
-    A carga inicial não grava `platform_user_id`, e a demonstração grava com o
-    prefixo `demo-` (ver `SocialAccount.connection_mode`). Sobra a conta real, e
-    o identificador dela continua gravado depois que o token sai.
-    """
-    identificador = account.platform_user_id or ""
-    return bool(identificador) and not identificador.startswith("demo-")
 
 
 def _adaptador_real(platform: Platform) -> SocialAdapter:
@@ -378,7 +367,7 @@ def sync_influencer(
             # A simulação infla os números ao acaso e só serve à carga inicial.
             # Conta real sem token fica como está: inventar crescimento sobre o
             # que a plataforma mediu seria apresentar como medido o que não foi.
-            if simulate_if_no_token and not _conta_real(account):
+            if simulate_if_no_token and not account.vinculo_real:
                 r = _simulate_sync(account)
             else:
                 r = {"status": "not_connected"}
