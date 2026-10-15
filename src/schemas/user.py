@@ -5,9 +5,10 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 from src.models import OAuthProvider, UserRole
+from src.schemas.campos import Nome, UrlHttpsOpcional
 
 
 class UserOut(BaseModel):
@@ -30,7 +31,7 @@ class UserCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     email: EmailStr
-    name: str = Field(min_length=1, max_length=160)
+    name: Nome(160)
     role: UserRole = UserRole.MEMBER
     oauth_provider: OAuthProvider = OAuthProvider.GOOGLE
 
@@ -38,6 +39,9 @@ class UserCreateIn(BaseModel):
 class UserUpdateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: Optional[str] = Field(default=None, min_length=1, max_length=160)
-    role: Optional[UserRole] = None
-    avatar_url: Optional[str] = Field(default=None, max_length=500)
+    # Campo obrigatório no banco não é `Optional` aqui. O `None` padrão só marca
+    # "não enviado" — a rota aplica `exclude_unset` —, e um `null` explícito vira
+    # erro de validação no próprio campo, em vez de erro 500 no banco.
+    name: Nome(160) = None
+    role: UserRole = None
+    avatar_url: UrlHttpsOpcional = None

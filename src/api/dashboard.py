@@ -6,10 +6,12 @@ import uuid
 from flask import Blueprint, request
 
 from src.services import dashboard_service
+from src.services.metric_service import PERIOD_DAYS
 from src.utils.auth_decorators import require_auth
 from src.utils.authz import current_agency_id
 from src.utils.errors import ValidationError
 from src.utils.responses import ok
+from src.utils.validation import erro_de_campo
 
 bp = Blueprint("dashboard", __name__, url_prefix="/api/v1/dashboard")
 
@@ -18,6 +20,10 @@ bp = Blueprint("dashboard", __name__, url_prefix="/api/v1/dashboard")
 @require_auth
 def overview():
     period = request.args.get("period", "30d")
+    # Antes, um período desconhecido virava 30 dias em silêncio — a tela mostrava
+    # números de um período que ninguém pediu.
+    if period not in PERIOD_DAYS:
+        raise erro_de_campo("period", f"use um destes: {', '.join(PERIOD_DAYS)}", "enum")
     campaign_raw = request.args.get("campaign_id")
     campaign_id = None
     if campaign_raw and campaign_raw != "all":

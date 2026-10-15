@@ -5,8 +5,9 @@ import uuid
 from datetime import date, datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
+from src.schemas.campos import DataDeNegocio, Linha, periodo_em_ordem
 from src.services.report_service import SECTION_KEYS
 
 
@@ -14,24 +15,37 @@ class ReportCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     campaign_id: uuid.UUID
-    title: str = Field(min_length=1, max_length=200)
-    period_start: date
-    period_end: date
+    title: Linha(200)
+    period_start: DataDeNegocio
+    period_end: DataDeNegocio
+    # Omitir o campo continua valendo "todas as seções". Uma lista vazia
+    # explícita não: gerava, sem avisar, o relatório completo para quem não
+    # marcou nada — a tela já exige pelo menos uma.
     sections: list[str] = Field(default_factory=lambda: list(SECTION_KEYS))
+
+    @field_validator("period_end")
+    @classmethod
+    def _fim_depois_do_inicio(cls, fim: date, info: ValidationInfo) -> date:
+        periodo_em_ordem(info.data.get("period_start"), fim)
+        return fim
 
     @field_validator("sections")
     @classmethod
     def _valid_sections(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("escolha pelo menos uma seção")
         invalid = [s for s in v if s not in SECTION_KEYS]
         if invalid:
-            raise ValueError(f"Seções inválidas: {invalid}. Válidas: {SECTION_KEYS}")
-        return v or list(SECTION_KEYS)
+            raise ValueError(f"seções inválidas: {', '.join(map(str, invalid))}")
+        if len(set(v)) != len(v):
+            raise ValueError("a mesma seção aparece mais de uma vez")
+        return v
 
 
 class ReportPreviewIn(ReportCreateIn):
     """Mesma entrada da criação — a pré-visualização não grava nada."""
 
-    title: str = Field(default="Prévia", min_length=1, max_length=200)
+    title: Linha(200) = "Prévia"
 
 
 class ReportOut(BaseModel):

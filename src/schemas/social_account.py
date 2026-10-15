@@ -5,9 +5,10 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from src.models import Platform
+from src.schemas.campos import Handle, IdDePlataforma, Seguidores
 
 
 class SocialAccountOut(BaseModel):
@@ -38,14 +39,17 @@ class SocialAccountCreateIn(BaseModel):
 
     influencer_id: uuid.UUID
     platform: Platform
-    handle: str = Field(min_length=1, max_length=120)
-    platform_user_id: Optional[str] = Field(default=None, max_length=120)
-    follower_count: int = Field(default=0, ge=0)
+    handle: Handle
+    platform_user_id: IdDePlataforma = None
+    follower_count: Seguidores = 0
 
 
 class SocialAccountUpdateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    handle: Optional[str] = Field(default=None, min_length=1, max_length=120)
-    platform_user_id: Optional[str] = Field(default=None, max_length=120)
-    follower_count: Optional[int] = Field(default=None, ge=0)
+    # Campo obrigatório no banco não é `Optional` aqui. O `None` padrão só marca
+    # "não enviado" — a rota aplica `exclude_unset` —, e um `null` explícito vira
+    # erro de validação no próprio campo, em vez de erro 500 no banco.
+    handle: Handle = None
+    platform_user_id: IdDePlataforma = None
+    follower_count: Seguidores = None

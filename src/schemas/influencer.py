@@ -5,9 +5,10 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from src.models import InfluencerStatus
+from src.schemas.campos import Nome, NomeOpcional, TextoOpcional
 from src.schemas.social_account import SocialAccountOut
 
 
@@ -38,16 +39,19 @@ class InfluencerOut(BaseModel):
 class InfluencerCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    display_name: str = Field(min_length=1, max_length=160)
-    niche: Optional[str] = Field(default=None, max_length=80)
-    bio: Optional[str] = Field(default=None, max_length=500)
+    display_name: Nome(160)
+    niche: NomeOpcional(80) = None
+    bio: TextoOpcional(500) = None
     status: InfluencerStatus = InfluencerStatus.ACTIVE
 
 
 class InfluencerUpdateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    display_name: Optional[str] = Field(default=None, min_length=1, max_length=160)
-    niche: Optional[str] = Field(default=None, max_length=80)
-    bio: Optional[str] = Field(default=None, max_length=500)
-    status: Optional[InfluencerStatus] = None
+    # Campo obrigatório no banco não é `Optional` aqui. O `None` padrão só marca
+    # "não enviado" — a rota aplica `exclude_unset` —, e um `null` explícito vira
+    # erro de validação no próprio campo, em vez de erro 500 no banco.
+    display_name: Nome(160) = None
+    niche: NomeOpcional(80) = None
+    bio: TextoOpcional(500) = None
+    status: InfluencerStatus = None

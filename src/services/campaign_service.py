@@ -8,7 +8,8 @@ from sqlalchemy import Select, select
 
 from src.extensions import db
 from src.models import Campaign, CampaignInfluencer, CampaignStatus, Influencer
-from src.utils.errors import ConflictError, NotFoundError, ValidationError
+from src.utils.errors import ConflictError, NotFoundError
+from src.utils.validation import erro_de_campo
 
 
 def build_campaign_query(
@@ -197,7 +198,7 @@ def apply_update(campaign: Campaign, data: dict) -> Campaign:
     new_start = data.get("period_start", campaign.period_start)
     new_end = data.get("period_end", campaign.period_end)
     if new_end < new_start:
-        raise ValidationError("period_end não pode ser anterior a period_start")
+        raise erro_de_campo("period_end", "o fim não pode ser antes do início")
 
     for field, value in data.items():
         setattr(campaign, field, value)

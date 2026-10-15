@@ -15,8 +15,10 @@ from src.models import (
     Report,
     SocialAccount,
 )
+from src.schemas.campos import cnpj_valido
 from src.services import plan_service
 from src.utils.errors import NotFoundError, ValidationError
+from src.utils.validation import erro_de_campo
 
 
 def load_own_agency(agency_id: uuid.UUID) -> Agency:
@@ -35,9 +37,19 @@ def soft_delete(agency: Agency) -> None:
 
 
 def apply_update(agency: Agency, data: dict) -> Agency:
-    """Aplica o PATCH. plan_id só passa se o plano existir."""
+    """Aplica o PATCH. plan_id só passa se o plano existir.
+
+    O dígito verificador do CNPJ só é conferido quando o CNPJ muda: a tela de
+    Agência reenvia o CNPJ a cada salvamento, e um valor gravado antes desta
+    regra — o da agência principal em produção tem dígito errado — não pode
+    impedir a pessoa de mudar o nome da agência.
+    """
     if data.get("plan_id") is not None and plan_service.find_plan(data["plan_id"]) is None:
         raise ValidationError("plan_id inexistente", details={"plan_id": str(data["plan_id"])})
+
+    novo_cnpj = data.get("cnpj")
+    if novo_cnpj is not None and novo_cnpj != agency.cnpj and not cnpj_valido(novo_cnpj):
+        raise erro_de_campo("cnpj", "CNPJ inválido: o dígito verificador não confere", "cnpj_invalido")
 
     for field, value in data.items():
         setattr(agency, field, value)
