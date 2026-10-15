@@ -228,3 +228,23 @@ def test_flask_run_continua_iniciando_o_agendador(monkeypatch):
 def test_kill_switch_vence_o_papel_designado(monkeypatch):
     assert _decide_scheduler(
         monkeypatch, argv0="/usr/local/bin/gunicorn", role="worker", disable="1") is False
+
+
+def test_sync_metrics_nao_inventa_crescimento_em_conta_real(app, ctx):
+    """O job simula coleta: multiplica as métricas por um fator aleatório.
+
+    Na carga inicial isso dá movimento ao painel de demonstração. Numa conta
+    real, soma crescimento inventado ao que a plataforma mediu — foi o que se
+    achou nos números de uma conta real de Instagram em 15/10/2026: 89 de 90
+    posts com alcance e impressões crescendo exatamente na mesma razão.
+    """
+    with app.app_context():
+        recente = db.session.get(Post, ctx.recent_id)
+        recente.social_account.platform_user_id = "17841400000000001"
+        db.session.commit()
+        antes = (recente.likes, recente.reach_total, recente.impressions)
+
+        run_sync_metrics(rng=random.Random(1))
+
+        recente = db.session.get(Post, ctx.recent_id)
+        assert (recente.likes, recente.reach_total, recente.impressions) == antes
