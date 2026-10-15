@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Annotated, Optional
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
 
-from src.models import InfluencerStatus
+from src.models import InfluencerStatus, RecommendationDecisionKind
 from src.schemas.campos import Nome, NomeOpcional, TextoOpcional
 from src.schemas.social_account import SocialAccountOut
 
@@ -55,3 +55,21 @@ class InfluencerUpdateIn(BaseModel):
     niche: NomeOpcional(80) = None
     bio: TextoOpcional(500) = None
     status: InfluencerStatus = None
+
+
+# Limite de legenda do próprio Instagram — o mesmo `LIMITES.legendaVideo` da tela.
+LIMITE_LEGENDA = 2200
+
+
+class VideoUploadIn(BaseModel):
+    """Campos de texto do envio de vídeo. O arquivo é conferido no serviço."""
+
+    caption: TextoOpcional(LIMITE_LEGENDA) = None
+
+
+class RecommendationDecisionIn(BaseModel):
+    # O id malformado continua sendo 404, e não 422: quem o converte é o
+    # serviço, que trata id que não existe e id que não é id da mesma forma.
+    # Aqui só se limita o tamanho, para o erro não repetir texto gigante.
+    analysis_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
+    decision: RecommendationDecisionKind

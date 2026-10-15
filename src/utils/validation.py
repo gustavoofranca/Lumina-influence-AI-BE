@@ -41,6 +41,10 @@ ROTULOS = {
     "role": "Papel",
     "avatar_url": "Foto",
     "sections": "Seções",
+    "video": "Vídeo",
+    "caption": "Legenda",
+    "analysis_id": "Análise",
+    "decision": "Decisão",
 }
 
 # Erros de tipo que, com `null` na entrada, querem dizer "campo obrigatório
@@ -181,8 +185,17 @@ def parse_json(schema_cls: type[T], *, partial: bool = False) -> T:
         raise ValidationError("Corpo JSON ausente ou inválido", code="invalid_body")
     if not isinstance(payload, dict):
         raise ValidationError("Corpo JSON deve ser um objeto", code="invalid_body")
+    return validar_dados(schema_cls, payload)
+
+
+def validar_dados(schema_cls: type[T], dados: dict) -> T:
+    """Valida um dicionário contra um schema, com o erro no formato de `parse_json`.
+
+    Para entrada que não chega como corpo JSON — os campos de texto de um
+    formulário multipart, por exemplo.
+    """
     try:
-        return schema_cls.model_validate(payload)
+        return schema_cls.model_validate(dados)
     except PydanticValidationError as exc:
         campos = _simplify_errors(exc)
         raise ValidationError(mensagem_geral(campos), details={"fields": campos}) from exc

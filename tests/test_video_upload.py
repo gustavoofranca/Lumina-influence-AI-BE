@@ -5,7 +5,8 @@ O que estes testes guardam:
 1. que o arquivo enviado nunca decide onde grava (travessia de diretório);
 2. que o teto de corpo desta rota não vaza para as outras;
 3. que o escopo de agência vale aqui como em todo o resto;
-4. que falha de análise não deixa lixo — nem post fantasma, nem arquivo órfão.
+4. que falha de análise não deixa lixo — nem post fantasma, nem arquivo órfão;
+5. que o tipo é lido no conteúdo do arquivo, e não no que o cliente declara.
 """
 from __future__ import annotations
 
@@ -22,6 +23,21 @@ from src.models import Post, SentimentLabel
 from src.services import video_upload_service
 
 from tests.test_integrations import ctx  # noqa: F401 — fixture reaproveitada
+
+
+# Começo de arquivo de verdade de cada formato. A checagem lê a assinatura nos
+# primeiros bytes, então o resto pode ser qualquer coisa.
+MP4 = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" + b"\x00" * 64
+MOV = b"\x00\x00\x00\x14ftypqt  \x00\x00\x00\x00qt  " + b"\x00" * 64
+# QuickTime antigo, sem `ftyp`: o arquivo começa direto num átomo.
+MOV_ANTIGO = b"\x00\x00\x00\x08wide\x00\x00\x10\x00mdat" + b"\x00" * 64
+WEBM = (b"\x1a\x45\xdf\xa3\x9f\x42\x86\x81\x01\x42\xf7\x81\x01\x42\xf2\x81\x04"
+        b"\x42\xf3\x81\x08\x42\x82\x84webm\x42\x87\x81\x04\x42\x85\x81\x02") + b"\x00" * 64
+# Mesmo contêiner do MP4 (`ftyp`), mas é foto do iPhone.
+HEIC = b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00mif1heic" + b"\x00" * 64
+# Mesmo contêiner do WebM (EBML), mas Matroska, que o modelo não aceita.
+MKV = (b"\x1a\x45\xdf\xa3\xa3\x42\x86\x81\x01\x42\xf7\x81\x01\x42\xf2\x81\x04"
+       b"\x42\xf3\x81\x08\x42\x82\x88matroska\x42\x87\x81\x04") + b"\x00" * 64
 
 
 class _AnaliseFalsa:
@@ -53,7 +69,7 @@ class _AnaliseFalsa:
         return analise
 
 
-def _enviar(client, contexto, *, conteudo=b"\x00\x01fake-video", nome="clipe.mp4",
+def _enviar(client, contexto, *, conteudo=MP4, nome="clipe.mp4",
             mime="video/mp4", campo="video", extra=None):
     """Monta o multipart como o navegador monta.
 
@@ -138,7 +154,7 @@ def test_criador_de_outra_agencia_404(client, ctx, monkeypatch):  # noqa: F811
     r = client.post(
         f"/api/v1/influencers/{ctx.inf_other_id}/video-analysis",
         headers=ctx.h_admin,
-        data={"video": (io.BytesIO(b"\x00fake"), "c.mp4", "video/mp4")},
+        data={"video": (io.BytesIO(MP4), "c.mp4", "video/mp4")},
         content_type="multipart/form-data",
     )
     assert r.status_code == 404
@@ -237,20 +253,110 @@ def test_campaign_id_malformado_e_recusado(client, ctx):  # noqa: F811
     assert _enviar(client, ctx, extra={"campaign_id": "nao-e-uuid"}).status_code == 422
 
 
-@pytest.mark.parametrize("mime,extensao", [
-    ("video/mp4", ".mp4"),
-    ("video/quicktime", ".mov"),
-    ("video/webm", ".webm"),
+@pytest.mark.parametrize("conteudo,mime,extensao", [
+    (MP4, "video/mp4", ".mp4"),
+    (MOV, "video/quicktime", ".mov"),
+    (MOV_ANTIGO, "video/quicktime", ".mov"),
+    (WEBM, "video/webm", ".webm"),
     # Navegador e CDN mandam octet-stream para vídeo legítimo com frequência:
     # recusar por isso rejeitaria envio válido.
-    ("application/octet-stream", ".mp4"),
+    (MP4, "application/octet-stream", ".mp4"),
+    # E o declarado pode estar errado: quem decide é o conteúdo.
+    (WEBM, "video/mp4", ".webm"),
 ])
-def test_extensao_vem_do_tipo_declarado(client, ctx, app, monkeypatch, mime, extensao):  # noqa: F811
+def test_extensao_vem_do_conteudo(client, ctx, app, monkeypatch, conteudo, mime, extensao):  # noqa: F811
     monkeypatch.setattr(video_upload_service, "analyze_post_multimodal", _AnaliseFalsa())
 
-    r = _enviar(client, ctx, nome="qualquer.xyz", mime=mime)
+    r = _enviar(client, ctx, conteudo=conteudo, nome="qualquer.xyz", mime=mime)
     assert r.status_code == 201
 
     with app.app_context():
         post = db.session.get(Post, uuid.UUID(r.get_json()["data"]["post_id"]))
         assert post.video_url.endswith(extensao)
+
+
+def _arquivos_gravados(app):
+    with app.app_context():
+        return {p.name for p in video_upload_service.storage_dir().iterdir()}
+
+
+@pytest.mark.parametrize("conteudo", [
+    pytest.param(b"<html><script>alert(1)</script></html>", id="html"),
+    pytest.param(b"%PDF-1.7\n" + b"\x00" * 64, id="pdf"),
+    pytest.param(b"MZ\x90\x00" + b"\x00" * 64, id="executavel"),
+    pytest.param(HEIC, id="foto-heic"),
+    pytest.param(MKV, id="matroska"),
+    pytest.param(b"\x00\x00", id="curto-demais"),
+])
+def test_conteudo_que_nao_e_video_e_recusado_mesmo_declarado_como_mp4(
+    client, ctx, app, monkeypatch, conteudo,  # noqa: F811
+):
+    """O tipo declarado é texto do cliente: renomear para `.mp4` não basta.
+
+    Antes, a checagem era uma lista de bloqueio sobre o tipo declarado — um
+    HTML enviado como `video/mp4` era gravado e mandado ao modelo.
+    """
+    chamadas = []
+    monkeypatch.setattr(video_upload_service, "analyze_post_multimodal",
+                        lambda *a, **k: chamadas.append(1))
+    antes = _arquivos_gravados(app)
+
+    r = _enviar(client, ctx, conteudo=conteudo, nome="clipe.mp4", mime="video/mp4")
+
+    assert r.status_code == 422
+    campos = r.get_json()["error"]["details"]["fields"]
+    assert campos[0]["field"] == "video"
+    assert "MP4, MOV ou WebM" in campos[0]["message"]
+    assert chamadas == []
+    assert _arquivos_gravados(app) == antes, "arquivo recusado ficou no disco"
+
+
+def test_legenda_acima_do_limite_e_recusada_antes_de_gravar(client, ctx, app, monkeypatch):  # noqa: F811
+    """2200 caracteres é o limite de legenda do próprio Instagram."""
+    monkeypatch.setattr(video_upload_service, "analyze_post_multimodal", _AnaliseFalsa())
+    antes = _arquivos_gravados(app)
+
+    r = _enviar(client, ctx, extra={"caption": "a" * 2201})
+
+    assert r.status_code == 422
+    campos = r.get_json()["error"]["details"]["fields"]
+    assert campos[0]["field"] == "caption"
+    assert "2200" in campos[0]["message"]
+    assert _arquivos_gravados(app) == antes
+
+
+@pytest.mark.parametrize("legenda", [
+    pytest.param("antes\x00depois", id="byte-nulo"),
+    pytest.param("abc\u202edef", id="inversao-de-direcao"),
+])
+def test_legenda_com_caractere_proibido_e_recusada(client, ctx, monkeypatch, legenda):  # noqa: F811
+    monkeypatch.setattr(video_upload_service, "analyze_post_multimodal", _AnaliseFalsa())
+
+    r = _enviar(client, ctx, extra={"caption": legenda})
+
+    assert r.status_code == 422
+    assert r.get_json()["error"]["details"]["fields"][0]["field"] == "caption"
+
+
+def test_legenda_no_limite_passa_com_quebra_de_linha(client, ctx, app, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(video_upload_service, "analyze_post_multimodal", _AnaliseFalsa())
+    inicio = "linha 1\nlinha 2 #publi "
+    legenda = inicio + "a" * (2200 - len(inicio))
+
+    r = _enviar(client, ctx, extra={"caption": legenda})
+
+    assert r.status_code == 201
+    with app.app_context():
+        post = db.session.get(Post, uuid.UUID(r.get_json()["data"]["post_id"]))
+        assert post.caption == legenda
+
+
+def test_legenda_so_de_caractere_invisivel_vira_nula(client, ctx, app, monkeypatch):  # noqa: F811
+    """Legenda é opcional: o que parece vazio na tela é gravado como vazio."""
+    monkeypatch.setattr(video_upload_service, "analyze_post_multimodal", _AnaliseFalsa())
+
+    r = _enviar(client, ctx, extra={"caption": "\u200b \u200b"})
+
+    assert r.status_code == 201
+    with app.app_context():
+        assert db.session.get(Post, uuid.UUID(r.get_json()["data"]["post_id"])).caption is None

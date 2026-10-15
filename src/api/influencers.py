@@ -11,6 +11,8 @@ from src.schemas.influencer import (
     InfluencerCreateIn,
     InfluencerOut,
     InfluencerUpdateIn,
+    RecommendationDecisionIn,
+    VideoUploadIn,
 )
 from src.services import dashboard_service
 from src.services import influencer_service
@@ -21,7 +23,7 @@ from src.utils.pagination import paginate
 from src.utils.rate_limit import rate_limit
 from src.utils.responses import created, no_content, ok, paginated
 from src.utils.errors import ValidationError
-from src.utils.validation import parse_enum_arg, parse_json
+from src.utils.validation import parse_enum_arg, parse_json, validar_dados
 
 bp = Blueprint("influencers", __name__, url_prefix="/api/v1/influencers")
 
@@ -132,14 +134,12 @@ def decidir_recomendacao(influencer_id, item_index):
     (análise, índice). Repetir o mesmo aceite não empilha registros.
     """
     inf = get_scoped_or_404(Influencer, influencer_id)
-    corpo = request.get_json(silent=True) or {}
-    if not corpo.get("analysis_id"):
-        raise ValidationError("analysis_id é obrigatório")
+    corpo = parse_json(RecommendationDecisionIn)
     return ok(influencer_service.registrar_decisao(
         influencer=inf,
-        analysis_id=corpo["analysis_id"],
+        analysis_id=corpo.analysis_id,
         item_index=item_index,
-        decision=corpo.get("decision", ""),
+        decision=corpo.decision.value,
         user=g.current_user,
     ))
 
@@ -206,6 +206,9 @@ def analisar_video_enviado(influencer_id):
     arquivo = request.files.get("video")
     if arquivo is None or not arquivo.filename:
         raise ValidationError("Envie o arquivo no campo `video`")
+    # O texto é conferido antes do arquivo: recusar a legenda depois de gravar
+    # 50 MB em disco seria desperdiçar a gravação.
+    campos = validar_dados(VideoUploadIn, {"caption": request.form.get("caption")})
 
     campaign_id = request.form.get("campaign_id") or None
     if campaign_id:
@@ -218,7 +221,7 @@ def analisar_video_enviado(influencer_id):
         influencer=inf,
         agency_id=current_agency_id(),
         arquivo=arquivo,
-        caption=request.form.get("caption"),
+        caption=campos.caption,
         campaign_id=campaign_id,
     )
     return created({

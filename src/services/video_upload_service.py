@@ -22,12 +22,13 @@ do sistema — nenhum outro endpoint recebe arquivo. O que guarda esta porta:
   valendo para a API inteira; só esta rota o eleva, por requisição. Quem faz
   isso é o endpoint, não a configuração — afrouxar o teto global protegeria
   menos todos os outros 55 endpoints para servir a um.
-- **Tipo:** a checagem é por exclusão, não por lista de permitidos, pelo mesmo
-  motivo de `media.py`: navegador e CDN mandam `application/octet-stream` para
-  vídeo legítimo com frequência. O que se recusa é o que comprovadamente não é
-  vídeo — HTML, JSON, texto.
+- **Tipo:** lido na assinatura dos primeiros bytes, por lista de permitidos —
+  MP4, MOV e WebM. O tipo declarado não decide nada: é texto do cliente como o
+  nome, e navegador manda `application/octet-stream` para vídeo legítimo com
+  frequência. Até 15/10/2026 a checagem era uma lista de bloqueio sobre o tipo
+  declarado, e um HTML enviado como `video/mp4` era gravado e ia ao modelo.
 - **Nome:** o nome enviado **nunca** toca o disco. O arquivo é gravado com UUID
-  e a extensão derivada do tipo declarado. Nome de arquivo vindo do cliente é
+  e a extensão derivada do conteúdo. Nome de arquivo vindo do cliente é
   travessia de diretório esperando acontecer.
 - **Escopo:** o influencer é resolvido por `get_scoped_or_404`, então uma agência
   não consegue anexar vídeo ao criador de outra.
@@ -42,22 +43,39 @@ from pathlib import Path
 from flask import current_app
 
 from src.extensions import db
-from src.integrations.media import MAX_BYTES, MIMES_QUE_NAO_SAO_VIDEO, LocalFileFetcher
+from src.integrations.media import MAX_BYTES, LocalFileFetcher
 from src.models import AIAnalysis, Campaign, Influencer, Post, PostType, SocialAccount
 from src.services.ai_analysis_service import analyze_post_multimodal
 from src.utils.errors import ValidationError
+from src.utils.validation import erro_de_campo
 
 logger = logging.getLogger(__name__)
 
-# Extensão por tipo declarado. O dicionário existe para **não** usar a extensão
+# Extensão por tipo detectado. O dicionário existe para **não** usar a extensão
 # que veio no nome do arquivo: ela é texto do cliente como qualquer outro.
 EXTENSAO_POR_MIME = {
     "video/mp4": ".mp4",
     "video/quicktime": ".mov",
     "video/webm": ".webm",
-    "video/x-m4v": ".m4v",
-    "application/octet-stream": ".mp4",
 }
+
+# Quanto do começo do arquivo a detecção lê. O cabeçalho EBML do WebM declara o
+# formato (`DocType`) nos primeiros ~40 bytes.
+TAMANHO_DA_ASSINATURA = 64
+
+# MP4 e MOV são caixas ISO: tamanho em 4 bytes, depois o nome da caixa. O
+# arquivo moderno começa por `ftyp`, seguido da marca; o QuickTime antigo
+# começa direto num destes átomos.
+_ATOMOS_QUICKTIME_ANTIGO = {b"moov", b"mdat", b"wide", b"free", b"skip", b"pnot"}
+# Marcas que usam a mesma caixa `ftyp` e não são vídeo: foto HEIF/AVIF (a do
+# iPhone), RAW da Canon e áudio M4A.
+_MARCAS_QUE_NAO_SAO_VIDEO = {
+    b"heic", b"heix", b"heim", b"heis", b"mif1", b"msf1", b"avif", b"avis",
+    b"crx ", b"M4A ", b"M4B ", b"M4P ",
+}
+_EBML = b"\x1a\x45\xdf\xa3"
+
+MENSAGEM_FORMATO = "não é um vídeo em formato aceito (envie MP4, MOV ou WebM)"
 
 
 def storage_dir() -> Path:
@@ -66,22 +84,43 @@ def storage_dir() -> Path:
     return base
 
 
-def _validar_tipo(mime: str) -> str:
-    limpo = (mime or "").split(";")[0].strip().lower()
-    if limpo.startswith(MIMES_QUE_NAO_SAO_VIDEO):
-        raise ValidationError(
-            "O arquivo enviado não é um vídeo",
-            details={"content_type": limpo},
-        )
-    return limpo or "video/mp4"
+def _tipo_pelo_conteudo(inicio: bytes) -> str | None:
+    """Tipo do vídeo pela assinatura nos primeiros bytes, ou None se não for aceito."""
+    caixa, marca = inicio[4:8], inicio[8:12]
+    if caixa == b"ftyp":
+        if marca in _MARCAS_QUE_NAO_SAO_VIDEO:
+            return None
+        return "video/quicktime" if marca == b"qt  " else "video/mp4"
+    if caixa in _ATOMOS_QUICKTIME_ANTIGO:
+        return "video/quicktime"
+    # Matroska usa o mesmo cabeçalho EBML e declara `matroska` no lugar de
+    # `webm`; o modelo não aceita esse formato.
+    if inicio.startswith(_EBML) and b"webm" in inicio:
+        return "video/webm"
+    return None
 
 
-def _gravar(arquivo, mime: str) -> tuple[Path, int]:
-    """Grava em disco com nome gerado, cortando se passar do teto."""
-    destino = storage_dir() / f"{uuid.uuid4().hex}{EXTENSAO_POR_MIME.get(mime, '.mp4')}"
-    escrito = 0
+def _ler_tipo(arquivo) -> tuple[str, bytes]:
+    """Lê o começo do arquivo e devolve o tipo detectado e os bytes já lidos."""
+    inicio = arquivo.read(TAMANHO_DA_ASSINATURA)
+    if not inicio:
+        raise ValidationError("O arquivo enviado está vazio")
+    mime = _tipo_pelo_conteudo(inicio)
+    if mime is None:
+        raise erro_de_campo("video", MENSAGEM_FORMATO)
+    return mime, inicio
+
+
+def _gravar(arquivo, mime: str, inicio: bytes) -> tuple[Path, int]:
+    """Grava em disco com nome gerado, cortando se passar do teto.
+
+    `inicio` são os bytes que a detecção de tipo já leu do arquivo.
+    """
+    destino = storage_dir() / f"{uuid.uuid4().hex}{EXTENSAO_POR_MIME[mime]}"
+    escrito = len(inicio)
     try:
         with open(destino, "wb") as fh:
+            fh.write(inicio)
             while True:
                 pedaco = arquivo.read(1024 * 256)
                 if not pedaco:
@@ -98,10 +137,6 @@ def _gravar(arquivo, mime: str) -> tuple[Path, int]:
         # ocuparia espaço sem nenhum post apontando para ele.
         destino.unlink(missing_ok=True)
         raise
-
-    if escrito == 0:
-        destino.unlink(missing_ok=True)
-        raise ValidationError("O arquivo enviado está vazio")
     return destino, escrito
 
 
@@ -152,8 +187,8 @@ def analisar_video_enviado(
         if campanha is None:
             raise ValidationError("Campanha não encontrada nesta agência")
 
-    mime = _validar_tipo(getattr(arquivo, "mimetype", None))
-    caminho, tamanho = _gravar(arquivo, mime)
+    mime, inicio = _ler_tipo(arquivo)
+    caminho, tamanho = _gravar(arquivo, mime, inicio)
     logger.info(
         "Vídeo recebido: influencer=%s bytes=%d mime=%s", influencer.id, tamanho, mime
     )

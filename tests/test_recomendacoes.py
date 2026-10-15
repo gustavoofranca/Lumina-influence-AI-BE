@@ -211,3 +211,36 @@ def test_apagar_a_analise_leva_a_decisao_junto(client, cena, app):
             select(func.count()).select_from(RecommendationDecision)
             .where(RecommendationDecision.analysis_id == cena.analise_id)
         ) == 0
+
+
+@pytest.mark.parametrize("corpo", [
+    pytest.param([1, 2], id="lista"),
+    pytest.param("accepted", id="texto"),
+])
+def test_corpo_que_nao_e_objeto_e_recusado(client, cena, corpo):
+    """Antes, `corpo.get` estourava num corpo que não é objeto: erro 500."""
+    r = client.put(
+        f"/api/v1/influencers/{cena.criador_id}/recommendations/0",
+        headers=cena.h, json=corpo,
+    )
+    assert r.status_code == 422
+
+
+@pytest.mark.parametrize("decisao", [
+    pytest.param("a" * 100_000, id="gigante"),
+    pytest.param(1, id="numero"),
+    pytest.param(None, id="nula"),
+    pytest.param(["accepted"], id="lista"),
+])
+def test_decisao_invalida_vira_erro_do_campo_sem_ecoar_o_valor(client, cena, decisao):
+    """A recusa diz o que é aceito — e não devolve o que veio.
+
+    Devolver o valor recebido na resposta faz a API repetir 100 mil caracteres
+    que o cliente mandou, e põe texto do cliente no log de quem ler o erro.
+    """
+    r = _decidir(client, cena, 0, decisao)
+
+    assert r.status_code == 422
+    campos = r.get_json()["error"]["details"]["fields"]
+    assert campos[0]["field"] == "decision"
+    assert len(r.data) < 2_000

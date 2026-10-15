@@ -174,8 +174,10 @@ def build_openapi() -> dict:
                         "required": ["video"],
                         "properties": {
                             "video": {"type": "string", "format": "binary",
-                                      "description": "MP4, MOV ou WEBM, até 50 MB"},
-                            "caption": {"type": "string",
+                                      "description": "MP4, MOV ou WEBM, até 50 MB. O formato "
+                                                     "é lido no conteúdo do arquivo; o tipo "
+                                                     "declarado não é considerado"},
+                            "caption": {"type": "string", "maxLength": 2200,
                                         "description": "Legenda da publicação"},
                             "campaign_id": {"type": "string", "format": "uuid",
                                             "description": "Campanha a que a publicação pertence"},
