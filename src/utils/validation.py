@@ -15,6 +15,12 @@ T = TypeVar("T", bound=BaseModel)
 # vira "Marca: deve ter no máximo 160 caracteres" se o campo estiver aqui; fora
 # daqui, sai só a regra.
 ROTULOS = {
+    "password": "Senha",
+    "current_password": "Senha atual",
+    "new_password": "Nova senha",
+    "agency_name": "Nome da agência",
+    "accept_terms": "Termos",
+    "token": "Link",
     "brand_name": "Marca",
     "title": "Título",
     "period_start": "Início",

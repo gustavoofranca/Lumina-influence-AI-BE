@@ -30,6 +30,7 @@ from urllib.parse import urlparse
 from pydantic import (
     AfterValidator,
     BeforeValidator,
+    EmailStr,
     Field,
     StrictInt,
     StringConstraints,
@@ -65,6 +66,38 @@ LIMITE_CENTAVOS = 100_000_000_000
 LIMITE_SEGUIDORES = 10_000_000_000
 
 
+# ---------------------------------------------------------------- links
+# Domínios que, depois de um ponto, fazem um texto ser lido como endereço. A
+# lista é fechada de propósito: "Ltda." e "Jr." terminam em ponto e não são
+# link, e uma regra aberta ("qualquer coisa.qualquer coisa") recusaria nome
+# legítimo. O custo aceito, decidido com o usuário em 15/10/2026: marca cujo
+# nome é um domínio ("Booking.com", "Lumina.AI") também é recusada.
+_TLDS_DE_LINK = frozenset({
+    "com", "br", "net", "org", "io", "app", "ai", "co", "dev", "me", "info",
+    "site", "online", "store", "xyz", "tv", "gg", "ly",
+})
+_PONTUACAO_DE_BORDA = "()[]{}<>\"'.,;:!?"
+
+
+def contem_link(texto: str) -> bool:
+    """True se algum pedaço do texto parece endereço web ou e-mail.
+
+    Corta por espaço e confere cada pedaço, sem expressão regular: o tempo é
+    linear no tamanho do texto, e não há entrada que faça a conferência
+    demorar (ReDoS).
+    """
+    for bruto in texto.lower().split():
+        token = bruto.strip(_PONTUACAO_DE_BORDA)
+        if not token:
+            continue
+        if token.startswith(("http://", "https://", "www.")) or "://" in token:
+            return True
+        partes = token.split("/")[0].split(".")
+        if len(partes) >= 2 and partes[-1] in _TLDS_DE_LINK and all(partes[:-1]):
+            return True
+    return False
+
+
 def _limpar(valor):
     """Normaliza e tira os espaços das pontas. Não-texto segue para o tipo recusar."""
     if not isinstance(valor, str):
@@ -92,6 +125,11 @@ def _conferir_conteudo(*, multilinha: bool, aceita_marcacao: bool):
             raise ValueError(MENSAGEM_EM_BRANCO)
         if not aceita_marcacao and NOME_RECUSA_SINAIS_DE_MARCACAO and _MARCACAO.search(valor):
             raise ValueError("não pode conter os sinais < ou >")
+        # Nome de pessoa, de agência, de marca, de criador e nicho: nenhum deles
+        # é lugar de endereço. Títulos e textos longos (`aceita_marcacao`)
+        # continuam livres.
+        if not aceita_marcacao and contem_link(valor):
+            raise ValueError("não use links neste campo")
         return valor
     return conferir
 
@@ -130,6 +168,72 @@ def LinhaOpcional(maximo: int):
 
 def TextoOpcional(maximo: int):
     return _texto_opcional(maximo, multilinha=True, aceita_marcacao=True)
+
+
+# ---------------------------------------------------------------- pessoa e empresa
+_SEPARADORES_DE_NOME = frozenset(" '’.-")
+_PONTUACAO_DE_EMPRESA = frozenset(" &.,'’-/()+")
+
+
+def _e_letra(c: str) -> bool:
+    # L = letra de qualquer alfabeto; M = acento combinante (o "e" + "´" que
+    # alguns teclados produzem em vez de "é").
+    return unicodedata.category(c)[0] in ("L", "M")
+
+
+def _conferir_nome_de_pessoa(valor: str) -> str:
+    """Letras, espaço, apóstrofo, hífen e ponto. Sobrenome não é obrigatório.
+
+    Segue a orientação do W3C sobre nomes pessoais: há quem tenha um nome só, e
+    exigir sobrenome recusaria gente de verdade.
+    """
+    valor = " ".join(valor.split())
+    if any(c.isdecimal() for c in valor):
+        raise ValueError("não pode ter números")
+    if any(not (_e_letra(c) or c in _SEPARADORES_DE_NOME) for c in valor):
+        raise ValueError("use só letras, espaço, apóstrofo, hífen e ponto")
+    if sum(1 for c in valor if _e_letra(c)) < 2:
+        raise ValueError("deve ter pelo menos 2 letras")
+    return valor
+
+
+def _conferir_nome_de_empresa(valor: str) -> str:
+    valor = " ".join(valor.split())
+    if "@" in valor:
+        raise ValueError("não use @ neste campo")
+    if not any(_e_letra(c) or c.isdecimal() for c in valor):
+        raise ValueError("inclua ao menos uma letra ou número")
+    if any(not (_e_letra(c) or c.isdecimal() or c in _PONTUACAO_DE_EMPRESA) for c in valor):
+        raise ValueError("use só letras, números, espaço e & . , ' - / ( ) +")
+    return valor
+
+
+def NomeDePessoa(maximo: int):
+    return Annotated[Nome(maximo), AfterValidator(_conferir_nome_de_pessoa)]
+
+
+def NomeDeEmpresa(maximo: int):
+    return Annotated[Nome(maximo), AfterValidator(_conferir_nome_de_empresa)]
+
+
+def _email_limpo(valor):
+    """Tira espaços das pontas e grava em minúsculas.
+
+    O `EmailStr` do Pydantic aceita a forma `"Nome" <a@b.com>` e devolve só o
+    endereço; aqui ela é recusada antes, porque ninguém digita isso num campo de
+    e-mail sem estar testando o que passa.
+    """
+    valor = _limpar(valor)
+    if not isinstance(valor, str):
+        return valor
+    if "<" in valor or ">" in valor:
+        raise ValueError("e-mail inválido")
+    if len(valor) > 254:
+        raise ValueError("deve ter no máximo 254 caracteres")
+    return valor.lower()
+
+
+Email = Annotated[EmailStr, BeforeValidator(_email_limpo)]
 
 
 def _identificador(maximo: int):
@@ -173,46 +277,69 @@ def periodo_em_ordem(inicio: date | None, fim: date | None) -> None:
 
 
 # ---------------------------------------------------------------- CNPJ
-_CNPJ_FORMATO = re.compile(r"^[\d.\-/ ]+$")
+# IN RFB 2.229/2024: desde julho de 2026 as 12 primeiras posições aceitam A–Z.
+# Os dois dígitos verificadores continuam numéricos. O DV usa o valor ASCII − 48
+# de cada caractere, o que dá exatamente a regra antiga para dígitos: CNPJ
+# numérico gravado antes continua válido sem conversão nenhuma.
+_CNPJ_SEPARADORES = re.compile(r"[.\-/\s]")
+_CNPJ_SO_PERMITIDOS = re.compile(r"[0-9A-Z]*")
+CNPJ_CRU = re.compile(r"[0-9A-Z]{12}[0-9]{2}")
+_PESOS_CNPJ = (6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2)
+
+
+def cnpj_cru(valor: str) -> str:
+    """Tira os separadores e passa para maiúscula. Não valida."""
+    return _CNPJ_SEPARADORES.sub("", valor).upper()
+
+
+def mascarar_cnpj(cru: str) -> str:
+    return f"{cru[:2]}.{cru[2:5]}.{cru[5:8]}/{cru[8:12]}-{cru[12:]}"
 
 
 def _normalizar_cnpj(valor):
-    """Aceita com ou sem máscara e grava sempre com máscara.
+    """Aceita com ou sem máscara, em qualquer caixa, e devolve mascarado.
 
-    Confere só o formato. O dígito verificador é conferido no serviço, e só
-    quando o CNPJ muda: a tela de Agência reenvia o CNPJ a cada salvamento, e
-    um CNPJ gravado antes desta regra — o da agência principal em produção tem
-    dígito errado — não pode impedir a pessoa de mudar o nome da agência.
+    Confere só o formato. O DV é conferido por `CnpjObrigatorio` (cadastro) ou
+    no serviço da agência, só quando o CNPJ muda — ver `agency_service`.
     """
     valor = _limpar(valor)
     if valor is None or valor == "":
         return None
     if not isinstance(valor, str):
         return valor
-    if not _CNPJ_FORMATO.match(valor):
-        raise ValueError("deve conter só números, pontos, barra e hífen")
-    digitos = re.sub(r"\D", "", valor)
-    if len(digitos) != 14:
-        raise ValueError("deve ter 14 dígitos")
-    return f"{digitos[:2]}.{digitos[2:5]}.{digitos[5:8]}/{digitos[8:12]}-{digitos[12:]}"
+    cru = cnpj_cru(valor)
+    if not _CNPJ_SO_PERMITIDOS.fullmatch(cru):
+        raise ValueError("use só letras sem acento, números, pontos, barra e hífen")
+    if len(cru) != 14:
+        raise ValueError("deve ter 14 caracteres")
+    if not CNPJ_CRU.fullmatch(cru):
+        raise ValueError("os dois últimos caracteres devem ser números")
+    return mascarar_cnpj(cru)
+
+
+def _dv_cnpj(base: str) -> str:
+    pesos = _PESOS_CNPJ[-len(base):]
+    resto = sum((ord(c) - 48) * p for c, p in zip(base, pesos)) % 11
+    return "0" if resto < 2 else str(11 - resto)
 
 
 def cnpj_valido(cnpj: str) -> bool:
-    """Confere os dois dígitos verificadores. Recebe com ou sem máscara."""
-    digitos = re.sub(r"\D", "", cnpj)
-    if len(digitos) != 14 or len(set(digitos)) == 1:
+    """Confere os dois DVs. Recebe com ou sem máscara, em qualquer caixa."""
+    cru = cnpj_cru(cnpj)
+    if not CNPJ_CRU.fullmatch(cru) or len(set(cru)) == 1:
         return False
+    primeiro = _dv_cnpj(cru[:12])
+    return cru[12:] == primeiro + _dv_cnpj(cru[:12] + primeiro)
 
-    def digito(base: str) -> str:
-        pesos = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2][-len(base):]
-        resto = sum(int(d) * p for d, p in zip(base, pesos)) % 11
-        return "0" if resto < 2 else str(11 - resto)
 
-    primeiro = digito(digitos[:12])
-    return digitos[12:] == primeiro + digito(digitos[:12] + primeiro)
+def _dv_confere(valor: str) -> str:
+    if not cnpj_valido(valor):
+        raise ValueError("CNPJ inválido — confira os dígitos")
+    return valor
 
 
 Cnpj = Annotated[Optional[str], BeforeValidator(_normalizar_cnpj)]
+CnpjObrigatorio = Annotated[str, BeforeValidator(_normalizar_cnpj), AfterValidator(_dv_confere)]
 
 
 # ---------------------------------------------------------------- URL de imagem
