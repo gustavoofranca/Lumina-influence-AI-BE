@@ -9,9 +9,11 @@ from __future__ import annotations
 from flask import Blueprint, jsonify
 
 from src.integrations.brasilapi import consultar_cnpj
-from src.schemas.auth import CnpjConsultaIn
+from src.schemas.auth import CnpjConsultaIn, EmailIn, RegisterIn, TokenIn
+from src.services import cadastro_service
+from src.services.auth_service import concluir_login
 from src.utils.rate_limit import ip_do_cliente, limitar
-from src.utils.validation import validar_dados
+from src.utils.validation import parse_json, validar_dados
 
 bp = Blueprint("auth_senha", __name__, url_prefix="/api/v1/auth")
 
@@ -29,3 +31,33 @@ def consultar_cnpj_publico(valor: str):
         "situacao": consulta.situacao,
         "impeditiva": consulta.impeditiva,
     }})
+
+
+def _limitar_fluxo_de_email(email: str) -> None:
+    # Depois da validação: errar um campo várias vezes não pode bloquear quem
+    # está só corrigindo o formulário.
+    limitar("RATE_LIMIT_EMAIL_FLOW_IP", ip_do_cliente())
+    limitar("RATE_LIMIT_EMAIL_FLOW_EMAIL", email)
+
+
+@bp.post("/register")
+def register():
+    dados = parse_json(RegisterIn)
+    _limitar_fluxo_de_email(dados.email)
+    cadastro_service.cadastrar(dados)
+    return jsonify({"data": {"message": cadastro_service.MENSAGEM_LINK_ENVIADO}}), 202
+
+
+@bp.post("/verify-email")
+def verify_email():
+    dados = parse_json(TokenIn)
+    user = cadastro_service.verificar_email(dados.token)
+    return jsonify({"data": concluir_login(user)})
+
+
+@bp.post("/resend-verification")
+def resend_verification():
+    dados = parse_json(EmailIn)
+    _limitar_fluxo_de_email(dados.email)
+    cadastro_service.reenviar_verificacao(dados.email)
+    return jsonify({"data": {"message": cadastro_service.MENSAGEM_SE_HOUVER_CONTA}}), 202

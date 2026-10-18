@@ -3,11 +3,15 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Annotated, Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import (
+    BaseModel, ConfigDict, EmailStr, Field, StrictBool, StrictStr, StringConstraints,
+    ValidationInfo, field_validator,
+)
 
-from src.schemas.campos import CnpjObrigatorio
+from src.schemas.campos import CnpjObrigatorio, Email, NomeDeEmpresa, NomeDePessoa
+from src.utils.senha import problema_da_senha
 
 
 class UserOut(BaseModel):
@@ -59,3 +63,48 @@ class MeOut(BaseModel):
 
 class CnpjConsultaIn(BaseModel):
     cnpj: CnpjObrigatorio
+
+
+# Teto só para não processar corpo absurdo; a regra de verdade é a política.
+SenhaDigitada = Annotated[StrictStr, StringConstraints(max_length=1024)]
+Token = Annotated[StrictStr, StringConstraints(min_length=1, max_length=200)]
+
+
+class RegisterIn(BaseModel):
+    """Cadastro por e-mail e senha. Sem `role`: quem se cadastra é admin da agência nova."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # A ordem importa: `name` e `email` são validados antes de `password`, que
+    # os usa para recusar senha montada com dado da própria pessoa.
+    name: NomeDePessoa(160)
+    email: Email
+    password: SenhaDigitada
+    agency_name: NomeDeEmpresa(160)
+    cnpj: CnpjObrigatorio
+    accept_terms: StrictBool
+
+    @field_validator("password")
+    @classmethod
+    def _politica(cls, valor: str, info: ValidationInfo) -> str:
+        problema = problema_da_senha(valor, email=info.data.get("email"), nome=info.data.get("name"))
+        if problema:
+            raise ValueError(problema)
+        return valor
+
+    @field_validator("accept_terms")
+    @classmethod
+    def _termos(cls, valor: bool) -> bool:
+        if valor is not True:
+            raise ValueError("aceite os Termos de Uso e a Política de Privacidade")
+        return valor
+
+
+class EmailIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: Email
+
+
+class TokenIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: Token

@@ -11,6 +11,7 @@ from flask import Blueprint, current_app, jsonify
 
 from src.schemas.agency import AgencyOut
 from src.schemas.analysis import AIAnalysisOut, PostOut
+from src.schemas.auth import RegisterIn
 from src.schemas.campaign import CampaignCreateIn, CampaignOut
 from src.schemas.influencer import InfluencerCreateIn, InfluencerOut
 from src.schemas.plan import PlanOut
@@ -24,7 +25,7 @@ _MODELS = [
     PlanOut, AgencyOut, UserOut, InfluencerOut, InfluencerCreateIn,
     SocialAccountOut, CampaignOut, CampaignCreateIn, PostOut, AIAnalysisOut,
     ReportOut, ReportCreateIn, ReportPreviewIn,
-    UserCreateIn, SocialAccountCreateIn,
+    UserCreateIn, SocialAccountCreateIn, RegisterIn,
 ]
 
 
@@ -122,6 +123,26 @@ def build_openapi() -> dict:
                     "responses": {"200": {"description": "Resultado da consulta"},
                                   "422": {"description": "Formato ou dígito inválido"},
                                   "429": {"description": "Muitas consultas"}}},
+        },
+        "/api/v1/auth/register": {
+            "post": {"tags": ["Auth"], "summary": "Cadastro por e-mail e senha",
+                     "description": "Sempre 202 com o mesmo corpo — e-mail ou CNPJ já em uso "
+                                    "são avisados por e-mail, não na resposta. Limite: 3/h por "
+                                    "e-mail e 10/h por IP.",
+                     "requestBody": {"content": {"application/json": {"schema": _ref("RegisterIn")}}},
+                     "responses": {"202": {"description": "Link de confirmação enviado"},
+                                   "422": {"description": "Campos inválidos ou CNPJ impeditivo"},
+                                   "429": {"description": "Muitas tentativas"}}},
+        },
+        "/api/v1/auth/verify-email": {
+            "post": {"tags": ["Auth"], "summary": "Confirma o e-mail pelo token do link e entra",
+                     "responses": {"200": {"description": "Usuário, agência e par de tokens"},
+                                   "400": {"description": "Link inválido, usado ou vencido"}}},
+        },
+        "/api/v1/auth/resend-verification": {
+            "post": {"tags": ["Auth"], "summary": "Reenvia o link de confirmação",
+                     "responses": {"202": {"description": "Resposta igual exista ou não a conta"},
+                                   "429": {"description": "Muitas tentativas"}}},
         },
         "/api/v1/dashboard/overview": {
             "get": {"tags": ["Dashboard"], "summary": "KPIs + growth + featured + top performing",
