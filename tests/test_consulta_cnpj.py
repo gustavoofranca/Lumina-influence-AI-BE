@@ -15,9 +15,11 @@ from src.utils.jwt_utils import issue_token_pair
 
 class _Resp:
     def __init__(self, status, corpo=None):
-        self.status_code, self._corpo = status, corpo or {}
+        self.status_code, self._corpo = status, corpo if corpo is not None else {}
 
     def json(self):
+        if isinstance(self._corpo, Exception):
+            raise self._corpo
         return self._corpo
 
 
@@ -154,3 +156,24 @@ def test_patch_da_agencia_recusa_cnpj_de_outra_sem_dizer_de_quem(client, app, co
         with app.app_context():
             db.session.delete(db.session.get(Agency, outra_id))
             db.session.commit()
+
+
+def test_corpo_que_nao_e_json_nao_trava(app, client, receita):
+    receita.respostas["11222333000181"] = _Resp(200, ValueError("html"))
+    with app.app_context():
+        assert consultar_cnpj("11222333000181") == NAO_CONSULTADO
+    assert client.get("/api/v1/auth/cnpj/11222333000181").status_code == 200
+
+
+def test_json_que_nao_e_objeto_nao_trava(app, receita):
+    receita.respostas["11222333000181"] = _Resp(200, [1, 2])
+    with app.app_context():
+        assert consultar_cnpj("11222333000181") == NAO_CONSULTADO
+
+
+def test_situacao_como_texto_continua_impeditiva(app, receita):
+    receita.respostas["11222333000181"] = _Resp(200, {"situacao_cadastral": "8",
+                                                      "descricao_situacao_cadastral": "BAIXADA"})
+    with app.app_context():
+        c = consultar_cnpj("11222333000181")
+    assert c.encontrado is True and c.impeditiva is True

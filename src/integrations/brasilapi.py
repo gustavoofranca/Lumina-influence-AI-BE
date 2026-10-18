@@ -90,12 +90,26 @@ def consultar_cnpj(cnpj: str) -> ConsultaCnpj:
         logger.warning("BrasilAPI respondeu %s; CNPJ segue só pelo DV", resposta.status_code)
         return NAO_CONSULTADO
     else:
-        dados = resposta.json()
+        # Um 200 com corpo que não é JSON (página de erro de proxy) ou com JSON
+        # que não é objeto não pode virar 500: cai no "aceito pelo DV" e não vai
+        # para o cache, como o erro 5xx.
+        try:
+            dados = resposta.json()
+        except ValueError:
+            dados = None
+        if not isinstance(dados, dict):
+            logger.warning("BrasilAPI respondeu 200 com corpo inesperado; CNPJ segue só pelo DV")
+            return NAO_CONSULTADO
+        # A situação pode vir como texto ("8"); sem coerção, um BAIXADA passaria.
+        try:
+            situacao = int(dados.get("situacao_cadastral"))
+        except (TypeError, ValueError):
+            situacao = None
         consulta = ConsultaCnpj(
             encontrado=True,
             razao_social=dados.get("razao_social"),
             situacao=dados.get("descricao_situacao_cadastral"),
-            impeditiva=dados.get("situacao_cadastral") in _SITUACOES_IMPEDITIVAS,
+            impeditiva=situacao in _SITUACOES_IMPEDITIVAS,
         )
     _guardar(cru, consulta)
     return consulta
