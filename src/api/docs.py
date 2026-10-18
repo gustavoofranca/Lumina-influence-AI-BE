@@ -144,6 +144,44 @@ def build_openapi() -> dict:
                      "responses": {"202": {"description": "Resposta igual exista ou não a conta"},
                                    "429": {"description": "Muitas tentativas"}}},
         },
+        "/api/v1/auth/options": {
+            "get": {"tags": ["Auth"], "summary": "Formas de login disponíveis neste ambiente",
+                    "responses": {"200": {"description": "{dev_login, google}"}}},
+        },
+        "/api/v1/auth/login": {
+            "post": {"tags": ["Auth"], "summary": "Login por e-mail e senha",
+                     "description": "Mesma resposta 401 para e-mail inexistente e senha errada. "
+                                    "Limite: 5 falhas/15 min por e-mail e 20 por IP.",
+                     "responses": {"200": {"description": "Usuário, agência e par de tokens"},
+                                   "401": {"description": "E-mail ou senha incorretos"},
+                                   "403": {"description": "Senha certa, e-mail não confirmado"},
+                                   "429": {"description": "Muitas tentativas"}}},
+        },
+        "/api/v1/auth/forgot-password": {
+            "post": {"tags": ["Auth"], "summary": "Envia link para criar nova senha",
+                     "responses": {"202": {"description": "Resposta igual exista ou não a conta"},
+                                   "429": {"description": "Muitas tentativas"}}},
+        },
+        "/api/v1/auth/reset-password": {
+            "post": {"tags": ["Auth"], "summary": "Cria nova senha pelo token do link",
+                     "description": "Encerra todas as sessões abertas da conta.",
+                     "responses": {"204": {"description": "Senha alterada"},
+                                   "400": {"description": "Link inválido, usado ou vencido"},
+                                   "422": {"description": "Senha recusada pela política"}}},
+        },
+        "/api/v1/auth/change-password": {
+            "post": {"tags": ["Auth"], "summary": "Troca a senha (logado)",
+                     "security": [{"bearerAuth": []}],
+                     "description": "Devolve um par novo e encerra as outras sessões. Senha atual "
+                                    "errada é 422 no campo, não 401.",
+                     "responses": {"200": {"description": "Par de tokens novo"},
+                                   "422": {"description": "Senha atual errada ou nova recusada"}}},
+        },
+        "/api/v1/auth/accept-terms": {
+            "post": {"tags": ["Auth"], "summary": "Registra o aceite dos Termos e da Política",
+                     "security": [{"bearerAuth": []}],
+                     "responses": {"204": {"description": "Aceite registrado"}}},
+        },
         "/api/v1/dashboard/overview": {
             "get": {"tags": ["Dashboard"], "summary": "KPIs + growth + featured + top performing",
                     "security": [{"bearerAuth": []}],
@@ -280,8 +318,9 @@ def build_openapi() -> dict:
         },
         "/api/v1/auth/logout": {
             "post": {"tags": ["Auth"], "summary": "Encerra a sessão do lado do cliente",
-                     "description": "JWT é stateless (ADR-001): o servidor não revoga nada. "
-                                    "Responde 204 e o cliente descarta os dois tokens.",
+                     "description": "O servidor não guarda sessão (ADR-001): o cliente descarta "
+                                    "os dois tokens. Trocar ou redefinir a senha encerra todas as "
+                                    "sessões no servidor (ADR-0013).",
                      "security": [{"bearerAuth": []}],
                      "responses": {"204": {"description": "No Content"}}},
         },

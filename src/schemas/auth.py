@@ -108,3 +108,27 @@ class EmailIn(BaseModel):
 class TokenIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     token: Token
+
+
+SenhaInformada = Annotated[StrictStr, StringConstraints(min_length=1, max_length=1024)]
+
+
+class LoginIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: Email
+    # Sem política aqui: quem entra digita a senha que já tem.
+    password: SenhaInformada
+
+
+class ResetPasswordIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: Token
+    # A política é conferida no serviço: ela precisa do e-mail e do nome do
+    # dono do token, que este schema não conhece.
+    password: SenhaDigitada
+
+
+class ChangePasswordIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_password: SenhaInformada
+    new_password: SenhaDigitada
