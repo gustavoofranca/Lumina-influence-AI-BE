@@ -87,6 +87,11 @@ class Config:
     # declara este prazo ao usuário: mudar o número aqui muda um compromisso.
     RETENTION_DAYS: int = int(os.getenv("RETENTION_DAYS", "90"))
 
+    # Cadastro por senha não confirmado some depois deste prazo, liberando o
+    # e-mail e o CNPJ de quem cadastrou e desistiu (ou de quem cadastrou o de
+    # outra pessoa).
+    CONTAS_NAO_VERIFICADAS_DIAS: int = 7
+
     # Front-end
     FRONTEND_ORIGIN: str = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
 

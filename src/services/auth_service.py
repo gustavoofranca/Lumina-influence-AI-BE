@@ -13,7 +13,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from flask import current_app
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from src.extensions import db
 from src.models import (
@@ -96,7 +96,26 @@ def find_or_create_user_from_oauth(
       e avatar, mantém agência. Não troca provider se já estava setado pra outro.
     - Email novo → cria nova Agency "Minha Agência" + User como ADMIN.
     """
-    user = db.session.scalar(select(User).where(User.email == email))
+    email = email.strip().lower()
+    user = db.session.scalar(select(User).where(func.lower(User.email) == email))
+
+    if (
+        user is not None
+        and user.password_hash
+        and user.email_verificado_em is None
+        and user.deleted_at is None
+    ):
+        # Pré-sequestro de conta: alguém cadastrou este e-mail com uma senha que
+        # só ele sabe e nunca confirmou o link. O provedor acabou de provar quem
+        # é a dona do endereço; herdar aquele cadastro entregaria a ela uma conta
+        # cuja senha o outro conhece. O cadastro pendente não tem dado nenhum —
+        # não dá para entrar sem confirmar —, então some, e a conta nasce limpa.
+        agencia = user.agency
+        sozinho = agencia is not None and all(u.id == user.id for u in agencia.users)
+        logger.info("OAuth descartou cadastro não verificado %s", user.id)
+        db.session.delete(agencia if sozinho else user)
+        db.session.flush()
+        user = None
 
     if user is not None:
         if user.deleted_at is not None:
@@ -109,6 +128,9 @@ def find_or_create_user_from_oauth(
             user.avatar_url = avatar_url
         if not user.name:
             user.name = name
+        # O provedor confirmou o e-mail: vale como verificação.
+        if user.email_verificado_em is None:
+            user.email_verificado_em = datetime.now(timezone.utc)
         db.session.commit()
         # O log identifica pelo id, não pelo email. Email é dado pessoal sob a
         # LGPD, e o log sai da fronteira de retenção do banco: vai para arquivo,
@@ -127,6 +149,7 @@ def find_or_create_user_from_oauth(
         oauth_id=oauth_id,
         role=UserRole.ADMIN,
         agency=agency,
+        email_verificado_em=datetime.now(timezone.utc),
     )
     db.session.add(agency)
     db.session.add(user)

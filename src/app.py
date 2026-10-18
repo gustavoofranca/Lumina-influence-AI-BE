@@ -197,6 +197,31 @@ def _register_cli(app: Flask) -> None:
             click.echo(f"  {j['id']:.<26} {j['trigger']} ({sched})")
             click.echo(f"  {'':<26} {j['description']}")
 
+    @app.cli.group()
+    def users() -> None:
+        """Comandos de conta de usuário."""
+
+    @users.command("set-password")
+    @click.argument("email")
+    def users_set_password(email: str) -> None:
+        """Define a senha de um usuário existente. A senha é pedida duas vezes, sem eco.
+
+        Nunca por argumento: o que vai na linha de comando fica no histórico do
+        terminal e na lista de processos.
+        """
+        from src.services.senha_service import definir_senha_por_admin
+
+        senha = click.prompt("Nova senha", hide_input=True, confirmation_prompt=True)
+        try:
+            definir_senha_por_admin(email, senha)
+        except ValueError as exc:
+            click.secho(f"[ERRO] {exc}", fg="red")
+            raise SystemExit(1) from exc
+        click.secho(
+            "[OK] Senha definida. O e-mail ficou confirmado e as sessões abertas foram encerradas.",
+            fg="green",
+        )
+
     @jobs.command("run")
     @click.argument("name")
     def jobs_run(name: str) -> None:
