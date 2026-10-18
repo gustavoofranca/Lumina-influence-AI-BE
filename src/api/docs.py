@@ -112,6 +112,17 @@ def build_openapi() -> dict:
             "post": {"tags": ["Auth"], "summary": "Renova access token (refresh)",
                      "security": [{"bearerAuth": []}], "responses": {"200": {"description": "Novo par de tokens"}}},
         },
+        "/api/v1/auth/cnpj/{cnpj}": {
+            "get": {"tags": ["Auth"], "summary": "Consulta pública de CNPJ (BrasilAPI)",
+                    "description": "Repassa só razão social e situação. Nunca recusa por "
+                                   "indisponibilidade; `impeditiva` só para NULA, SUSPENSA, "
+                                   "INAPTA ou BAIXADA. Limite: 20/min por IP.",
+                    "parameters": [{"name": "cnpj", "in": "path", "required": True,
+                                    "schema": {"type": "string"}}],
+                    "responses": {"200": {"description": "Resultado da consulta"},
+                                  "422": {"description": "Formato ou dígito inválido"},
+                                  "429": {"description": "Muitas consultas"}}},
+        },
         "/api/v1/dashboard/overview": {
             "get": {"tags": ["Dashboard"], "summary": "KPIs + growth + featured + top performing",
                     "security": [{"bearerAuth": []}],

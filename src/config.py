@@ -100,6 +100,10 @@ class Config:
     SMTP_PASSWORD: str | None = os.getenv("SMTP_PASSWORD")
     SMTP_FROM: str | None = os.getenv("SMTP_FROM")
 
+    # Consulta de CNPJ na BrasilAPI (gratuita, sem chave). Desligada nos testes:
+    # a suíte não depende de rede.
+    CNPJ_CONSULTA_ENABLED: bool = os.getenv("CNPJ_CONSULTA_ENABLED", "true").lower() == "true"
+
     # Base usada pra montar os redirect_uri do OAuth. Deve bater EXATAMENTE com o
     # que está registrado no provider (Google/Microsoft). Se None, usa o host da request.
     OAUTH_REDIRECT_BASE: str | None = os.getenv("OAUTH_REDIRECT_BASE")
@@ -242,6 +246,7 @@ class TestConfig(Config):
     TIKTOK_CLIENT_SECRET = "test-tiktok-secret"
     # A suíte nunca manda e-mail de verdade, mesmo com SMTP no .env de quem roda.
     SMTP_HOST = None
+    CNPJ_CONSULTA_ENABLED = False
 
 
 class StagingConfig(Config):

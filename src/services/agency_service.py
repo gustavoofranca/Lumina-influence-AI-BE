@@ -15,6 +15,7 @@ from src.models import (
     Report,
     SocialAccount,
 )
+from src.integrations.brasilapi import consultar_cnpj
 from src.schemas.campos import cnpj_valido
 from src.services import plan_service
 from src.utils.errors import NotFoundError, ValidationError
@@ -48,8 +49,27 @@ def apply_update(agency: Agency, data: dict) -> Agency:
         raise ValidationError("plan_id inexistente", details={"plan_id": str(data["plan_id"])})
 
     novo_cnpj = data.get("cnpj")
-    if novo_cnpj is not None and novo_cnpj != agency.cnpj and not cnpj_valido(novo_cnpj):
-        raise erro_de_campo("cnpj", "CNPJ inválido: o dígito verificador não confere", "cnpj_invalido")
+    novo_cnpj = data.get("cnpj")
+    if novo_cnpj is not None and novo_cnpj != agency.cnpj:
+        if not cnpj_valido(novo_cnpj):
+            raise erro_de_campo("cnpj", "CNPJ inválido: o dígito verificador não confere", "cnpj_invalido")
+        # Antes, o CNPJ de outra agência estourava a restrição de unicidade em
+        # erro 500. A mensagem não confirma de quem ele é: quem edita a própria
+        # agência não precisa saber quem mais é cliente.
+        ocupado = db.session.scalar(
+            select(Agency.id).where(Agency.cnpj == novo_cnpj, Agency.id != agency.id)
+        )
+        if ocupado is not None:
+            raise erro_de_campo(
+                "cnpj",
+                "não foi possível usar este CNPJ; se ele é da sua empresa, fale com o suporte",
+                "cnpj_unavailable",
+            )
+        consulta = consultar_cnpj(novo_cnpj)
+        if consulta.impeditiva:
+            raise erro_de_campo(
+                "cnpj", f"este CNPJ está {consulta.situacao} na Receita Federal", "cnpj_inactive"
+            )
 
     for field, value in data.items():
         setattr(agency, field, value)

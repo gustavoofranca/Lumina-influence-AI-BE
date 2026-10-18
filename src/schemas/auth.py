@@ -7,6 +7,8 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from src.schemas.campos import CnpjObrigatorio
+
 
 class UserOut(BaseModel):
     """Representação pública de um usuário autenticado. Nunca inclui o hash."""
@@ -53,3 +55,7 @@ class LoginCallbackOut(BaseModel):
 class MeOut(BaseModel):
     user: UserOut
     agency: Optional[AgencySummaryOut] = None
+
+
+class CnpjConsultaIn(BaseModel):
+    cnpj: CnpjObrigatorio
