@@ -42,3 +42,37 @@ def db_session(app):
         _db.session.rollback()
         transaction.rollback()
         connection.close()
+
+
+SENHA_DE_TESTE = "café com pão de queijo"
+
+
+class _Conta:
+    pass
+
+
+@pytest.fixture()
+def conta_com_senha(app):
+    """Agência + admin verificado com senha. Some no fim, com tudo o que pendurar nele."""
+    from datetime import datetime, timezone
+
+    from src.models import Agency, User, UserRole
+    from src.utils.senha import gerar_hash
+
+    with app.app_context():
+        agencia = Agency(name="Agência da Conta", cnpj="11.222.333/0001-81")
+        user = User(
+            email="conta@agencia.com.br", name="Conta Teste", role=UserRole.ADMIN,
+            agency=agencia, password_hash=gerar_hash(SENHA_DE_TESTE),
+            email_verificado_em=datetime.now(timezone.utc),
+        )
+        _db.session.add_all([agencia, user])
+        _db.session.commit()
+        c = _Conta()
+        c.id, c.agency_id, c.email, c.senha = user.id, agencia.id, user.email, SENHA_DE_TESTE
+    yield c
+    with app.app_context():
+        restante = _db.session.get(Agency, c.agency_id)
+        if restante is not None:
+            _db.session.delete(restante)
+            _db.session.commit()
