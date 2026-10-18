@@ -72,6 +72,20 @@ def test_sem_smtp_vai_para_o_log_sem_o_destinatario(app, monkeypatch, caplog):
     assert "ana@x.com" not in caplog.text
 
 
+def test_sem_smtp_fora_do_debug_nao_loga_o_token(app, monkeypatch, caplog):
+    # `app.debug` lê config["DEBUG"]; é essa chave que o teste desliga.
+    monkeypatch.setitem(app.config, "TESTING", False)
+    monkeypatch.setitem(app.config, "DEBUG", False)
+    monkeypatch.setitem(app.config, "SMTP_HOST", None)
+    assert app.debug is False
+    msg = Mensagem("ana@x.com", "Assunto sigiloso", "abra /x?token=SEGREDO123", "<p>h</p>")
+    with app.app_context(), caplog.at_level(logging.INFO):
+        enviar(msg)
+    assert "Assunto sigiloso" in caplog.text
+    assert "SEGREDO123" not in caplog.text
+    assert "ana@x.com" not in caplog.text
+
+
 def test_quebra_de_linha_no_assunto_e_recusada():
     with pytest.raises(ValueError):
         email_mod._montar(CFG, Mensagem("a@x.com", "Oi\nBcc: alvo@y.com", "t", "h"))

@@ -4,10 +4,15 @@ Três destinos, escolhidos pelo ambiente:
 
 - **Testes:** a mensagem vai para uma lista na app (`caixa_de_saida`), e a
   suíte confere o que foi "enviado" sem rede.
-- **Sem SMTP configurado (desenvolvimento):** a mensagem vai para o log, com o
-  link — é como se clica no link de verificação sem servidor de e-mail. O
-  destinatário não entra no log (o log sai da fronteira de retenção do banco;
-  ver `auth_service`). Produção não chega aqui: `ProdConfig` exige SMTP_HOST.
+- **Sem SMTP configurado, em desenvolvimento (`debug`):** a mensagem vai para
+  o log, com o link — é como se clica no link de verificação sem servidor de
+  e-mail. O destinatário não entra no log (o log sai da fronteira de retenção
+  do banco; ver `auth_service`).
+- **Sem SMTP configurado, fora de desenvolvimento:** só um aviso com o
+  assunto, dizendo que o e-mail não foi enviado. O texto leva o link com o
+  token, e token não vai para log. Isto importa porque `ProdConfig` exige
+  SMTP_HOST, mas `StagingConfig` não: um staging sem SMTP gravaria tokens
+  vivos no log de INFO.
 - **SMTP:** STARTTLS na 587, numa thread à parte. Falha vira log, não erro na
   tela: a resposta ao usuário já saiu, e ela é a mesma com ou sem e-mail.
 """
@@ -49,7 +54,10 @@ def enviar(msg: Mensagem) -> None:
     # A thread não tem contexto da app: a configuração vai copiada.
     cfg = {campo: app.config.get(campo) for campo in _CAMPOS_SMTP}
     if not cfg["SMTP_HOST"]:
-        logger.info("E-mail sem SMTP configurado — %s\n%s", msg.assunto, msg.texto)
+        if app.debug:
+            logger.info("E-mail sem SMTP configurado — %s\n%s", msg.assunto, msg.texto)
+        else:
+            logger.warning("E-mail NÃO enviado: SMTP não configurado — %s", msg.assunto)
         return
     _executor.submit(_enviar_smtp, cfg, msg)
 
