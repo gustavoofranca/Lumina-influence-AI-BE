@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 
 from src.extensions import db
+from src.integrations.brasilapi import consultar_cnpj
 from src.models import (
     Agency,
     AIAnalysis,
@@ -15,7 +16,6 @@ from src.models import (
     Report,
     SocialAccount,
 )
-from src.integrations.brasilapi import consultar_cnpj
 from src.schemas.campos import cnpj_valido
 from src.services import plan_service
 from src.utils.errors import NotFoundError, ValidationError
@@ -48,7 +48,6 @@ def apply_update(agency: Agency, data: dict) -> Agency:
     if data.get("plan_id") is not None and plan_service.find_plan(data["plan_id"]) is None:
         raise ValidationError("plan_id inexistente", details={"plan_id": str(data["plan_id"])})
 
-    novo_cnpj = data.get("cnpj")
     novo_cnpj = data.get("cnpj")
     if novo_cnpj is not None and novo_cnpj != agency.cnpj:
         if not cnpj_valido(novo_cnpj):
