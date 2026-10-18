@@ -71,3 +71,14 @@ class SentimentLabel(str, enum.Enum):
 class ReportFormat(str, enum.Enum):
     PDF = "pdf"
     JSON = "json"
+
+
+class FinalidadeToken(str, enum.Enum):
+    """Para que serve um token de uso único enviado por e-mail.
+
+    O banco grava o *nome* do membro (`VERIFICAR_EMAIL`), como em todo enum do
+    projeto — ver o cabeçalho da migration 0006.
+    """
+
+    VERIFICAR_EMAIL = "verificar_email"
+    REDEFINIR_SENHA = "redefinir_senha"

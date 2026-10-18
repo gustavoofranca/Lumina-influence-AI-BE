@@ -18,7 +18,8 @@ class UserOut(BaseModel):
     email: EmailStr
     name: str
     avatar_url: Optional[str] = None
-    oauth_provider: str
+    oauth_provider: Optional[str] = None
+    has_password: bool = False
     role: str
     agency_id: Optional[uuid.UUID] = None
     created_at: datetime

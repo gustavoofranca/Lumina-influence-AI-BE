@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class UserOut(BaseModel):
-    """Representação pública de um usuário autenticado."""
+    """Representação pública de um usuário autenticado. Nunca inclui o hash."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -17,9 +17,12 @@ class UserOut(BaseModel):
     email: EmailStr
     name: str
     avatar_url: Optional[str] = None
-    oauth_provider: str
+    oauth_provider: Optional[str] = None
     role: str
     agency_id: Optional[uuid.UUID] = None
+    has_password: bool = False
+    email_verified: bool = False
+    terms_accepted: bool = False
     created_at: datetime
 
 
@@ -28,6 +31,8 @@ class AgencySummaryOut(BaseModel):
 
     id: uuid.UUID
     name: str
+    # O front usa para levar o admin sem CNPJ ao primeiro acesso.
+    cnpj: Optional[str] = None
 
 
 class TokenPairOut(BaseModel):

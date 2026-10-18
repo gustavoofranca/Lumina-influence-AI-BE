@@ -5,6 +5,7 @@ do app (via `src.app`) pra que o Alembic autogenerate enxergue tudo.
 """
 from src.models._enums import (
     CampaignStatus,
+    FinalidadeToken,
     InfluencerStatus,
     OAuthProvider,
     Platform,
@@ -18,6 +19,7 @@ from src.models.agency import Agency, Plan
 from src.models.ai_analysis import AIAnalysis
 from src.models.api_usage import ApiUsageLog
 from src.models.recommendation_decision import RecommendationDecision
+from src.models.auth_token import AuthToken
 from src.models.base import Base, JSONField, SoftDeleteMixin, TimestampMixin
 from src.models.campaign import Campaign, CampaignInfluencer
 from src.models.influencer import Influencer
@@ -40,7 +42,9 @@ __all__ = [
     "ReportFormat",
     "SentimentLabel",
     "UserRole",
+    "FinalidadeToken",
     "AIAnalysis",
+    "AuthToken",
     "Agency",
     "ApiUsageLog",
     "RecommendationDecision",
