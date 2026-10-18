@@ -24,6 +24,7 @@ requests==2.34.2
 google-genai==2.19.0
 python-dotenv==1.2.3
 cryptography==50.0.0
+argon2-cffi==25.1.0
 apscheduler==3.11.3
 flasgger==0.9.7.1
 xhtml2pdf==0.2.17
