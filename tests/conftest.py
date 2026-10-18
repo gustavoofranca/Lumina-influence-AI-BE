@@ -76,3 +76,14 @@ def conta_com_senha(app):
         if restante is not None:
             _db.session.delete(restante)
             _db.session.commit()
+
+
+@pytest.fixture()
+def outbox(app):
+    """E-mails "enviados" durante o teste, na ordem."""
+    from src.integrations.email import caixa_de_saida
+
+    caixa = caixa_de_saida(app)
+    caixa.clear()
+    yield caixa
+    caixa.clear()

@@ -90,6 +90,16 @@ class Config:
     # Front-end
     FRONTEND_ORIGIN: str = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
 
+    # E-mail transacional (verificação de e-mail e redefinição de senha). Com
+    # Gmail: smtp.gmail.com, porta 587, e uma "senha de app" — exige
+    # verificação em duas etapas ligada na conta. Sem SMTP_HOST o e-mail vai
+    # para o log, o que serve ao desenvolvimento e à CI; produção exige SMTP.
+    SMTP_HOST: str | None = os.getenv("SMTP_HOST")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER: str | None = os.getenv("SMTP_USER")
+    SMTP_PASSWORD: str | None = os.getenv("SMTP_PASSWORD")
+    SMTP_FROM: str | None = os.getenv("SMTP_FROM")
+
     # Base usada pra montar os redirect_uri do OAuth. Deve bater EXATAMENTE com o
     # que está registrado no provider (Google/Microsoft). Se None, usa o host da request.
     OAUTH_REDIRECT_BASE: str | None = os.getenv("OAUTH_REDIRECT_BASE")
@@ -230,6 +240,8 @@ class TestConfig(Config):
     META_CLIENT_SECRET = "test-meta-secret"
     TIKTOK_CLIENT_KEY = "test-tiktok-key"
     TIKTOK_CLIENT_SECRET = "test-tiktok-secret"
+    # A suíte nunca manda e-mail de verdade, mesmo com SMTP no .env de quem roda.
+    SMTP_HOST = None
 
 
 class StagingConfig(Config):
@@ -257,7 +269,7 @@ class ProdConfig(Config):
 
     def __init__(self) -> None:
         # Em prod, sem defaults inseguros — valida no boot.
-        for name in ("DATABASE_URL", "JWT_SECRET", "FERNET_KEY"):
+        for name in ("DATABASE_URL", "JWT_SECRET", "FERNET_KEY", "SMTP_HOST"):
             if not os.getenv(name):
                 raise RuntimeError(
                     f"Variável de ambiente obrigatória ausente em produção: {name}"
