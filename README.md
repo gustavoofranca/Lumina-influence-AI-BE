@@ -1,6 +1,6 @@
 # Lumina Influence AI — Back-End
 
-API REST em **Python + Flask** que serve o front-end do SaaS de auditoria de performance de influenciadores digitais. Persistência em **PostgreSQL**, autenticação **OAuth 2.0 (Google/Microsoft) + JWT**, análise de IA via **Google Gemini** (texto e multimodal), integração com **APIs sociais** (Instagram/TikTok/YouTube) e geração de **relatórios PDF**.
+API REST em **Python + Flask** que serve o front-end do SaaS de auditoria de performance de influenciadores digitais. Persistência em **PostgreSQL**, autenticação por **e-mail e senha ou OAuth 2.0 (Google/Microsoft)**, com **JWT**, análise de IA via **Google Gemini** (texto e multimodal), integração com **APIs sociais** (Instagram/TikTok/YouTube) e geração de **relatórios PDF**.
 
 > TCC de Engenharia de Software. O contexto completo — modelo de domínio, padrões e plano de
 > etapas B0→B12 — vive no documento do trabalho, fora deste repositório. As decisões de
@@ -19,7 +19,7 @@ API REST em **Python + Flask** que serve o front-end do SaaS de auditoria de per
 | ORM | SQLAlchemy 2.x (`DeclarativeBase`, `Mapped[]`) |
 | Banco | PostgreSQL 15+ |
 | Migrations | Alembic (via Flask-Migrate) |
-| Auth | OAuth 2.0 (Google/Microsoft) + JWT (PyJWT) |
+| Auth | Senha (Argon2id) + OAuth 2.0 (Google/Microsoft) + JWT (PyJWT) |
 | Validação | Pydantic v2 |
 | IA | Google Gemini (`google-genai`), multimodal nativo |
 | Jobs | APScheduler (in-process, jobstore SQLAlchemy) |
@@ -87,6 +87,8 @@ curl http://localhost:5000/api/v1/health
 | `OAUTH_REDIRECT_BASE` | base dos redirect URIs OAuth (ex: `http://localhost:5000`) |
 | `META/TIKTOK/YOUTUBE_CLIENT_*` | APIs sociais (B8) |
 | `AUTH_SUCCESS_REDIRECT` | para onde o callback devolve o navegador (ex: `http://localhost:5173/auth/callback`). Vazio faz o callback responder JSON |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` | envio dos e-mails de verificação e redefinição; Gmail com senha de app |
+| `CNPJ_CONSULTA_ENABLED` | consulta de CNPJ na BrasilAPI durante o cadastro (default `true`) |
 | `FRONTEND_ORIGIN` | origem do front p/ CORS (default `http://localhost:5173`) |
 | `LUMINA_DISABLE_SCHEDULER` | `1` desliga os jobs em background. **Recomendado no free tier do Gemini**, que dá 20 requisições por dia: o job de análises consome a cota inteira sozinho |
 
@@ -102,6 +104,7 @@ curl http://localhost:5000/api/v1/health
 | Aplicar migrations | `flask db upgrade` |
 | Popular seed | `flask seed run` |
 | Limpar seed | `flask seed clear` |
+| Definir senha de um usuário | `flask users set-password <email>` |
 | Listar jobs | `flask jobs list` |
 | Rodar job manual | `flask jobs run <name>` |
 | Servidor (desenvolvimento) | `flask run` |
@@ -131,7 +134,7 @@ Quase todos os endpoints exigem `Authorization: Bearer <access_token>`. Para obt
 
 | Grupo | Endpoints |
 |---|---|
-| Auth | `/auth/google/login` · `/auth/google/callback` · `/auth/refresh` · `/auth/logout` · `/auth/me` |
+| Auth | `/auth/google/login` · `/auth/google/callback` · `/auth/login` · `/auth/register` · `/auth/verify-email` · `/auth/forgot-password` · `/auth/reset-password` · `/auth/change-password` · `/auth/refresh` · `/auth/logout` · `/auth/me` |
 | CRUD | `/plans` `/agencies` `/users` `/influencers` `/social-accounts` `/campaigns` |
 | Dashboard | `/dashboard/overview` · `/dashboard/network-density` · `/influencers/:id/analysis` · `/influencers/:id/posts` · `/campaigns/:id/benchmarking` |
 | IA | `POST /posts/:id/analyze` (`?multimodal=true`) · `GET /posts/:id/analyses` |
