@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import timezone
 from functools import wraps
 from typing import Callable
 
@@ -36,6 +37,17 @@ def _load_user(user_id_str: str) -> User:
     return user
 
 
+def _conferir_marco_de_sessao(user: User, payload: dict) -> None:
+    """Recusa token emitido antes da última troca de senha (ADR-0013)."""
+    marco = user.sessoes_validas_desde
+    if marco is None:
+        return
+    if marco.tzinfo is None:
+        marco = marco.replace(tzinfo=timezone.utc)
+    if int(payload.get("iat", 0)) < int(marco.timestamp()):
+        raise UnauthorizedError("Sessão encerrada. Entre novamente.", code="token_revoked")
+
+
 def require_auth(view: Callable) -> Callable:
     """Exige Authorization: Bearer <access_token>. Injeta g.current_user."""
 
@@ -44,6 +56,7 @@ def require_auth(view: Callable) -> Callable:
         token = _extract_bearer()
         payload = decode_token(token, expected_type="access")
         user = _load_user(payload["sub"])
+        _conferir_marco_de_sessao(user, payload)
         g.current_user = user
         g.jwt_claims = payload
         return view(*args, **kwargs)
@@ -59,6 +72,7 @@ def require_refresh(view: Callable) -> Callable:
         token = _extract_bearer()
         payload = decode_token(token, expected_type="refresh")
         user = _load_user(payload["sub"])
+        _conferir_marco_de_sessao(user, payload)
         g.current_user = user
         g.jwt_claims = payload
         return view(*args, **kwargs)

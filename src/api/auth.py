@@ -18,12 +18,12 @@ from src.integrations.microsoft_oauth import MicrosoftOAuthClient
 from src.models import OAuthProvider as OAuthProviderEnum
 from src.schemas.auth import (
     AgencySummaryOut,
-    LoginCallbackOut,
     MeOut,
     TokenPairOut,
     UserOut,
 )
 from src.services.auth_service import (
+    concluir_login,
     consume_oauth_state,
     create_oauth_state,
     find_or_create_user_from_oauth,
@@ -51,14 +51,7 @@ def _build_redirect_uri(endpoint: str) -> str:
 
 
 def _build_login_response(user) -> dict:
-    tokens = issue_token_pair(user)
-    ttl_seconds = int(current_app.config["JWT_ACCESS_TTL"].total_seconds())
-    payload = LoginCallbackOut(
-        user=UserOut.model_validate(user),
-        agency=AgencySummaryOut.model_validate(user.agency) if user.agency else None,
-        tokens=TokenPairOut(**tokens, expires_in_seconds=ttl_seconds),
-    )
-    return payload.model_dump(mode="json")
+    return concluir_login(user)
 
 
 def _login_result(user, *, agencia_criada: bool = False):
@@ -70,17 +63,16 @@ def _login_result(user, *, agencia_criada: bool = False):
     from urllib.parse import urlencode
 
     redirect_base = current_app.config.get("AUTH_SUCCESS_REDIRECT")
-    tokens = issue_token_pair(user)
+    payload = concluir_login(user)
     if redirect_base:
         # Tokens no fragmento (#) — não vão pro servidor nem ficam em logs/histórico.
         campos = {
-            "access_token": tokens["access_token"],
-            "refresh_token": tokens["refresh_token"],
+            "access_token": payload["tokens"]["access_token"],
+            "refresh_token": payload["tokens"]["refresh_token"],
         }
         if agencia_criada:
             campos["new_agency"] = "1"
         return redirect(f"{redirect_base}#{urlencode(campos)}")
-    payload = _build_login_response(user)
     payload["new_agency"] = agencia_criada
     return jsonify({"data": payload})
 

@@ -12,6 +12,7 @@ import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
+from flask import current_app
 from sqlalchemy import select
 
 from src.extensions import db
@@ -22,7 +23,9 @@ from src.models import (
     User,
     UserRole,
 )
+from src.schemas.auth import AgencySummaryOut, LoginCallbackOut, TokenPairOut, UserOut
 from src.utils.errors import UnauthorizedError
+from src.utils.jwt_utils import issue_token_pair
 
 logger = logging.getLogger(__name__)
 
@@ -165,3 +168,34 @@ def resolve_dev_login_user(email: str | None) -> User | None:
     if seeded_admin is not None:
         return seeded_admin
     return db.session.scalar(select(User).where(User.role == UserRole.ADMIN))
+
+
+# --------------------------------------------------------------------------
+# Sessão
+# --------------------------------------------------------------------------
+def concluir_login(user: User) -> dict:
+    """Ponto único em que um login vira sessão: senha, Google, Microsoft,
+    verificação de e-mail, troca de senha e o atalho de desenvolvimento passam
+    todos por aqui.
+
+    É o encaixe do 2FA (spec, seção 8): quando ele existir, esta função passa a
+    devolver um desafio em vez dos tokens para quem tiver 2FA ativo, e nenhum
+    chamador muda.
+    """
+    tokens = issue_token_pair(user)
+    ttl = int(current_app.config["JWT_ACCESS_TTL"].total_seconds())
+    return LoginCallbackOut(
+        user=UserOut.model_validate(user),
+        agency=AgencySummaryOut.model_validate(user.agency) if user.agency else None,
+        tokens=TokenPairOut(**tokens, expires_in_seconds=ttl),
+    ).model_dump(mode="json")
+
+
+def invalidar_sessoes(user: User) -> None:
+    """Todo token emitido antes deste segundo deixa de valer. O commit fica com quem chama.
+
+    Truncado no segundo porque o `iat` do JWT é inteiro: o par emitido logo em
+    seguida, no mesmo segundo, continua válido — é o da sessão que acabou de
+    trocar a senha.
+    """
+    user.sessoes_validas_desde = datetime.now(timezone.utc).replace(microsecond=0)
