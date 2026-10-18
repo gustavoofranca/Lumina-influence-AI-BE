@@ -189,6 +189,11 @@ class TestConfig(Config):
     SQLALCHEMY_DATABASE_URI = os.getenv(
         "TEST_DATABASE_URL", "sqlite:///:memory:"
     )
+    # Sem `pool_recycle`: com SQLite em memória a conexão é o próprio banco, e
+    # reciclá-la (300 s, herdado de Config) abria um banco novo e vazio no meio
+    # da suíte — todo teste dali em diante falhava com "no such table". Só
+    # aparecia quando a suíte passava de cinco minutos, em máquina carregada.
+    SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
     JWT_SECRET = "test-secret-com-32-bytes-no-minimo-pra-hs256"
     FRONTEND_ORIGIN = "http://localhost:5173"
     GOOGLE_CLIENT_ID = "test-google-client-id"
