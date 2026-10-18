@@ -136,6 +136,19 @@ class Config:
     # período. Trinta por minuto cobre isso com sobra e ainda corta o abuso.
     RATE_LIMIT_REPORT_PREVIEW: dict = {"limit": 30, "window": 60}
 
+    # Autenticação (spec de 15/10/2026, seção 7). Login conta só as falhas. Por
+    # e-mail é o limite que segura força bruta numa conta; por IP é mais folgado
+    # porque um escritório inteiro pode sair pelo mesmo endereço.
+    RATE_LIMIT_LOGIN_EMAIL: dict = {"limit": 5, "window": 900}
+    RATE_LIMIT_LOGIN_IP: dict = {"limit": 20, "window": 900}
+    # Cadastro, reenvio de verificação e esqueci a senha: cada um manda um
+    # e-mail. Sem teto, o formulário vira canhão de spam com o nosso remetente.
+    RATE_LIMIT_EMAIL_FLOW_EMAIL: dict = {"limit": 3, "window": 3600}
+    RATE_LIMIT_EMAIL_FLOW_IP: dict = {"limit": 10, "window": 3600}
+    # Consulta pública de CNPJ — repassa para a BrasilAPI, serviço comunitário.
+    RATE_LIMIT_CNPJ: dict = {"limit": 20, "window": 60}
+    RATE_LIMIT_TROCA_SENHA: dict = {"limit": 5, "window": 900}
+
     # Quantas publicações cada sync traz por conta. Era 10 fixo no código, o
     # que bastava para demonstrar e era pouco para auditar: um criador com
     # trezentas publicações tinha três por cento delas analisadas.
