@@ -35,7 +35,7 @@ def em_segundo_plano(funcao: Callable, *args, **kwargs) -> None:
             try:
                 funcao(*args, **kwargs)
             except Exception:
-                logger.exception("Tarefa em segundo plano falhou: %s", funcao.__name__)
+                logger.exception("Tarefa em segundo plano falhou: %s", getattr(funcao, "__name__", repr(funcao)))
                 db.session.rollback()
             finally:
                 db.session.remove()

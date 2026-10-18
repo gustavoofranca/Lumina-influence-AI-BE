@@ -18,6 +18,14 @@ from src.utils.authz import current_agency_id
 from src.utils.errors import LuminaError
 
 _buckets: dict[str, list[float]] = defaultdict(list)
+# Janela de cada chave, guardada na hora de registrar: a varredura global precisa
+# saber quando os registros de uma chave que ninguém mais toca já expiraram.
+_janelas: dict[str, float] = {}
+_gravacoes = 0
+# A cada tantas gravações, varre tudo. Chaves de login vêm do cliente (e-mail e IP
+# escolhidos por quem ataca); sem varredura, um e-mail aleatório por tentativa
+# deixaria uma entrada para sempre na memória (DoS lento, spec seção 7).
+_VARRER_A_CADA = 256
 _lock = threading.Lock()
 
 
@@ -29,6 +37,33 @@ class RateLimitExceeded(LuminaError):
 MENSAGEM_TENTATIVAS = "Muitas tentativas. Tente novamente em alguns minutos."
 
 
+def _varrer_expirados(now: float) -> None:
+    """Remove timestamps vencidos de todas as chaves e apaga as que esvaziaram.
+
+    Chamar com `_lock` já seguro.
+    """
+    for key in list(_buckets):
+        janela = _janelas.get(key)
+        bucket = _buckets[key]
+        if janela is not None:
+            cutoff = now - janela
+            bucket[:] = [t for t in bucket if t > cutoff]
+        if not bucket:
+            del _buckets[key]
+            _janelas.pop(key, None)
+
+
+def _gravar(key: str, window: float, now: float) -> None:
+    """Registra um timestamp e dispara a varredura periódica. Exige `_lock`."""
+    global _gravacoes
+    _buckets[key].append(now)
+    _janelas[key] = window
+    _gravacoes += 1
+    if _gravacoes >= _VARRER_A_CADA:
+        _gravacoes = 0
+        _varrer_expirados(now)
+
+
 def _check(
     key: str, limit: int, window: float, *,
     mensagem: str = "Limite de requisições excedido para esta agência",
@@ -37,8 +72,14 @@ def _check(
     now = time.monotonic()
     cutoff = now - window
     with _lock:
-        bucket = _buckets[key]
-        bucket[:] = [t for t in bucket if t > cutoff]
+        # `.get`: só conferir não pode criar a chave (o defaultdict criaria).
+        bucket = [t for t in _buckets.get(key, ()) if t > cutoff]
+        if not bucket:
+            # Esvaziou pela poda: apaga a chave em vez de deixá-la vazia.
+            _buckets.pop(key, None)
+            _janelas.pop(key, None)
+        else:
+            _buckets[key][:] = bucket
         if len(bucket) >= limit:
             retry_after = round(window - (now - bucket[0]), 1)
             raise RateLimitExceeded(
@@ -46,13 +87,16 @@ def _check(
                 details={"limit": limit, "window_seconds": window, "retry_after_seconds": retry_after},
             )
         if registrar:
-            bucket.append(now)
+            _gravar(key, window, now)
 
 
 def reset_rate_limits() -> None:
     """Limpa todos os buckets (usado em testes)."""
+    global _gravacoes
     with _lock:
         _buckets.clear()
+        _janelas.clear()
+        _gravacoes = 0
 
 
 def rate_limit(config_key: str, *, default_limit: int = 30, default_window: float = 60) -> Callable:
@@ -95,8 +139,9 @@ def conferir_limite(config_key: str, chave: str) -> None:
 
 
 def registrar_tentativa(config_key: str, chave: str) -> None:
+    _, window = _config(config_key)
     with _lock:
-        _buckets[_chave(config_key, chave)].append(time.monotonic())
+        _gravar(_chave(config_key, chave), window, time.monotonic())
 
 
 def limitar(config_key: str, chave: str) -> None:
@@ -107,7 +152,9 @@ def limitar(config_key: str, chave: str) -> None:
 
 def zerar(config_key: str, chave: str) -> None:
     with _lock:
-        _buckets.pop(_chave(config_key, chave), None)
+        k = _chave(config_key, chave)
+        _buckets.pop(k, None)
+        _janelas.pop(k, None)
 
 
 def ip_do_cliente() -> str:
