@@ -24,6 +24,13 @@ até 30 dias (o refresh), trocar a senha não expulsa o invasor.
 3. **CSRF não se aplica:** a API autentica por `Authorization: Bearer`, e não
    por cookie. Um site de terceiro não consegue fazer o navegador anexar o
    cabeçalho. O token continua em `sessionStorage` (ADR-001 revisada).
+4. **Confirmação do e-mail com a senha do cadastro:** o link de
+   `/auth/verify-email` de uma conta criada com senha só a ativa junto com essa
+   senha. Senha ausente (`verification_password_required`) ou errada
+   (`verification_password_invalid`) não gasta o link, e as tentativas dividem
+   o limite do login. Isso fecha o pré-sequestro em que alguém recadastra o
+   e-mail de outra pessoa depois dela: o link mais novo chega à vítima, mas
+   ela não sabe a senha do atacante. Convite sem senha confirma só com o link.
 
 ## Consequências
 

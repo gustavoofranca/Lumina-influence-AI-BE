@@ -7,6 +7,11 @@ esses ramos roda em segundo plano, para o tempo de resposta também não contar.
 
 A situação do CNPJ na Receita é a exceção que responde 422 na hora, e por isso
 é conferida antes de olhar o e-mail: depende só do CNPJ, que é público.
+
+Pré-sequestro (spec, seção 7): o link de confirmação de uma conta criada com
+senha só a ativa com essa senha. Sem isso, quem recadastrasse o e-mail de outra
+pessoa depois dela — e antes do clique — ativaria, pelo link mais novo que chega
+à vítima, uma conta com a senha do atacante.
 """
 from __future__ import annotations
 
@@ -22,14 +27,18 @@ from src.integrations.email import enviar
 from src.models import Agency, FinalidadeToken, User, UserRole
 from src.schemas.auth import RegisterIn
 from src.services import emails, token_service, user_service
+from src.utils.errors import BadRequestError
+from src.utils.rate_limit import conferir_limite, ip_do_cliente, registrar_tentativa, zerar
 from src.utils.segundo_plano import em_segundo_plano
-from src.utils.senha import gerar_hash
+from src.utils.senha import conferir, gerar_hash
 from src.utils.validation import erro_de_campo
 
 logger = logging.getLogger(__name__)
 
 MENSAGEM_LINK_ENVIADO = "Enviamos um link de confirmação para o seu e-mail."
 MENSAGEM_SE_HOUVER_CONTA = "Se houver uma conta com este e-mail, enviamos um link."
+# Mesmo orçamento do login: é a mesma senha sendo adivinhada.
+_POR_IP, _POR_EMAIL = "RATE_LIMIT_LOGIN_IP", "RATE_LIMIT_LOGIN_EMAIL"
 
 
 def conferir_situacao_do_cnpj(cnpj: str) -> None:
@@ -97,7 +106,28 @@ def _processar_cadastro(dados: RegisterIn) -> None:
     _enviar_verificacao(user)
 
 
-def verificar_email(token: str) -> User:
+def _conferir_senha_do_cadastro(user: User, senha: str | None) -> None:
+    if senha is None:
+        raise BadRequestError(
+            "Digite a senha que você escolheu no cadastro.", code="verification_password_required"
+        )
+    ip = ip_do_cliente()
+    conferir_limite(_POR_IP, ip)
+    conferir_limite(_POR_EMAIL, user.email)
+    if not conferir(senha, user.password_hash):
+        registrar_tentativa(_POR_IP, ip)
+        registrar_tentativa(_POR_EMAIL, user.email)
+        raise BadRequestError(
+            "A senha não confere com a do cadastro deste link.", code="verification_password_invalid"
+        )
+    zerar(_POR_EMAIL, user.email)
+
+
+def verificar_email(token: str, senha: str | None = None) -> User:
+    # Lê antes de consumir: senha ausente ou errada não pode gastar o link.
+    user = token_service.ler(token, FinalidadeToken.VERIFICAR_EMAIL)
+    if user.password_hash:
+        _conferir_senha_do_cadastro(user, senha)
     user = token_service.consumir(token, FinalidadeToken.VERIFICAR_EMAIL)
     if user.email_verificado_em is None:
         user.email_verificado_em = datetime.now(timezone.utc)

@@ -10,7 +10,7 @@ from flask import Blueprint, current_app, g, jsonify
 
 from src.integrations.brasilapi import consultar_cnpj
 from src.schemas.auth import (
-    ChangePasswordIn, CnpjConsultaIn, EmailIn, LoginIn, RegisterIn, ResetPasswordIn, TokenIn,
+    ChangePasswordIn, CnpjConsultaIn, EmailIn, LoginIn, RegisterIn, ResetPasswordIn, VerifyEmailIn,
 )
 from src.services import cadastro_service, senha_service
 from src.services.auth_service import concluir_login
@@ -53,8 +53,8 @@ def register():
 
 @bp.post("/verify-email")
 def verify_email():
-    dados = parse_json(TokenIn)
-    user = cadastro_service.verificar_email(dados.token)
+    dados = parse_json(VerifyEmailIn)
+    user = cadastro_service.verificar_email(dados.token, dados.password)
     return jsonify({"data": concluir_login(user)})
 
 

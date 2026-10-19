@@ -105,12 +105,15 @@ class EmailIn(BaseModel):
     email: Email
 
 
-class TokenIn(BaseModel):
+SenhaInformada = Annotated[StrictStr, StringConstraints(min_length=1, max_length=1024)]
+
+
+class VerifyEmailIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     token: Token
-
-
-SenhaInformada = Annotated[StrictStr, StringConstraints(min_length=1, max_length=1024)]
+    # Obrigatória para conta criada com senha (conferida no serviço, que sabe
+    # de quem é o token); convite sem senha confirma só com o link.
+    password: Optional[SenhaInformada] = None
 
 
 class LoginIn(BaseModel):

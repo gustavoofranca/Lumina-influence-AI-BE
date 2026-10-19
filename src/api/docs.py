@@ -135,9 +135,13 @@ def build_openapi() -> dict:
                                    "429": {"description": "Muitas tentativas"}}},
         },
         "/api/v1/auth/verify-email": {
-            "post": {"tags": ["Auth"], "summary": "Confirma o e-mail pelo token do link e entra",
+            "post": {"tags": ["Auth"],
+                     "summary": "Confirma o e-mail pelo token do link e entra; conta com senha exige a senha do cadastro",
                      "responses": {"200": {"description": "Usuário, agência e par de tokens"},
-                                   "400": {"description": "Link inválido, usado ou vencido"}}},
+                                   "400": {"description": "Link inválido, usado ou vencido; senha ausente "
+                                                          "(verification_password_required) ou que não confere "
+                                                          "(verification_password_invalid) — o link não é gasto"},
+                                   "429": {"description": "Muitas tentativas de senha"}}},
         },
         "/api/v1/auth/resend-verification": {
             "post": {"tags": ["Auth"], "summary": "Reenvia o link de confirmação",
