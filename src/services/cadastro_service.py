@@ -53,11 +53,28 @@ def cadastrar(dados: RegisterIn) -> None:
 def _processar_cadastro(dados: RegisterIn) -> None:
     existente = user_service.find_by_email(dados.email)
     if existente is not None:
-        if existente.deleted_at is None and existente.email_verificado_em is None:
+        pendente = existente.deleted_at is None and existente.email_verificado_em is None
+        if pendente and existente.password_hash:
+            # Pré-sequestro de conta (spec, seção 7): um cadastro pendente não
+            # guarda dado nenhum — não dá para entrar sem confirmar —, então o
+            # dono legítimo do e-mail que se cadastra depois não pode herdar a
+            # senha de quem digitou o endereço antes dele. Quem clicar no link
+            # mais novo precisa ficar com as credenciais que ele mesmo digitou:
+            # o pendente some e o cadastro segue como se fosse novo.
+            agencia_antiga = existente.agency
+            sozinho = agencia_antiga is not None and all(
+                u.id == existente.id for u in agencia_antiga.users
+            )
+            logger.info("Cadastro descartou cadastro não verificado %s", existente.id)
+            db.session.delete(agencia_antiga if sozinho else existente)
+            db.session.flush()
+        elif pendente:
+            # Convidado sem senha: não há credencial alheia a proteger, só reenvia.
             _enviar_verificacao(existente)
+            return
         else:
             enviar(emails.conta_existente(dados.email))
-        return
+            return
     if db.session.scalar(select(Agency.id).where(Agency.cnpj == dados.cnpj)) is not None:
         enviar(emails.cnpj_em_uso(dados.email, dados.cnpj))
         return

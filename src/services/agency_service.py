@@ -48,6 +48,12 @@ def apply_update(agency: Agency, data: dict) -> Agency:
     if data.get("plan_id") is not None and plan_service.find_plan(data["plan_id"]) is None:
         raise ValidationError("plan_id inexistente", details={"plan_id": str(data["plan_id"])})
 
+    # Sem CNPJ não há como a agência ser reconhecida (convite, cadastro): quem
+    # já tem um não pode apagá-lo. `exclude_unset` faz um null/"" explícito
+    # chegar aqui como None; sem CNPJ gravado, continua permitido.
+    if "cnpj" in data and not data["cnpj"] and agency.cnpj:
+        raise erro_de_campo("cnpj", "o CNPJ não pode ser removido", "cnpj_required")
+
     novo_cnpj = data.get("cnpj")
     if novo_cnpj is not None and novo_cnpj != agency.cnpj:
         if not cnpj_valido(novo_cnpj):

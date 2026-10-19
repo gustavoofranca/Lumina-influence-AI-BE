@@ -171,6 +171,15 @@ def test_json_que_nao_e_objeto_nao_trava(app, receita):
         assert consultar_cnpj("11222333000181") == NAO_CONSULTADO
 
 
+def test_situacao_infinita_nao_estoura(app, receita):
+    # json.loads aceita `Infinity`; int(inf) levanta OverflowError.
+    receita.respostas["11222333000181"] = _Resp(200, {"situacao_cadastral": float("inf"),
+                                                      "descricao_situacao_cadastral": "X"})
+    with app.app_context():
+        c = consultar_cnpj("11222333000181")
+    assert c.encontrado is True and c.impeditiva is False
+
+
 def test_situacao_como_texto_continua_impeditiva(app, receita):
     receita.respostas["11222333000181"] = _Resp(200, {"situacao_cadastral": "8",
                                                       "descricao_situacao_cadastral": "BAIXADA"})

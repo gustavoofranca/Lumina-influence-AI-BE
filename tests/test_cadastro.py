@@ -67,10 +67,44 @@ def test_email_ja_cadastrado_tem_a_mesma_resposta(client, app, limpo, outbox):
         assert _total_com_email("nova@agencia.com.br") == 1
 
 
-def test_email_nao_verificado_recebe_link_novo(client, limpo, outbox):
+def test_email_nao_verificado_recebe_link_novo(client, app, limpo, outbox):
     _registrar(client)
-    _registrar(client)
+    with app.app_context():
+        primeiro_id = db.session.scalar(select(User.id).where(User.email == "nova@agencia.com.br"))
+    r = _registrar(client, password="outra senha bem comprida")
+    assert r.status_code == 202
     assert [m.assunto for m in outbox] == ["Confirme seu e-mail — Lumina"] * 2
+    with app.app_context():
+        # O pendente com senha é substituído, não reaproveitado.
+        assert _total_com_email("nova@agencia.com.br") == 1
+        assert db.session.scalar(select(User.id).where(User.email == "nova@agencia.com.br")) != primeiro_id
+        assert db.session.scalar(select(func.count()).select_from(Agency).where(Agency.name == "Agência Nova")) == 1
+
+
+def test_segundo_cadastro_pendente_fica_com_a_senha_de_quem_confirmou(client, limpo, outbox):
+    _registrar(client, password="senha do atacante aqui")
+    _registrar(client, password="senha da vitima legitima")
+    r = client.post("/api/v1/auth/verify-email", json={"token": _token(outbox[-1])})
+    assert r.status_code == 200
+    entrar = lambda senha: client.post(  # noqa: E731
+        "/api/v1/auth/login", json={"email": "nova@agencia.com.br", "password": senha})
+    assert entrar("senha da vitima legitima").status_code == 200
+    assert entrar("senha do atacante aqui").status_code == 401
+
+
+def test_convite_sem_senha_so_recebe_o_link_de_novo(client, app, limpo, outbox):
+    with app.app_context():
+        agencia = Agency(name="Agência Nova Convite", cnpj="11.222.333/0001-81", plan=None)
+        user = User(email="nova@agencia.com.br", name="Convidada", password_hash=None,
+                    email_verificado_em=None, agency=agencia)
+        db.session.add_all([agencia, user])
+        db.session.commit()
+        user_id, agencia_id = user.id, agencia.id
+    assert _registrar(client).status_code == 202
+    assert [m.assunto for m in outbox] == ["Confirme seu e-mail — Lumina"]
+    with app.app_context():
+        assert db.session.get(User, user_id) is not None
+        assert db.session.get(Agency, agencia_id) is not None
 
 
 def test_cnpj_em_uso_nao_cria_e_avisa_por_email(client, app, limpo, outbox):

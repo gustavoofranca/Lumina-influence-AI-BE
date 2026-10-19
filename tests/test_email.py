@@ -86,6 +86,20 @@ def test_sem_smtp_fora_do_debug_nao_loga_o_token(app, monkeypatch, caplog):
     assert "ana@x.com" not in caplog.text
 
 
+def test_smtp_sem_credenciais_avisa_sem_vazar_nada(app, monkeypatch, caplog):
+    monkeypatch.setitem(app.config, "TESTING", False)
+    monkeypatch.setitem(app.config, "SMTP_HOST", "smtp.gmail.com")
+    monkeypatch.setitem(app.config, "SMTP_USER", "")
+    monkeypatch.setitem(app.config, "SMTP_PASSWORD", "")
+    enviados = []
+    monkeypatch.setattr(email_mod._executor, "submit", lambda *a, **k: enviados.append(a))
+    with app.app_context(), caplog.at_level(logging.WARNING):
+        enviar(MSG)
+    assert "SMTP_USER/SMTP_PASSWORD" in caplog.text and "Assunto" in caplog.text
+    assert "ana@x.com" not in caplog.text
+    assert len(enviados) == 1
+
+
 def test_quebra_de_linha_no_assunto_e_recusada():
     with pytest.raises(ValueError):
         email_mod._montar(CFG, Mensagem("a@x.com", "Oi\nBcc: alvo@y.com", "t", "h"))

@@ -279,7 +279,8 @@ class ProdConfig(Config):
 
     def __init__(self) -> None:
         # Em prod, sem defaults inseguros — valida no boot.
-        for name in ("DATABASE_URL", "JWT_SECRET", "FERNET_KEY", "SMTP_HOST"):
+        for name in ("DATABASE_URL", "JWT_SECRET", "FERNET_KEY",
+                     "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"):
             if not os.getenv(name):
                 raise RuntimeError(
                     f"Variável de ambiente obrigatória ausente em produção: {name}"

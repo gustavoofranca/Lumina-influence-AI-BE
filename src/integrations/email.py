@@ -59,6 +59,14 @@ def enviar(msg: Mensagem) -> None:
         else:
             logger.warning("E-mail NÃO enviado: SMTP não configurado — %s", msg.assunto)
         return
+    if not cfg["SMTP_USER"] or not cfg["SMTP_PASSWORD"]:
+        # Servidor sem credencial quase sempre recusa o envio; avisa na hora do
+        # envio, porque a falha em si só aparece depois, na thread. Nunca loga
+        # os valores.
+        logger.warning(
+            "SMTP_HOST definido sem SMTP_USER/SMTP_PASSWORD: o e-mail provavelmente "
+            "será recusado — %s", msg.assunto,
+        )
     _executor.submit(_enviar_smtp, cfg, msg)
 
 

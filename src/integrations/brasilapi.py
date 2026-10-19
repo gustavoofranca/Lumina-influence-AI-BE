@@ -103,7 +103,8 @@ def consultar_cnpj(cnpj: str) -> ConsultaCnpj:
         # A situação pode vir como texto ("8"); sem coerção, um BAIXADA passaria.
         try:
             situacao = int(dados.get("situacao_cadastral"))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
+            # OverflowError: o JSON aceita `Infinity`, e int(inf) estoura.
             situacao = None
         consulta = ConsultaCnpj(
             encontrado=True,

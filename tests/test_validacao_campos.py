@@ -266,7 +266,20 @@ def test_cnpj_antigo_invalido_nao_trava_a_edicao_do_nome(client, seeded, app):
     assert r.get_json()["data"]["name"] == "Agência Renomeada"
 
 
-def test_cnpj_em_branco_limpa_o_campo(client, seeded):
+@pytest.mark.parametrize("vazio", ["", None], ids=["texto-vazio", "nulo"])
+def test_cnpj_existente_nao_pode_ser_removido(client, seeded, vazio):
+    r = client.patch(f"/api/v1/agencies/{seeded.agency_id}", json={"cnpj": vazio}, headers=seeded.header)
+    assert r.status_code == 422
+    campo = r.get_json()["error"]["details"]["fields"][0]
+    assert (campo["field"], campo["type"], campo["message"]) == (
+        "cnpj", "cnpj_required", "o CNPJ não pode ser removido",
+    )
+
+
+def test_agencia_sem_cnpj_aceita_cnpj_em_branco(client, seeded, app):
+    with app.app_context():
+        db.session.get(Agency, __import__("uuid").UUID(seeded.agency_id)).cnpj = None
+        db.session.commit()
     r = client.patch(f"/api/v1/agencies/{seeded.agency_id}", json={"cnpj": ""}, headers=seeded.header)
     assert r.status_code == 200
     assert r.get_json()["data"]["cnpj"] is None
