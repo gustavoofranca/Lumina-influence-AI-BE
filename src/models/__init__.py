@@ -20,6 +20,7 @@ from src.models.ai_analysis import AIAnalysis
 from src.models.api_usage import ApiUsageLog
 from src.models.recommendation_decision import RecommendationDecision
 from src.models.auth_token import AuthToken
+from src.models.codigo_recuperacao import CodigoRecuperacao
 from src.models.base import Base, JSONField, SoftDeleteMixin, TimestampMixin
 from src.models.campaign import Campaign, CampaignInfluencer
 from src.models.influencer import Influencer
@@ -45,6 +46,7 @@ __all__ = [
     "FinalidadeToken",
     "AIAnalysis",
     "AuthToken",
+    "CodigoRecuperacao",
     "Agency",
     "ApiUsageLog",
     "RecommendationDecision",

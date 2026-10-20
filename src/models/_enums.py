@@ -82,3 +82,7 @@ class FinalidadeToken(str, enum.Enum):
 
     VERIFICAR_EMAIL = "verificar_email"
     REDEFINIR_SENHA = "redefinir_senha"
+    # Tickets do 2FA: não vão por e-mail, voltam na resposta do login, mas
+    # pedem as mesmas garantias — só o hash no banco, uso único, validade curta.
+    DESAFIO_2FA = "desafio_2fa"
+    ATIVAR_2FA = "ativar_2fa"

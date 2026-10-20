@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, String, UniqueConstraint, Uuid
+from sqlalchemy import BigInteger, DateTime, Enum as SAEnum, ForeignKey, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.models._enums import OAuthProvider, UserRole
@@ -13,6 +13,7 @@ from src.models.base import Base, SoftDeleteMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from src.models.auth_token import AuthToken
+    from src.models.codigo_recuperacao import CodigoRecuperacao
     from src.models.agency import Agency
     from src.models.oauth_state import OAuthState
     from src.models.report import Report
@@ -51,6 +52,15 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     termos_aceitos_em: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # 2FA por app autenticador (spec de 19/10/2026). O segredo vai cifrado com a
+    # FERNET_KEY; com `totp_ativado_em` nulo ele é uma ativação ainda não
+    # confirmada. `totp_ultimo_passo` é o que faz cada código valer uma vez só.
+    totp_segredo_cifrado: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    totp_ativado_em: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    totp_ultimo_passo: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+
     role: Mapped[UserRole] = mapped_column(
         SAEnum(UserRole, name="user_role"), nullable=False, default=UserRole.MEMBER
     )
@@ -68,6 +78,9 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     auth_tokens: Mapped[list["AuthToken"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    codigos_recuperacao: Mapped[list["CodigoRecuperacao"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
     @property
     def has_password(self) -> bool:
@@ -80,3 +93,11 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     @property
     def terms_accepted(self) -> bool:
         return self.termos_aceitos_em is not None
+
+    @property
+    def mfa_enabled(self) -> bool:
+        return self.totp_ativado_em is not None
+
+    @property
+    def recovery_codes_left(self) -> int:
+        return sum(1 for c in self.codigos_recuperacao if c.usado_em is None)
