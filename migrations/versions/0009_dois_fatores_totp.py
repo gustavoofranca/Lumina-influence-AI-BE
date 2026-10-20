@@ -4,7 +4,7 @@ Revision ID: b7d2f4a91c36
 Revises: a1c3e5f70b28
 Create Date: 2026-10-19
 
-Spec: docs/superpowers/specs/2026-10-19-2fa-totp-design.md.
+Decisões: docs/adr/0014-segundo-fator-totp.md.
 
 - `users.totp_segredo_cifrado`: segredo cifrado com a FERNET_KEY. Com
   `totp_ativado_em` nulo, é uma ativação ainda não confirmada.

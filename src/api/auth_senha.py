@@ -2,7 +2,7 @@
 
 Mesmo prefixo do blueprint de OAuth (`auth.py`), em arquivo próprio: aquele
 cuida de provedores externos; este, da credencial local, do cadastro e da
-recuperação. Spec: docs/superpowers/specs/2026-10-15-login-cadastro-senha-design.md.
+recuperação. Decisões: docs/adr/0013-senha-local-e-marco-de-sessao.md.
 """
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
 """Blueprint /api/v1/auth/2fa — verificação em duas etapas por app autenticador.
 
-Spec: docs/superpowers/specs/2026-10-19-2fa-totp-design.md.
+Decisões: docs/adr/0014-segundo-fator-totp.md.
 
 O login devolve um ticket no lugar da sessão quando falta o segundo fator
 (`auth_service.concluir_login`). Estas rotas trocam o ticket pela sessão: o de
