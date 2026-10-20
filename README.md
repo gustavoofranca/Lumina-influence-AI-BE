@@ -105,6 +105,7 @@ curl http://localhost:5000/api/v1/health
 | Popular seed | `flask seed run` |
 | Limpar seed | `flask seed clear` |
 | Definir senha de um usuário | `flask users set-password <email>` |
+| Zerar o 2FA de quem perdeu o celular e os códigos | `flask users reset-2fa <email>` |
 | Listar jobs | `flask jobs list` |
 | Rodar job manual | `flask jobs run <name>` |
 | Servidor (desenvolvimento) | `flask run` |
@@ -134,7 +135,7 @@ Quase todos os endpoints exigem `Authorization: Bearer <access_token>`. Para obt
 
 | Grupo | Endpoints |
 |---|---|
-| Auth | `/auth/google/login` · `/auth/google/callback` · `/auth/login` · `/auth/register` · `/auth/verify-email` · `/auth/forgot-password` · `/auth/reset-password` · `/auth/change-password` · `/auth/refresh` · `/auth/logout` · `/auth/me` |
+| Auth | `/auth/google/login` · `/auth/google/callback` · `/auth/login` · `/auth/register` · `/auth/verify-email` · `/auth/forgot-password` · `/auth/reset-password` · `/auth/change-password` · `/auth/2fa/verify` · `/auth/2fa/setup` · `/auth/2fa/setup/confirm` · `/auth/2fa/recovery-codes` · `/auth/2fa/disable` · `/auth/refresh` · `/auth/logout` · `/auth/me` |
 | CRUD | `/plans` `/agencies` `/users` `/influencers` `/social-accounts` `/campaigns` |
 | Dashboard | `/dashboard/overview` · `/dashboard/network-density` · `/influencers/:id/analysis` · `/influencers/:id/posts` · `/campaigns/:id/benchmarking` |
 | IA | `POST /posts/:id/analyze` (`?multimodal=true`) · `GET /posts/:id/analyses` |
