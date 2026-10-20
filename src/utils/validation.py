@@ -51,6 +51,8 @@ ROTULOS = {
     "caption": "Legenda",
     "analysis_id": "Análise",
     "decision": "Decisão",
+    "code": "Código",
+    "totp_code": "Código do app autenticador",
 }
 
 # Erros de tipo que, com `null` na entrada, querem dizer "campo obrigatório

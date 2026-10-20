@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlparse
 from sqlalchemy import select
 
 from src.extensions import db
-from src.models import AuthToken, User
+from src.models import AuthToken, User, UserRole
 from src.services import senha_service
 from src.utils.jwt_utils import encode_token, issue_token_pair
 from src.utils.senha import conferir
@@ -51,7 +51,9 @@ def _token_antigo(conta) -> str:
 
 
 # ---------------------------------------------------------------- login
-def test_entra_com_email_e_senha(client, conta_com_senha):
+def test_entra_com_email_e_senha(client, app, conta_com_senha):
+    # Membro: o admin sem 2FA vai para a ativação (ver test_dois_fatores.py).
+    _mudar(app, conta_com_senha, role=UserRole.MEMBER)
     r = _entrar(client, conta_com_senha.email, conta_com_senha.senha)
     assert r.status_code == 200
     assert client.get(ME, headers=_h(r.get_json()["data"]["tokens"]["access_token"])).status_code == 200

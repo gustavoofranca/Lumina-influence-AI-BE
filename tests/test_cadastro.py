@@ -168,10 +168,13 @@ def test_cnpj_baixado_e_recusado_tambem_para_email_existente(client, limpo, monk
     assert _registrar(client).status_code == 422
 
 
-def test_link_confirma_e_ja_entra(client, app, limpo, outbox):
+def test_link_confirma_e_leva_a_ativacao_do_2fa(client, app, limpo, outbox):
+    # Quem se cadastra é admin da agência nova, e admin não recebe sessão sem
+    # 2FA: o passo seguinte à confirmação é ativá-lo (spec de 19/10/2026).
     _registrar(client)
     r = _confirmar(client, _token(outbox[-1]))
-    assert r.status_code == 200 and r.get_json()["data"]["tokens"]["access_token"]
+    assert r.status_code == 200
+    assert r.get_json()["data"]["mfa"] == "setup" and r.get_json()["data"]["mfa_ticket"]
     with app.app_context():
         assert db.session.scalar(select(User).where(User.email == "nova@agencia.com.br")).email_verified
 

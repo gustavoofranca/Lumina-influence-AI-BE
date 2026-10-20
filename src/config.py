@@ -167,6 +167,11 @@ class Config:
     # Consulta pública de CNPJ — repassa para a BrasilAPI, serviço comunitário.
     RATE_LIMIT_CNPJ: dict = {"limit": 20, "window": 60}
     RATE_LIMIT_TROCA_SENHA: dict = {"limit": 5, "window": 900}
+    # Código do 2FA, por conta: o mesmo limite do login. O NIST SP 800-63B-4
+    # (§3.1.5.2) exige limite de tentativas para OTP.
+    RATE_LIMIT_2FA: dict = {"limit": 5, "window": 900}
+    # Administrador sem 2FA não recebe sessão no login, só o ticket de ativação.
+    MFA_OBRIGATORIO_PARA_ADMIN: bool = True
 
     # Quantas publicações cada sync traz por conta. Era 10 fixo no código, o
     # que bastava para demonstrar e era pouco para auditar: um criador com

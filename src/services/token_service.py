@@ -28,15 +28,26 @@ from src.utils.errors import BadRequestError
 VALIDADE = {
     FinalidadeToken.VERIFICAR_EMAIL: timedelta(hours=24),
     FinalidadeToken.REDEFINIR_SENHA: timedelta(minutes=30),
+    # Tickets do 2FA: o tempo de abrir o app e digitar, e o de escanear o QR.
+    FinalidadeToken.DESAFIO_2FA: timedelta(minutes=5),
+    FinalidadeToken.ATIVAR_2FA: timedelta(minutes=15),
 }
 _PREFIXO = {
     FinalidadeToken.VERIFICAR_EMAIL: "verification_token",
     FinalidadeToken.REDEFINIR_SENHA: "reset_token",
+    FinalidadeToken.DESAFIO_2FA: "mfa_ticket",
+    FinalidadeToken.ATIVAR_2FA: "mfa_ticket",
 }
 _MENSAGEM = {
     "invalid": "Este link é inválido ou já foi usado.",
     "expired": "Este link venceu. Peça um novo.",
 }
+# O ticket não chega por link: a pessoa só precisa entrar de novo.
+_MENSAGEM_DO_TICKET = {
+    "invalid": "Esta entrada não vale mais. Entre de novo.",
+    "expired": "O tempo para digitar o código acabou. Entre de novo.",
+}
+_TICKETS = {FinalidadeToken.DESAFIO_2FA, FinalidadeToken.ATIVAR_2FA}
 _TAMANHO_MAXIMO = 200
 
 
@@ -54,7 +65,8 @@ def _utc(momento: datetime) -> datetime:
 
 
 def _erro(finalidade: FinalidadeToken, tipo: str) -> BadRequestError:
-    return BadRequestError(_MENSAGEM[tipo], code=f"{_PREFIXO[finalidade]}_{tipo}")
+    mensagens = _MENSAGEM_DO_TICKET if finalidade in _TICKETS else _MENSAGEM
+    return BadRequestError(mensagens[tipo], code=f"{_PREFIXO[finalidade]}_{tipo}")
 
 
 def emitir(user: User, finalidade: FinalidadeToken) -> str:

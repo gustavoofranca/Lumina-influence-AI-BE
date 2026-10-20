@@ -18,12 +18,14 @@ from sqlalchemy import func, select
 from src.extensions import db
 from src.models import (
     Agency,
+    FinalidadeToken,
     OAuthProvider,
     OAuthState,
     User,
     UserRole,
 )
 from src.schemas.auth import AgencySummaryOut, LoginCallbackOut, TokenPairOut, UserOut
+from src.services import token_service
 from src.utils.errors import UnauthorizedError
 from src.utils.jwt_utils import issue_token_pair
 
@@ -196,15 +198,25 @@ def resolve_dev_login_user(email: str | None) -> User | None:
 # --------------------------------------------------------------------------
 # Sessão
 # --------------------------------------------------------------------------
-def concluir_login(user: User) -> dict:
+def _precisa_ativar_2fa(user: User) -> bool:
+    return user.role == UserRole.ADMIN and current_app.config.get("MFA_OBRIGATORIO_PARA_ADMIN", True)
+
+
+def concluir_login(user: User, *, exigir_2fa: bool = True) -> dict:
     """Ponto único em que um login vira sessão: senha, Google, Microsoft,
     verificação de e-mail, troca de senha e o atalho de desenvolvimento passam
     todos por aqui.
 
-    É o encaixe do 2FA (spec, seção 8): quando ele existir, esta função passa a
-    devolver um desafio em vez dos tokens para quem tiver 2FA ativo, e nenhum
-    chamador muda.
+    Com `exigir_2fa`, quem tem 2FA recebe um ticket de desafio e o
+    administrador sem 2FA recebe um ticket de ativação — nenhum dos dois é
+    sessão (spec de 19/10/2026). `exigir_2fa=False` é para quem já cumpriu o
+    segundo fator nesta mesma requisição, ou já estava numa sessão, e para o
+    atalho de desenvolvimento.
     """
+    if exigir_2fa and user.mfa_enabled:
+        return {"mfa": "challenge", "mfa_ticket": token_service.emitir(user, FinalidadeToken.DESAFIO_2FA)}
+    if exigir_2fa and _precisa_ativar_2fa(user):
+        return {"mfa": "setup", "mfa_ticket": token_service.emitir(user, FinalidadeToken.ATIVAR_2FA)}
     tokens = issue_token_pair(user)
     ttl = int(current_app.config["JWT_ACCESS_TTL"].total_seconds())
     return LoginCallbackOut(

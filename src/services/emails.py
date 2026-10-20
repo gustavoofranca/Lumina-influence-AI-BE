@@ -88,3 +88,36 @@ def redefinicao(user, token: str) -> Mensagem:
         texto="\n\n".join(linhas[:2] + [link] + linhas[2:]),
         html=_html(linhas, ("Criar nova senha", link)),
     )
+
+
+# Uma frase por evento do 2FA. O aviso existe para a pessoa notar uma mudança
+# que não foi ela quem fez (OWASP, "Changing MFA Factors").
+_EVENTOS_2FA = {
+    "ativado": ("2FA ativado na sua conta",
+                "A verificação em duas etapas foi ativada na sua conta."),
+    "desativado": ("2FA desligado na sua conta",
+                   "A verificação em duas etapas foi desligada na sua conta."),
+    "codigo_usado": ("Código de recuperação usado",
+                     "Um código de recuperação foi usado para entrar na sua conta."),
+    "novos_codigos": ("Novos códigos de recuperação do 2FA",
+                      "Novos códigos de recuperação foram gerados; os anteriores deixaram de valer."),
+    "resetado": ("2FA zerado na sua conta",
+                 "A verificação em duas etapas da sua conta foi zerada pelo suporte."),
+}
+
+
+def aviso_2fa(user, evento: str) -> Mensagem:
+    assunto, fato = _EVENTOS_2FA[evento]
+    seguranca = _link("/app/configuracoes/perfil")
+    linhas = [
+        f"Olá, {user.name}.",
+        fato,
+        (
+            "Se foi você, nada a fazer. Se não foi, troque sua senha agora e revise a "
+            f"segurança da conta: {seguranca}"
+        ),
+    ]
+    return Mensagem(
+        para=user.email, assunto=f"{assunto} — Lumina",
+        texto="\n\n".join(linhas), html=_html(linhas),
+    )

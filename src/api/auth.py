@@ -50,10 +50,6 @@ def _build_redirect_uri(endpoint: str) -> str:
     return url_for(endpoint, _external=True)
 
 
-def _build_login_response(user) -> dict:
-    return concluir_login(user)
-
-
 def _login_result(user, *, agencia_criada: bool = False):
     """Resposta de sucesso do login: redireciona pro front (SPA) ou retorna JSON (API).
 
@@ -66,10 +62,14 @@ def _login_result(user, *, agencia_criada: bool = False):
     payload = concluir_login(user)
     if redirect_base:
         # Tokens no fragmento (#) — não vão pro servidor nem ficam em logs/histórico.
-        campos = {
-            "access_token": payload["tokens"]["access_token"],
-            "refresh_token": payload["tokens"]["refresh_token"],
-        }
+        # Com segundo fator a cumprir, vai o ticket no lugar dos tokens.
+        if "mfa" in payload:
+            campos = {"mfa": payload["mfa"], "mfa_ticket": payload["mfa_ticket"]}
+        else:
+            campos = {
+                "access_token": payload["tokens"]["access_token"],
+                "refresh_token": payload["tokens"]["refresh_token"],
+            }
         if agencia_criada:
             campos["new_agency"] = "1"
         return redirect(f"{redirect_base}#{urlencode(campos)}")
@@ -182,7 +182,9 @@ def dev_login():
             "Nenhum usuário disponível para dev-login (rode `flask seed run`)",
             code="dev_login_no_user",
         )
-    return jsonify({"data": _build_login_response(user)})
+    # Sem 2FA: o atalho só existe com DEV_LOGIN_ENABLED, e é ele que a suíte
+    # e2e e a demonstração usam para entrar.
+    return jsonify({"data": concluir_login(user, exigir_2fa=False)})
 
 
 @bp.post("/refresh")

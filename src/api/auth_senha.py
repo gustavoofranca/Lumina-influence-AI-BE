@@ -102,8 +102,11 @@ def reset_password():
 @require_auth
 def change_password():
     dados = parse_json(ChangePasswordIn)
-    user = senha_service.trocar_senha(g.current_user, dados.current_password, dados.new_password)
-    return jsonify({"data": concluir_login(user)})
+    user = senha_service.trocar_senha(
+        g.current_user, dados.current_password, dados.new_password, totp_code=dados.totp_code
+    )
+    # A pessoa já estava na sessão e, com 2FA, acabou de digitar o código.
+    return jsonify({"data": concluir_login(user, exigir_2fa=False)})
 
 
 @bp.post("/accept-terms")

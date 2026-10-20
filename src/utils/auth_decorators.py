@@ -48,17 +48,27 @@ def _conferir_marco_de_sessao(user: User, payload: dict) -> None:
         raise UnauthorizedError("Sessão encerrada. Entre novamente.", code="token_revoked")
 
 
+def autenticar_sessao() -> User:
+    """Confere o access token do pedido e injeta g.current_user.
+
+    Pública para a rota que aceita sessão **ou** ticket de 2FA, que não pode
+    usar o decorator inteiro.
+    """
+    token = _extract_bearer()
+    payload = decode_token(token, expected_type="access")
+    user = _load_user(payload["sub"])
+    _conferir_marco_de_sessao(user, payload)
+    g.current_user = user
+    g.jwt_claims = payload
+    return user
+
+
 def require_auth(view: Callable) -> Callable:
     """Exige Authorization: Bearer <access_token>. Injeta g.current_user."""
 
     @wraps(view)
     def wrapper(*args, **kwargs):
-        token = _extract_bearer()
-        payload = decode_token(token, expected_type="access")
-        user = _load_user(payload["sub"])
-        _conferir_marco_de_sessao(user, payload)
-        g.current_user = user
-        g.jwt_claims = payload
+        autenticar_sessao()
         return view(*args, **kwargs)
 
     return wrapper

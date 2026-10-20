@@ -10,6 +10,14 @@ from src.models import Agency, Influencer, OAuthProvider, Post, PostType, Social
 from datetime import datetime, timezone
 
 
+@pytest.fixture(autouse=True)
+def _sem_2fa_obrigatorio(app, monkeypatch):
+    """Estes testes são sobre a identidade OAuth, e a conta nova pelo Google ou
+    Microsoft nasce administradora — que agora vai para a ativação do 2FA. O
+    caminho com 2FA está em `test_dois_fatores.py`."""
+    monkeypatch.setitem(app.config, "MFA_OBRIGATORIO_PARA_ADMIN", False)
+
+
 @pytest.fixture()
 def seeded_user(app):
     with app.app_context():

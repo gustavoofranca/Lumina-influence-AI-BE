@@ -156,7 +156,9 @@ def build_openapi() -> dict:
             "post": {"tags": ["Auth"], "summary": "Login por e-mail e senha",
                      "description": "Mesma resposta 401 para e-mail inexistente e senha errada. "
                                     "Limite: 5 falhas/15 min por e-mail e 20 por IP.",
-                     "responses": {"200": {"description": "Usuário, agência e par de tokens"},
+                     "responses": {"200": {"description": "Usuário, agência e par de tokens — ou, "
+                                                          "com segundo fator a cumprir, "
+                                                          "{mfa: challenge|setup, mfa_ticket}"},
                                    "401": {"description": "E-mail ou senha incorretos"},
                                    "403": {"description": "Senha certa, e-mail não confirmado"},
                                    "429": {"description": "Muitas tentativas"}}},
@@ -177,9 +179,51 @@ def build_openapi() -> dict:
             "post": {"tags": ["Auth"], "summary": "Troca a senha (logado)",
                      "security": [{"bearerAuth": []}],
                      "description": "Devolve um par novo e encerra as outras sessões. Senha atual "
-                                    "errada é 422 no campo, não 401.",
+                                    "errada é 422 no campo, não 401. Com 2FA ativo, exige "
+                                    "`totp_code`.",
                      "responses": {"200": {"description": "Par de tokens novo"},
                                    "422": {"description": "Senha atual errada ou nova recusada"}}},
+        },
+        "/api/v1/auth/2fa/verify": {
+            "post": {"tags": ["Auth"], "summary": "Troca o ticket de desafio do 2FA pela sessão",
+                     "description": "Corpo: `mfa_ticket` e `code` (6 dígitos do app ou código de "
+                                    "recuperação). Cada código do app vale uma vez; limite de 5 "
+                                    "falhas/15 min por conta. Errar não gasta o ticket.",
+                     "responses": {"200": {"description": "Usuário, agência e par de tokens"},
+                                   "400": {"description": "Ticket inválido, usado ou vencido"},
+                                   "422": {"description": "Código inválido ou já usado"},
+                                   "429": {"description": "Muitas tentativas"}}},
+        },
+        "/api/v1/auth/2fa/setup": {
+            "post": {"tags": ["Auth"], "summary": "Começa a ativação do 2FA",
+                     "description": "Pelo ticket de ativação (`mfa_ticket`) ou pela sessão "
+                                    "(Bearer). Devolve `secret`, `otpauth_uri` e `qr_svg`.",
+                     "responses": {"200": {"description": "Segredo pendente e QR code"},
+                                   "401": {"description": "Sem ticket nem sessão"},
+                                   "409": {"description": "2FA já ativo"}}},
+        },
+        "/api/v1/auth/2fa/setup/confirm": {
+            "post": {"tags": ["Auth"], "summary": "Confirma a ativação com o primeiro código",
+                     "description": "Liga o 2FA, gera 10 códigos de recuperação (mostrados só "
+                                    "agora) e encerra as outras sessões.",
+                     "responses": {"200": {"description": "recovery_codes e sessão nova"},
+                                   "409": {"description": "Ativação não iniciada ou já ativa"},
+                                   "422": {"description": "Código inválido"}}},
+        },
+        "/api/v1/auth/2fa/recovery-codes": {
+            "post": {"tags": ["Auth"], "summary": "Gera novos códigos de recuperação",
+                     "security": [{"bearerAuth": []}],
+                     "description": "Exige um código válido; os anteriores deixam de valer.",
+                     "responses": {"200": {"description": "recovery_codes"},
+                                   "422": {"description": "Código inválido"}}},
+        },
+        "/api/v1/auth/2fa/disable": {
+            "post": {"tags": ["Auth"], "summary": "Desliga o 2FA (membro e visualizador)",
+                     "security": [{"bearerAuth": []}],
+                     "description": "Exige código válido e, em conta com senha, a senha.",
+                     "responses": {"204": {"description": "2FA desligado"},
+                                   "403": {"description": "Administrador não pode desligar"},
+                                   "422": {"description": "Código ou senha inválidos"}}},
         },
         "/api/v1/auth/accept-terms": {
             "post": {"tags": ["Auth"], "summary": "Registra o aceite dos Termos e da Política",

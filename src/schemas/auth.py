@@ -29,6 +29,8 @@ class UserOut(BaseModel):
     has_password: bool = False
     email_verified: bool = False
     terms_accepted: bool = False
+    mfa_enabled: bool = False
+    recovery_codes_left: int = 0
     created_at: datetime
 
 
@@ -131,7 +133,45 @@ class ResetPasswordIn(BaseModel):
     password: SenhaDigitada
 
 
+# Código de 6 dígitos do app ou de recuperação (`xxxx-xxxx`). O formato é
+# conferido no serviço: aqui só se recusa o que nem cabe num código.
+CodigoDigitado = Annotated[StrictStr, StringConstraints(min_length=1, max_length=20)]
+
+
 class ChangePasswordIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     current_password: SenhaInformada
     new_password: SenhaDigitada
+    # Obrigatório quando a conta tem 2FA (conferido no serviço).
+    totp_code: Optional[CodigoDigitado] = None
+
+
+class MfaVerifyIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mfa_ticket: Token
+    code: CodigoDigitado
+
+
+class MfaSetupIn(BaseModel):
+    """Sem `mfa_ticket`, a ativação é pela sessão (Bearer)."""
+
+    model_config = ConfigDict(extra="forbid")
+    mfa_ticket: Optional[Token] = None
+
+
+class MfaConfirmIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: CodigoDigitado
+    mfa_ticket: Optional[Token] = None
+
+
+class MfaCodeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: CodigoDigitado
+
+
+class MfaDisableIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: CodigoDigitado
+    # Obrigatória para conta com senha (conferido no serviço).
+    password: Optional[SenhaInformada] = None

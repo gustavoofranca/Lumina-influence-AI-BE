@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from src.extensions import db
 from src.integrations.email import enviar
 from src.models import FinalidadeToken, User
-from src.services import emails, token_service, user_service
+from src.services import dois_fatores_service, emails, token_service, user_service
 from src.services.auth_service import invalidar_sessoes
 from src.utils.errors import ForbiddenError, UnauthorizedError
 from src.utils.rate_limit import (
@@ -99,7 +99,7 @@ def redefinir_senha(token: str, senha: str) -> None:
     logger.info("Senha redefinida pelo link para o usuário %s", user.id)
 
 
-def trocar_senha(user: User, atual: str, nova: str) -> User:
+def trocar_senha(user: User, atual: str, nova: str, *, totp_code: str | None = None) -> User:
     limitar("RATE_LIMIT_TROCA_SENHA", str(user.id))
     # 422 no campo, e não 401: o front lê 401 como sessão expirada e
     # deslogaria a pessoa por ela ter digitado errado.
@@ -112,6 +112,13 @@ def trocar_senha(user: User, atual: str, nova: str) -> User:
     problema = problema_da_senha(nova, email=user.email, nome=user.name)
     if problema:
         raise erro_de_campo("new_password", problema, "password_policy")
+    if user.mfa_enabled:
+        # Trocar a senha é ação sensível: com 2FA, pede o segundo fator
+        # (OWASP MFA Cheat Sheet). Por último, para não gastar o código num
+        # pedido que a senha atual ou a política recusariam.
+        if not totp_code:
+            raise erro_de_campo("totp_code", "informe o código do app autenticador", "missing")
+        dois_fatores_service.verificar_codigo(user, totp_code, campo="totp_code")
     user.password_hash = gerar_hash(nova)
     invalidar_sessoes(user)
     db.session.commit()

@@ -17,7 +17,7 @@ def _h(token: str) -> dict:
 
 def test_concluir_login_devolve_usuario_agencia_e_tokens(app, conta_com_senha):
     with app.test_request_context():
-        dados = concluir_login(db.session.get(User, conta_com_senha.id))
+        dados = concluir_login(db.session.get(User, conta_com_senha.id), exigir_2fa=False)
     assert set(dados) == {"user", "agency", "tokens"}
     assert dados["tokens"]["access_token"] and dados["tokens"]["refresh_token"]
 

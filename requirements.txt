@@ -25,6 +25,9 @@ google-genai==2.19.0
 python-dotenv==1.2.3
 cryptography==50.0.0
 argon2-cffi==25.1.0
+# QR code do 2FA, gerado como SVG no próprio back. Python puro, sem dependência
+# própria; acrescentado em 19/10/2026 com a versão do índice nessa data.
+segno==1.6.6
 apscheduler==3.11.3
 flasgger==0.9.7.1
 xhtml2pdf==0.2.17
