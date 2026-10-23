@@ -33,8 +33,10 @@ chmod +x Lumina-Influence-AI-BE/deploy/deploy.sh
 Lumina-Influence-AI-BE/deploy/deploy.sh
 ```
 
-**DNS:** registros `A` de `@`, `www` e `api` apontando para o IP do VPS. O
-Caddy só consegue emitir o certificado depois que o DNS propaga.
+**DNS:** registros `A` de `DOMINIO` e de `api.DOMINIO` apontando para o IP do
+VPS (com `DOMINIO=lumina.gustavofranca.tech`, os nomes `lumina` e
+`api.lumina` na zona de `gustavofranca.tech`). O Caddy só consegue emitir o
+certificado depois que o DNS propaga.
 
 **Firewall:** liberar 22 (SSH), 80 e 443 (TCP) e 443 (UDP, HTTP/3).
 

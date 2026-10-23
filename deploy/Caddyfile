@@ -27,10 +27,6 @@
 	header @index Cache-Control "no-cache"
 }
 
-www.{$DOMINIO} {
-	redir https://{$DOMINIO}{uri} permanent
-}
-
 # API (Flask/gunicorn). O Caddy substitui o X-Forwarded-For que o cliente
 # mandar pelo IP real; a API confia em exatamente um proxy (TRUSTED_PROXIES=1).
 api.{$DOMINIO} {
