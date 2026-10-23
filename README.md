@@ -109,7 +109,8 @@ curl http://localhost:5000/api/v1/health
 | Listar jobs | `flask jobs list` |
 | Rodar job manual | `flask jobs run <name>` |
 | Servidor (desenvolvimento) | `flask run` |
-| Servidor (WSGI, carga/produção) | `gunicorn -w 4 -b 0.0.0.0:5000 wsgi:app` |
+| Servidor (WSGI, carga) | `gunicorn -w 4 -b 0.0.0.0:5000 wsgi:app` |
+| Produção (VPS, Docker + Caddy) | `deploy/deploy.sh` — ver [deploy/README.md](deploy/README.md) |
 
 > **Jobs:** o scheduler só inicia com `flask run` (servindo). Comandos CLI não o disparam. Desabilite com `LUMINA_DISABLE_SCHEDULER=1`.
 >

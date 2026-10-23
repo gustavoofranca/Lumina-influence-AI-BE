@@ -1,0 +1,2 @@
+# Estes arquivos rodam no Linux do VPS: CRLF quebraria o shebang do script.
+* text eol=lf

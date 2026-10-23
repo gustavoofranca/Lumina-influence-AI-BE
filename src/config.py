@@ -95,6 +95,11 @@ class Config:
     # Front-end
     FRONTEND_ORIGIN: str = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
 
+    # Quantos proxies reversos confiáveis ficam na frente da API (em produção,
+    # o Caddy: 1). Com 0, X-Forwarded-* é ignorado — sem proxy, quem escreve
+    # esses cabeçalhos é o próprio cliente.
+    TRUSTED_PROXIES: int = int(os.getenv("TRUSTED_PROXIES", "0"))
+
     # E-mail transacional (verificação de e-mail e redefinição de senha). Com
     # Gmail: smtp.gmail.com, porta 587, e uma "senha de app" — exige
     # verificação em duas etapas ligada na conta. Sem SMTP_HOST o e-mail vai
@@ -233,6 +238,7 @@ class TestConfig(Config):
     SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
     JWT_SECRET = "test-secret-com-32-bytes-no-minimo-pra-hs256"
     FRONTEND_ORIGIN = "http://localhost:5173"
+    TRUSTED_PROXIES = 0
     GOOGLE_CLIENT_ID = "test-google-client-id"
     GOOGLE_CLIENT_SECRET = "test-google-client-secret"
     MICROSOFT_CLIENT_ID = "test-ms-client-id"
@@ -285,7 +291,7 @@ class ProdConfig(Config):
     def __init__(self) -> None:
         # Em prod, sem defaults inseguros — valida no boot.
         for name in ("DATABASE_URL", "JWT_SECRET", "FERNET_KEY",
-                     "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"):
+                     "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "FRONTEND_ORIGIN"):
             if not os.getenv(name):
                 raise RuntimeError(
                     f"Variável de ambiente obrigatória ausente em produção: {name}"

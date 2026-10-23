@@ -266,6 +266,14 @@ def create_app(config_name: str | None = None) -> Flask:
     app = Flask(__name__)
     app.config.from_object(config_cls)
 
+    proxies = app.config.get("TRUSTED_PROXIES", 0)
+    if proxies:
+        # Atrás do Caddy: o IP real alimenta o limite de tentativas por IP, e o
+        # esquema https entra nas URLs absolutas (retorno do OAuth).
+        from werkzeug.middleware.proxy_fix import ProxyFix
+
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=proxies, x_proto=proxies, x_host=proxies)
+
     _configure_logging(app.config.get("ENV", "dev"))
 
     # Importa todos os models pra que estejam em Base.metadata antes do

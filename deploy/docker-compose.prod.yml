@@ -1,0 +1,76 @@
+# Produção no VPS. Use pelo deploy.sh, que passa o .env da raiz do back:
+#   docker compose -f docker-compose.prod.yml --env-file ../.env up -d --build
+#
+# caddy  → HTTPS, serve o front e repassa api.DOMINIO para a API
+# api    → gunicorn atendendo HTTP, sem agendador
+# worker → mesmo código, só o agendador de jobs (um processo, para cada job
+#          rodar uma vez só — ver _should_start_scheduler em src/app.py)
+# O banco é o Supabase (DATABASE_URL no .env); não há Postgres aqui.
+name: lumina
+
+services:
+  caddy:
+    build:
+      context: .
+      dockerfile: web.Dockerfile
+      additional_contexts:
+        frontend: ../../Lumina-Influence-AI-FE
+      args:
+        VITE_API_BASE_URL: https://api.${DOMINIO:?defina DOMINIO no .env}/api/v1
+        VITE_CONTACT_EMAIL: ${VITE_CONTACT_EMAIL:-}
+    environment:
+      DOMINIO: ${DOMINIO}
+      ACME_EMAIL: ${ACME_EMAIL:?defina ACME_EMAIL no .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  api:
+    image: lumina-api:latest
+    build:
+      context: ..
+      dockerfile: deploy/api.Dockerfile
+    env_file: ../.env
+    environment:
+      FLASK_ENV: prod
+      TRUSTED_PROXIES: "1"
+      LUMINA_SCHEDULER_ROLE: api
+    volumes:
+      - storage:/app/storage
+    expose:
+      - "5000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/api/v1/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  worker:
+    image: lumina-api:latest
+    env_file: ../.env
+    environment:
+      FLASK_ENV: prod
+      LUMINA_SCHEDULER_ROLE: worker
+      # O .env de desenvolvimento costuma desligar o agendador; aqui ele é o
+      # único lugar onde precisa estar ligado.
+      LUMINA_DISABLE_SCHEDULER: "0"
+    command: ["gunicorn", "--workers", "1", "--bind", "127.0.0.1:5001", "wsgi:app"]
+    volumes:
+      - storage:/app/storage
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  storage:
+  caddy_data:
+  caddy_config:

@@ -162,7 +162,7 @@ def ip_do_cliente() -> str:
 
     `remote_addr`, e não `X-Forwarded-For`: o cabeçalho é escrito pelo cliente,
     e confiar nele deixaria qualquer um escolher o próprio IP e escapar do
-    limite. Atrás de proxy, o certo é configurar `ProxyFix` com o número exato
-    de saltos — decisão de implantação, não deste módulo.
+    limite. Atrás de proxy, `TRUSTED_PROXIES` liga o `ProxyFix` em `create_app`
+    com o número exato de saltos, e `remote_addr` passa a ser o IP real.
     """
     return request.remote_addr or "desconhecido"
