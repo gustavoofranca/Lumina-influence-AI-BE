@@ -20,7 +20,6 @@ services:
         VITE_CONTACT_EMAIL: ${VITE_CONTACT_EMAIL:-}
     environment:
       DOMINIO: ${DOMINIO}
-      ACME_EMAIL: ${ACME_EMAIL:?defina ACME_EMAIL no .env}
     ports:
       - "80:80"
       - "443:443"

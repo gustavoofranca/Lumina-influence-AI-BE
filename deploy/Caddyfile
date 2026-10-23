@@ -1,8 +1,7 @@
-# Caddy: HTTPS automático (Let's Encrypt) para o site e para a API.
-# DOMINIO e ACME_EMAIL chegam pelo docker-compose.prod.yml, a partir do .env.
-{
-	email {$ACME_EMAIL}
-}
+# Caddy: HTTPS automático (Let's Encrypt) para o site e para a API, com
+# renovação sozinha. DOMINIO chega pelo docker-compose.prod.yml, a partir do
+# .env. Sem e-mail de conta ACME: é opcional, e o Let's Encrypt não manda mais
+# avisos de expiração.
 
 # Site (React). Toda rota desconhecida cai no index.html: o roteamento é do
 # próprio front. A CSP vem no <meta> do build; aqui entra só o que <meta> não
