@@ -122,7 +122,30 @@ def test_hash_antigo_e_refeito_no_login(client, app, conta_com_senha, monkeypatc
 
 
 def test_opcoes(client):
-    assert client.get("/api/v1/auth/options").get_json()["data"] == {"dev_login": True, "google": True}
+    assert client.get("/api/v1/auth/options").get_json()["data"] == {
+        "dev_login": True, "google": True, "microsoft": True,
+    }
+
+
+def _microsoft_nas_opcoes(client) -> bool:
+    return client.get("/api/v1/auth/options").get_json()["data"]["microsoft"]
+
+
+def test_opcoes_microsoft_exige_id_e_segredo(client, app, monkeypatch):
+    monkeypatch.setitem(app.config, "MICROSOFT_CLIENT_ID", "id")
+    monkeypatch.setitem(app.config, "MICROSOFT_CLIENT_SECRET", "segredo")
+    assert _microsoft_nas_opcoes(client) is True
+
+
+def test_opcoes_microsoft_sem_id(client, app, monkeypatch):
+    monkeypatch.setitem(app.config, "MICROSOFT_CLIENT_ID", None)
+    assert _microsoft_nas_opcoes(client) is False
+
+
+def test_opcoes_microsoft_sem_segredo(client, app, monkeypatch):
+    # Sem o segredo a troca do código falharia: o botão não pode aparecer.
+    monkeypatch.setitem(app.config, "MICROSOFT_CLIENT_SECRET", "")
+    assert _microsoft_nas_opcoes(client) is False
 
 
 # ---------------------------------------------------------------- esqueci e redefinir
