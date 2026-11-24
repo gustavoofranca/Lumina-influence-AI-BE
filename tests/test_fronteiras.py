@@ -112,9 +112,6 @@ EXCECOES = {
     ("video_upload_service", "Campaign"),
     ("video_upload_service", "Influencer"),
     ("video_upload_service", "SocialAccount"),
-    # F1 (escopo por agência): item 3.
-    ("post_service", "Influencer"),
-    ("post_service", "SocialAccount"),
     # F4 (decisões de recomendação): item 7.
     ("influencer_service", "AIAnalysis"),
     ("influencer_service", "Post"),

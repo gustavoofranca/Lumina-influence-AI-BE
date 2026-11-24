@@ -10,6 +10,22 @@ from src.models import Influencer, Platform, SocialAccount
 from src.utils.errors import ConflictError, NotFoundError
 
 
+def contas_da_agencia(agency_id: uuid.UUID) -> Select:
+    """Subconsulta com os ids das contas sociais cujo criador é da agência.
+
+    Serve para outro domínio escopar o que é dele (post, por exemplo) com
+    `coluna.in_(contas_da_agencia(agency_id))`. Pela ADR-008, quem precisa do
+    escopo pede ao dono em vez de refazer o join `SocialAccount -> Influencer`:
+    se o caminho até a agência mudar, muda só aqui, e não em cada serviço que
+    copiou o join — esquecer um deles é vazamento entre clientes.
+    """
+    return (
+        select(SocialAccount.id)
+        .join(Influencer, SocialAccount.influencer_id == Influencer.id)
+        .where(Influencer.agency_id == agency_id)
+    )
+
+
 def build_account_query(
     agency_id: uuid.UUID, *, influencer_id: str | None = None
 ) -> Select:
