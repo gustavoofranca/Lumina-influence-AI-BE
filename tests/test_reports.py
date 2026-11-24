@@ -1,9 +1,11 @@
 """Testes da B10 — geração, listagem e download de relatórios PDF."""
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
@@ -583,6 +585,90 @@ def test_recomendacoes_deduplicam_respeitam_o_limite_e_ignoram_item_malformado(
     # Item malformado não vira recomendação de título vazio.
     assert all(r["title"] for r in recs)
     assert "objeto sem título" not in [r["description"] for r in recs]
+
+
+# ==========================================================================
+# Contexto inteiro congelado (COD-04)
+# ==========================================================================
+SNAPSHOT_DO_CONTEXTO = Path(__file__).with_name("snapshot_contexto_do_relatorio.json")
+
+
+def _popular_periodo_fixo(ctx):
+    """Dois criadores com posts e análises em janeiro e fevereiro de 2026.
+
+    Datas fixas para o contexto não depender do dia em que a suíte roda: os
+    posts da fixture `ctx` caem em "agora", fora do período pedido.
+    """
+    from src.models import AIAnalysis, SentimentLabel
+
+    nina_sa = db.session.scalar(select(SocialAccount))
+    camp_id = uuid.UUID(ctx.camp_id)
+    leo = Influencer(agency_id=ctx.agency_id, display_name="Leo Moda", niche="moda")
+    db.session.add(leo)
+    db.session.flush()
+    leo_sa = SocialAccount(influencer=leo, platform=Platform.TIKTOK, handle="leo",
+                           follower_count=50000)
+    db.session.add(leo_sa)
+    db.session.add(CampaignInfluencer(campaign_id=camp_id, influencer=leo, fee_brl_cents=80000))
+    db.session.flush()
+
+    def post(sa, marcador, quando, *, alcance, organico, legenda, **analise):
+        p = Post(social_account_id=sa.id, campaign_id=camp_id,
+                 platform_post_id=f"fixo-{marcador}", post_type=PostType.REEL,
+                 posted_at=quando, caption=legenda, reach_total=alcance,
+                 reach_organic=organico, reach_paid=alcance - organico,
+                 impressions=alcance * 2, likes=alcance // 10,
+                 comments_count=alcance // 100, shares=alcance // 200, saves=alcance // 300)
+        db.session.add(p)
+        db.session.flush()
+        if analise:
+            db.session.add(AIAnalysis(post_id=p.id, model_version="teste",
+                                      analyzed_at=quando, **analise))
+
+    jan = datetime(2026, 1, 15, 12, tzinfo=timezone.utc)
+    fev = datetime(2026, 2, 10, 12, tzinfo=timezone.utc)
+    post(nina_sa, "n1", jan, alcance=12000, organico=9000,
+         legenda="Unboxing do novo   fone\ncom cancelamento de ruído e bateria de dois dias inteiros",
+         sentiment_score=0.9, sentiment_label=SentimentLabel.POSITIVE, script_score=8.5,
+         brand_coherence_score=92.0, bot_probability=2.0,
+         recommendations=[{"title": "Repetir o formato unboxing", "description": "alto alcance"},
+                          {"title": "Responder comentários", "description": "engajamento"}],
+         transcript_text="Oi gente, hoje eu vou abrir o fone novo da NovaTech.",
+         key_phrases=["fone novo", "bateria"])
+    post(nina_sa, "n2", fev, alcance=8000, organico=8000, legenda=None)
+    post(leo_sa, "l1", fev, alcance=20000, organico=11000, legenda="Look do dia",
+         sentiment_score=0.4, sentiment_label=SentimentLabel.NEUTRAL, script_score=6.0,
+         brand_coherence_score=70.0, bot_probability=9.0,
+         recommendations=[{"title": "Responder comentários", "description": "repetida"},
+                          {"title": "Mostrar o produto antes", "description": "gancho"}])
+    db.session.commit()
+
+
+def test_contexto_do_relatorio_congelado(ctx, app):
+    """A separação de consulta, cálculo e montagem não pode mudar uma vírgula.
+
+    Compara o contexto inteiro com o que a versão anterior à refatoração
+    produzia. Só `generated_at` (relógio) e `brand_mark` (imagem) ficam de fora.
+    Para regravar, apague o arquivo: o teste o recria e reprova uma vez.
+    """
+    with app.app_context():
+        _popular_periodo_fixo(ctx)
+        campanha = db.session.get(Campaign, uuid.UUID(ctx.camp_id))
+        contexto = report_service.build_report_context(
+            campaign=campanha, period_start=date(2026, 1, 1), period_end=date(2026, 3, 1),
+            sections=[*report_service.SECTION_KEYS, "inexistente"],
+            title="Relatório congelado", generated_by="Admin A",
+        )
+    contexto.pop("generated_at")
+    assert contexto.pop("brand_mark").startswith("data:")
+    contexto = json.loads(json.dumps(contexto, ensure_ascii=False))
+
+    if not SNAPSHOT_DO_CONTEXTO.exists():
+        SNAPSHOT_DO_CONTEXTO.write_text(
+            json.dumps(contexto, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        pytest.fail("snapshot criado; rode de novo")
+    assert contexto == json.loads(SNAPSHOT_DO_CONTEXTO.read_text(encoding="utf-8"))
 
 
 # ==========================================================================

@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Iterator
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -81,56 +82,115 @@ def build_report_context(
     *, campaign: Campaign, period_start: date, period_end: date, sections: list[str],
     title: str, generated_by: str,
 ) -> dict:
+    """Monta o contexto do template: só compõe, quem consulta e calcula são os blocos."""
+    dados = _consultar_periodo(campaign, period_start, period_end)
+    resumo = _resumo(dados)
+    return {
+        "report_title": title,
+        "brand_mark": marca_data_uri(),
+        "campaign": {
+            "brand_name": campaign.brand_name,
+            "title": campaign.title,
+        },
+        "period_start": period_start.strftime("%d/%m/%Y"),
+        "period_end": period_end.strftime("%d/%m/%Y"),
+        "budget_brl": _fmt_brl(campaign.budget_brl_cents),
+        "generated_by": generated_by,
+        "generated_at": datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC"),
+        "summary": resumo,
+        "sections": [s for s in sections if s in SECTION_KEYS],
+        "kpis": _kpis(dados, resumo),
+        "kpis_detalhe": _kpis_detalhe(campaign, dados),
+        "posts_tabela": _tabela_de_posts(dados),
+        "growth": _crescimento(dados, resumo),
+        "benchmark": _benchmark(dados.rows),
+        "diagnostic": _diagnostico(dados.rows),
+        # Vídeo — o que a IA ouviu, e não só o que concluiu.
+        "video": _gather_video_analyses(dados.rows, dados.posts),
+        # Das análises dos posts que entraram no período.
+        "recommendations": _gather_recommendations(dados.rows, dados.posts),
+    }
+
+
+# --------------------------------------------------------------------------
+# Consulta
+# --------------------------------------------------------------------------
+@dataclass(frozen=True)
+class _DadosDoPeriodo:
+    """Tudo o que o relatório lê do banco para um intervalo, lido uma vez só."""
+
+    rows: list[dict]
+    posts: list[Post]
+    posts_count: int
+
+    @property
+    def total_reach(self) -> int:
+        return sum(r["total_reach"] for r in self.rows)
+
+    @property
+    def has_data(self) -> bool:
+        # Sem post no período não há o que medir. A distinção precisa viajar no
+        # contexto: quem renderiza não tem como separar "medimos zero" de "não
+        # medimos" olhando só para os números. Mesmo princípio da ADR-002.
+        return self.posts_count > 0
+
+
+def _consultar_periodo(campaign: Campaign, period_start: date, period_end: date) -> _DadosDoPeriodo:
     bench = dashboard_service.campaign_benchmarking(
         campaign, period_start=period_start, period_end=period_end
     )
-    rows = bench["influencers"]
+    return _DadosDoPeriodo(
+        rows=bench["influencers"],
+        posts=_campaign_posts(campaign.id, period_start, period_end),
+        posts_count=_count_campaign_posts(campaign.id, period_start, period_end),
+    )
 
-    # Sumário executivo
-    org_vals = [r["organic_pct"] for r in rows]
-    sent_vals = [r["sentiment_index_pct"] for r in rows]
-    total_reach = sum(r["total_reach"] for r in rows)
-    posts_count = _count_campaign_posts(campaign.id, period_start, period_end)
 
-    # Sem post no período não há o que medir. A distinção precisa viajar no
-    # contexto: quem renderiza não tem como separar "medimos zero" de "não
-    # medimos" olhando só para os números. Mesmo princípio da ADR-002.
-    has_data = posts_count > 0
-
-    summary = {
-        "influencer_count": len(rows),
-        "avg_organic_pct": _media(org_vals),
-        "avg_organic_pct_fmt": _fmt_pct(_media(org_vals)),
-        "avg_sentiment_pct": _media(sent_vals),
-        "avg_sentiment_pct_fmt": _fmt_pct(_media(sent_vals)),
-        "total_reach_fmt": _fmt_compact(total_reach),
-        "posts_count": posts_count,
-        "has_data": has_data,
+# --------------------------------------------------------------------------
+# Cálculo de cada bloco
+# --------------------------------------------------------------------------
+def _resumo(dados: _DadosDoPeriodo) -> dict:
+    """Sumário executivo."""
+    media_organica = _media([r["organic_pct"] for r in dados.rows])
+    media_sentimento = _media([r["sentiment_index_pct"] for r in dados.rows])
+    return {
+        "influencer_count": len(dados.rows),
+        "avg_organic_pct": media_organica,
+        "avg_organic_pct_fmt": _fmt_pct(media_organica),
+        "avg_sentiment_pct": media_sentimento,
+        "avg_sentiment_pct_fmt": _fmt_pct(media_sentimento),
+        "total_reach_fmt": _fmt_compact(dados.total_reach),
+        "posts_count": dados.posts_count,
+        "has_data": dados.has_data,
     }
 
-    # KPIs da campanha
-    avg_eng = _media([r["engagement_rate"] for r in rows], casas=2)
-    # `depends_on_posts` diz quais cartões perdem o sentido num período sem
-    # post. A contagem de criadores não é um deles: é fato do elenco da
-    # campanha, não medição do período.
-    kpis = [
-        {"label": "Criadores", "value": str(len(rows)), "change": None,
+
+def _kpis(dados: _DadosDoPeriodo, resumo: dict) -> list[dict]:
+    """Cartões de KPI da campanha.
+
+    `depends_on_posts` diz quais cartões perdem o sentido num período sem
+    post. A contagem de criadores não é um deles: é fato do elenco da
+    campanha, não medição do período.
+    """
+    media_engajamento = _media([r["engagement_rate"] for r in dados.rows], casas=2)
+    return [
+        {"label": "Criadores", "value": str(len(dados.rows)), "change": None,
          "depends_on_posts": False},
-        {"label": "Alcance Total", "value": _fmt_compact(total_reach), "change": None,
+        {"label": "Alcance Total", "value": _fmt_compact(dados.total_reach), "change": None,
          "depends_on_posts": True},
-        {"label": "Engajamento Médio", "value": _fmt_pct(avg_eng), "change": None,
+        {"label": "Engajamento Médio", "value": _fmt_pct(media_engajamento), "change": None,
          "depends_on_posts": True},
-        {"label": "Sentimento Médio", "value": summary["avg_sentiment_pct_fmt"],
+        {"label": "Sentimento Médio", "value": resumo["avg_sentiment_pct_fmt"],
          "change": None, "depends_on_posts": True},
     ]
 
-    # Growth (orgânico vs pago por bucket) — só dos posts da campanha
-    posts = _campaign_posts(campaign.id, period_start, period_end)
-    growth_raw = M.growth_trajectory(posts, "90d")
+
+def _crescimento(dados: _DadosDoPeriodo, resumo: dict) -> list[dict]:
+    """Orgânico contra pago por mês, só dos posts da campanha."""
     # Sem divisão medida, a coluna "orgânico" repetiria o total e "pago" diria
     # zero — as duas afirmações que a ADR-005 proíbe apresentar como coleta.
-    sem_divisao = has_data and summary["avg_organic_pct"] is None
-    growth = [
+    sem_divisao = dados.has_data and resumo["avg_organic_pct"] is None
+    return [
         {
             # O rótulo mensal sai de `%b`, que é inglês ("Aug") num PDF em português.
             "x": _MESES_PT.get(g["x"], g["x"]),
@@ -140,13 +200,18 @@ def build_report_context(
             "organic_fmt": "—" if sem_divisao else _fmt_compact(g["organic"]),
             "paid_fmt": "—" if sem_divisao else _fmt_compact(g["paid"]),
         }
-        for g in growth_raw
+        for g in M.growth_trajectory(dados.posts, "90d")
     ]
 
-    # Benchmark — os valores crus servem a gráfico; os `_fmt` são o que PDF e
-    # pré-visualização exibem, para que a ausência de medição vire travessão nos
-    # dois e não "None%" num e "0%" no outro.
-    benchmark = [
+
+def _benchmark(rows: list[dict]) -> list[dict]:
+    """Uma linha por criador.
+
+    Os valores crus servem a gráfico; os `_fmt` são o que PDF e pré-visualização
+    exibem, para que a ausência de medição vire travessão nos dois e não
+    "None%" num e "0%" no outro.
+    """
+    return [
         {
             "display_name": r["display_name"],
             "total_reach_fmt": _fmt_compact(r["total_reach"]),
@@ -162,97 +227,94 @@ def build_report_context(
         for r in rows
     ]
 
-    # Diagnostic (top 2 por score IA) — sai das próprias linhas do benchmarking,
-    # que já vêm filtradas pelo período. Reler as análises do criador aqui
-    # descrevia a vida inteira dele sob uma capa que promete um intervalo.
+
+def _diagnosticavel(r: dict) -> bool:
     # Quem não tem as três notas no período não entra: uma frase montada sobre
     # zeros afirmaria "alinhamento parcial" e "bot baixa" sem nenhuma análise.
-    diagnosticaveis = sorted(
-        (
-            r for r in rows
-            if r["ai_score"] is not None
-            and r["brand_coherence"] is not None
-            and r["bot_probability"] is not None
-            and r["sentiment_index_pct"] is not None
-        ),
-        key=lambda x: x["ai_score"],
-        reverse=True,
+    return all(
+        r[chave] is not None
+        for chave in ("ai_score", "brand_coherence", "bot_probability", "sentiment_index_pct")
     )
-    diagnostic = []
-    for r in diagnosticaveis[:2]:
-        coh = r["brand_coherence"]
-        bot = r["bot_probability"]
-        note = (
-            f"Análise indica alinhamento {'forte' if coh > 85 else 'parcial'} com a marca, "
-            f"sentimento {'majoritariamente positivo' if r['sentiment_index_pct'] >= 80 else 'misto'} "
-            f"e probabilidade de bot {'baixa' if bot < 5 else 'a monitorar'}."
-        )
-        diagnostic.append({
-            "display_name": r["display_name"], "niche": r["niche"] or "—",
-            "brand_coherence": coh, "bot_probability": bot, "note": note,
-        })
 
-    # Engajamento bruto e custo. Com poucos criadores o relatório ficava com
-    # meia página em branco, e esses números já estavam no banco — é dado
-    # medido, não preenchimento. O custo por mil só existe com orçamento e
-    # alcance: sem um dos dois, travessão, nunca "R$ 0,00".
-    soma = lambda campo: sum(getattr(p, campo) or 0 for p in posts)  # noqa: E731
-    cpm = (
-        "R$ " + _fmt_brl(round(campaign.budget_brl_cents * 1000 / total_reach))
-        if has_data and total_reach > 0 and campaign.budget_brl_cents > 0 else "—"
+
+def _nota_de_diagnostico(r: dict) -> str:
+    alinhamento = "forte" if r["brand_coherence"] > 85 else "parcial"
+    sentimento = "majoritariamente positivo" if r["sentiment_index_pct"] >= 80 else "misto"
+    bot = "baixa" if r["bot_probability"] < 5 else "a monitorar"
+    return (
+        f"Análise indica alinhamento {alinhamento} com a marca, "
+        f"sentimento {sentimento} "
+        f"e probabilidade de bot {bot}."
     )
-    kpis_detalhe = [
+
+
+def _diagnostico(rows: list[dict]) -> list[dict]:
+    """Os dois criadores de maior nota de IA.
+
+    Sai das próprias linhas do benchmarking, que já vêm filtradas pelo período.
+    Reler as análises do criador aqui descrevia a vida inteira dele sob uma
+    capa que promete um intervalo.
+    """
+    melhores = sorted(filter(_diagnosticavel, rows), key=lambda r: r["ai_score"], reverse=True)
+    return [
+        {
+            "display_name": r["display_name"], "niche": r["niche"] or "—",
+            "brand_coherence": r["brand_coherence"], "bot_probability": r["bot_probability"],
+            "note": _nota_de_diagnostico(r),
+        }
+        for r in melhores[:2]
+    ]
+
+
+def _kpis_detalhe(campaign: Campaign, dados: _DadosDoPeriodo) -> list[dict]:
+    """Engajamento bruto e custo.
+
+    Com poucos criadores o relatório ficava com meia página em branco, e esses
+    números já estavam no banco — é dado medido, não preenchimento. O custo por
+    mil só existe com orçamento e alcance: sem um dos dois, travessão, nunca
+    "R$ 0,00".
+    """
+    def soma(campo: str) -> int:
+        return sum(getattr(p, campo) or 0 for p in dados.posts)
+
+    alcance = dados.total_reach
+    cpm = (
+        "R$ " + _fmt_brl(round(campaign.budget_brl_cents * 1000 / alcance))
+        if dados.has_data and alcance > 0 and campaign.budget_brl_cents > 0 else "—"
+    )
+    return [
         {"label": "Curtidas", "value": _fmt_compact(soma("likes"))},
         {"label": "Comentários", "value": _fmt_compact(soma("comments_count"))},
         {"label": "Compartilhamentos", "value": _fmt_compact(soma("shares"))},
         {"label": "Custo por mil alcançados", "value": cpm},
     ]
 
-    nomes = {r["influencer_id"]: r["display_name"] for r in rows if r.get("influencer_id")}
-    posts_tabela = []
-    for p in sorted(posts, key=lambda x: x.posted_at, reverse=True)[:LIMITE_DE_POSTS_NA_TABELA]:
-        legenda = " ".join((p.caption or "").split())
-        posts_tabela.append({
+
+def _legenda_curta(caption: str | None) -> str:
+    legenda = " ".join((caption or "").split())
+    if len(legenda) > 70:
+        return legenda[:70] + "…"
+    return legenda or "—"
+
+
+def _tabela_de_posts(dados: _DadosDoPeriodo) -> list[dict]:
+    """Os posts mais recentes do período, um por linha."""
+    nomes = {r["influencer_id"]: r["display_name"] for r in dados.rows if r.get("influencer_id")}
+    recentes = sorted(dados.posts, key=lambda x: x.posted_at, reverse=True)
+    return [
+        {
             "data": p.posted_at.strftime("%d/%m/%Y"),
             "criador": nomes.get(str(p.social_account.influencer_id), "—")
                        if p.social_account else "—",
-            "legenda": (legenda[:70] + "…") if len(legenda) > 70 else (legenda or "—"),
+            "legenda": _legenda_curta(p.caption),
             "alcance": _fmt_compact(p.reach_total) if p.reach_total else "—",
             "curtidas": _fmt_compact(p.likes),
             "comentarios": _fmt_compact(p.comments_count),
             "compartilhamentos": _fmt_compact(p.shares),
             "salvos": _fmt_compact(p.saves),
-        })
-
-    # Recommendations — das análises dos posts que entraram no período
-    recommendations = _gather_recommendations(rows, posts)
-
-    # Vídeo — o que a IA ouviu, e não só o que concluiu.
-    video = _gather_video_analyses(rows, posts)
-
-    return {
-        "report_title": title,
-        "brand_mark": marca_data_uri(),
-        "campaign": {
-            "brand_name": campaign.brand_name,
-            "title": campaign.title,
-        },
-        "period_start": period_start.strftime("%d/%m/%Y"),
-        "period_end": period_end.strftime("%d/%m/%Y"),
-        "budget_brl": _fmt_brl(campaign.budget_brl_cents),
-        "generated_by": generated_by,
-        "generated_at": datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC"),
-        "summary": summary,
-        "sections": [s for s in sections if s in SECTION_KEYS],
-        "kpis": kpis,
-        "kpis_detalhe": kpis_detalhe,
-        "posts_tabela": posts_tabela,
-        "growth": growth,
-        "benchmark": benchmark,
-        "diagnostic": diagnostic,
-        "video": video,
-        "recommendations": recommendations,
-    }
+        }
+        for p in recentes[:LIMITE_DE_POSTS_NA_TABELA]
+    ]
 
 
 LIMITE_DE_POSTS_NA_TABELA = 15
