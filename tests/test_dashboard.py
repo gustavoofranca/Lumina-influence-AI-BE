@@ -590,7 +590,7 @@ def test_criador_sem_analise_nao_afirma_audiencia_organica(client, seeded, app):
     Zero inventado já é ruim; este inventava um número favorável ao criador,
     que é exatamente o que um sistema de auditoria não pode fazer.
     """
-    from src.models import AIAnalysis, SentimentLabel
+    from src.models import AIAnalysis
 
     with app.app_context():
         influencer = db.session.scalar(select(Influencer))
@@ -614,7 +614,7 @@ def test_analise_devolve_a_transcricao_quando_existe(client, seeded, app):
     /influencers/:id/analysis não trazia o campo — o componente de transcrição
     do front mostrava estado vazio para dado que existia.
     """
-    from src.models import AIAnalysis, SentimentLabel, SocialAccount
+    from src.models import AIAnalysis, SocialAccount
 
     with app.app_context():
         # Zera as transcrições e planta uma só, para saber qual deve voltar —
@@ -642,7 +642,7 @@ def test_analise_devolve_a_transcricao_quando_existe(client, seeded, app):
 
 def test_analise_sem_transcricao_devolve_nulo(client, seeded, app):
     """Análise só de texto não transcreve nada — e nulo é diferente de vazio."""
-    from src.models import AIAnalysis, SentimentLabel
+    from src.models import AIAnalysis
 
     with app.app_context():
         influencer = db.session.scalar(select(Influencer))

@@ -1,0 +1,10 @@
+# Mesma versão de Python do CI.
+target-version = "py312"
+
+[lint]
+# Conjunto explícito, para que a atualização do ruff não mude o que reprova.
+# São as regras de erro real (sintaxe, nome indefinido, import não usado) e
+# não as de estilo: o conjunto padrão do ruff 0.17 traria 303 apontamentos de
+# modernização, e corrigi-los agora tocaria 68 arquivos que as branches ainda
+# não integradas também alteram. Ampliar depois da triagem dessas branches.
+select = ["E4", "E7", "E9", "F"]

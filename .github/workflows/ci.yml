@@ -21,15 +21,27 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install ruff pytest-cov
 
-      # Exceção registrada a COD-13 (auditoria de 08/09/2026): um verificador
-      # que nunca reprova não verifica. O `|| true` é decisão datada, tomada
-      # para o prazo do TCC — o passo existe para dar visibilidade ao relatório
-      # do ruff sem travar a entrega. Ao remover o `|| true`, esperar uma
-      # primeira execução com muitos apontamentos.
+      # COD-13: um verificador que nunca reprova não verifica. O ruff vem do
+      # requirements.txt com versão fixa e as regras ficam no ruff.toml — sem
+      # isso, cada lançamento novo do ruff mudava o conjunto padrão e a esteira
+      # reprovaria por aviso que nenhum commit trouxe.
       - name: Lint (ruff)
-        run: ruff check src tests || true
+        run: ruff check src tests
+
+      # Reprova só em severidade média ou alta. Os achados baixos de hoje são
+      # os literais fictícios do TestConfig (SEC-04, falso positivo estrutural),
+      # o `random` das simulações e nomes de tipo de token como "access".
+      - name: Análise estática de segurança (bandit)
+        run: bandit -r src -ll
+
+      # PYSEC-2026-4146 (pyjwt) não tem versão corrigida. Ela só se manifesta
+      # quando `jwt.decode` recebe `verify_signature` falso — o dicionário de
+      # opções do chamador é alterado no lugar. As duas chamadas do código
+      # (utils/jwt_utils.py e services/integration_service.py) verificam a
+      # assinatura. Revisitar quando sair a correção.
+      - name: Auditoria de dependências (pip-audit)
+        run: pip-audit -r requirements.txt --ignore-vuln PYSEC-2026-4146
 
       - name: Run tests with coverage
         # Os testes usam SQLite in-memory (TestConfig) — não precisam de Postgres.
