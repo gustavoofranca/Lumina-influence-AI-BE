@@ -644,6 +644,18 @@ def _popular_periodo_fixo(ctx):
     db.session.commit()
 
 
+@pytest.mark.parametrize(("nota", "esperado"), [
+    (8.5, "9"), (7.5, "8"), (6.5, "7"), (0.5, "1"), (7.4, "7"), (10.0, "10"), (None, "—"),
+])
+def test_nota_de_roteiro_arredonda_meio_para_cima(nota, esperado):
+    """8,5 saía "8" e 7,5 saía "8": o `:.0f` arredonda o meio para o par.
+
+    Quem lê uma nota espera o arredondamento escolar, e duas notas diferentes
+    não podem trocar de ordem ao serem impressas.
+    """
+    assert report_service._fmt_nota(nota) == esperado
+
+
 def test_contexto_do_relatorio_congelado(ctx, app):
     """A separação de consulta, cálculo e montagem não pode mudar uma vírgula.
 

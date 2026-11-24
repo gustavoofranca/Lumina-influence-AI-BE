@@ -11,6 +11,7 @@ import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 from flask import current_app
@@ -73,6 +74,17 @@ def _media(values: list[float | None], casas: int = 1) -> float | None:
 def _fmt_pct(value: float | None) -> str:
     """Percentual para exibição; ausência de medição vira travessão, não `0%`."""
     return "—" if value is None else f"{value}%"
+
+
+def _fmt_nota(nota: float | None) -> str:
+    """Nota inteira com o meio arredondado para cima, como se lê uma nota.
+
+    O `:.0f` arredonda o meio para o par (8,5 vira 8 e 7,5 vira 8). O `str`
+    antes do `Decimal` evita herdar o erro binário do float.
+    """
+    if nota is None:
+        return "—"
+    return str(Decimal(str(nota)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
 # ==========================================================================
@@ -485,9 +497,7 @@ def _gather_video_analyses(rows: list[dict], posts: list[Post]) -> list[dict]:
                 # `None` e não zero quando o modelo não devolveu a nota: é a
                 # ADR-003 — ausência de medição não vira medição de zero.
                 "script_score": analise.script_score,
-                "script_score_fmt": (
-                    f"{analise.script_score:.0f}" if analise.script_score is not None else "—"
-                ),
+                "script_score_fmt": _fmt_nota(analise.script_score),
                 "sentiment_label": analise.sentiment_label.value,
                 "transcript": trecho,
                 "transcript_truncated": cortado,
