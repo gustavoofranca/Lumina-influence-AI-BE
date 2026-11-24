@@ -81,7 +81,7 @@ curl http://localhost:5000/api/v1/health
 | `JWT_SECRET` | segredo de assinatura dos JWTs |
 | `FERNET_KEY` | chave Fernet (cripto de tokens sociais) |
 | `GOOGLE_CLIENT_ID` / `_SECRET` | OAuth login Google |
-| `MICROSOFT_CLIENT_ID` / `_SECRET` | OAuth login Microsoft (opcional) |
+| `MICROSOFT_CLIENT_ID` / `_SECRET` | OAuth login Microsoft (opcional; o botão só aparece com os dois preenchidos) |
 | `GEMINI_API_KEY` | Google AI Studio |
 | `GEMINI_MODEL` | default `gemini-3.6-flash` — `gemini-2.0-flash` e `gemini-2.5-flash` foram retirados e respondem 404 |
 | `OAUTH_REDIRECT_BASE` | base dos redirect URIs OAuth (ex: `http://localhost:5000`) |

@@ -150,7 +150,7 @@ def build_openapi() -> dict:
         },
         "/api/v1/auth/options": {
             "get": {"tags": ["Auth"], "summary": "Formas de login disponíveis neste ambiente",
-                    "responses": {"200": {"description": "{dev_login, google}"}}},
+                    "responses": {"200": {"description": "{dev_login, google, microsoft}"}}},
         },
         "/api/v1/auth/login": {
             "post": {"tags": ["Auth"], "summary": "Login por e-mail e senha",

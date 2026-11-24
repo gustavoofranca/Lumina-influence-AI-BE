@@ -73,6 +73,9 @@ def opcoes():
     return jsonify({"data": {
         "dev_login": bool(cfg.get("DEV_LOGIN_ENABLED")),
         "google": bool(cfg.get("GOOGLE_CLIENT_ID")),
+        # Exige as duas credenciais: sem o segredo a troca do código falha no
+        # callback e o botão levaria o usuário direto a um erro.
+        "microsoft": bool(cfg.get("MICROSOFT_CLIENT_ID") and cfg.get("MICROSOFT_CLIENT_SECRET")),
     }})
 
 
