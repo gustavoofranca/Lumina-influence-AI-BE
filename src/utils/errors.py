@@ -35,6 +35,11 @@ class ValidationError(LuminaError):
     code = "validation_error"
 
 
+class BadRequestError(LuminaError):
+    status_code = 400
+    code = "bad_request"
+
+
 class NotFoundError(LuminaError):
     status_code = 404
     code = "not_found"

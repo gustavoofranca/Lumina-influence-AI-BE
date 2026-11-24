@@ -11,6 +11,7 @@ from flask import Blueprint, current_app, jsonify
 
 from src.schemas.agency import AgencyOut
 from src.schemas.analysis import AIAnalysisOut, PostOut
+from src.schemas.auth import RegisterIn
 from src.schemas.campaign import CampaignCreateIn, CampaignOut
 from src.schemas.influencer import InfluencerCreateIn, InfluencerOut
 from src.schemas.plan import PlanOut
@@ -24,7 +25,7 @@ _MODELS = [
     PlanOut, AgencyOut, UserOut, InfluencerOut, InfluencerCreateIn,
     SocialAccountOut, CampaignOut, CampaignCreateIn, PostOut, AIAnalysisOut,
     ReportOut, ReportCreateIn, ReportPreviewIn,
-    UserCreateIn, SocialAccountCreateIn,
+    UserCreateIn, SocialAccountCreateIn, RegisterIn,
 ]
 
 
@@ -111,6 +112,123 @@ def build_openapi() -> dict:
         "/api/v1/auth/refresh": {
             "post": {"tags": ["Auth"], "summary": "Renova access token (refresh)",
                      "security": [{"bearerAuth": []}], "responses": {"200": {"description": "Novo par de tokens"}}},
+        },
+        "/api/v1/auth/cnpj/{cnpj}": {
+            "get": {"tags": ["Auth"], "summary": "Consulta pública de CNPJ (BrasilAPI)",
+                    "description": "Repassa só razão social e situação. Nunca recusa por "
+                                   "indisponibilidade; `impeditiva` só para NULA, SUSPENSA, "
+                                   "INAPTA ou BAIXADA. Limite: 20/min por IP.",
+                    "parameters": [{"name": "cnpj", "in": "path", "required": True,
+                                    "schema": {"type": "string"}}],
+                    "responses": {"200": {"description": "Resultado da consulta"},
+                                  "422": {"description": "Formato ou dígito inválido"},
+                                  "429": {"description": "Muitas consultas"}}},
+        },
+        "/api/v1/auth/register": {
+            "post": {"tags": ["Auth"], "summary": "Cadastro por e-mail e senha",
+                     "description": "Sempre 202 com o mesmo corpo — e-mail ou CNPJ já em uso "
+                                    "são avisados por e-mail, não na resposta. Limite: 3/h por "
+                                    "e-mail e 10/h por IP.",
+                     "requestBody": {"content": {"application/json": {"schema": _ref("RegisterIn")}}},
+                     "responses": {"202": {"description": "Link de confirmação enviado"},
+                                   "422": {"description": "Campos inválidos ou CNPJ impeditivo"},
+                                   "429": {"description": "Muitas tentativas"}}},
+        },
+        "/api/v1/auth/verify-email": {
+            "post": {"tags": ["Auth"],
+                     "summary": "Confirma o e-mail pelo token do link e entra; conta com senha exige a senha do cadastro",
+                     "responses": {"200": {"description": "Usuário, agência e par de tokens"},
+                                   "400": {"description": "Link inválido, usado ou vencido; senha ausente "
+                                                          "(verification_password_required) ou que não confere "
+                                                          "(verification_password_invalid) — o link não é gasto"},
+                                   "429": {"description": "Muitas tentativas de senha"}}},
+        },
+        "/api/v1/auth/resend-verification": {
+            "post": {"tags": ["Auth"], "summary": "Reenvia o link de confirmação",
+                     "responses": {"202": {"description": "Resposta igual exista ou não a conta"},
+                                   "429": {"description": "Muitas tentativas"}}},
+        },
+        "/api/v1/auth/options": {
+            "get": {"tags": ["Auth"], "summary": "Formas de login disponíveis neste ambiente",
+                    "responses": {"200": {"description": "{dev_login, google}"}}},
+        },
+        "/api/v1/auth/login": {
+            "post": {"tags": ["Auth"], "summary": "Login por e-mail e senha",
+                     "description": "Mesma resposta 401 para e-mail inexistente e senha errada. "
+                                    "Limite: 5 falhas/15 min por e-mail e 20 por IP.",
+                     "responses": {"200": {"description": "Usuário, agência e par de tokens — ou, "
+                                                          "com segundo fator a cumprir, "
+                                                          "{mfa: challenge|setup, mfa_ticket}"},
+                                   "401": {"description": "E-mail ou senha incorretos"},
+                                   "403": {"description": "Senha certa, e-mail não confirmado"},
+                                   "429": {"description": "Muitas tentativas"}}},
+        },
+        "/api/v1/auth/forgot-password": {
+            "post": {"tags": ["Auth"], "summary": "Envia link para criar nova senha",
+                     "responses": {"202": {"description": "Resposta igual exista ou não a conta"},
+                                   "429": {"description": "Muitas tentativas"}}},
+        },
+        "/api/v1/auth/reset-password": {
+            "post": {"tags": ["Auth"], "summary": "Cria nova senha pelo token do link",
+                     "description": "Encerra todas as sessões abertas da conta.",
+                     "responses": {"204": {"description": "Senha alterada"},
+                                   "400": {"description": "Link inválido, usado ou vencido"},
+                                   "422": {"description": "Senha recusada pela política"}}},
+        },
+        "/api/v1/auth/change-password": {
+            "post": {"tags": ["Auth"], "summary": "Troca a senha (logado)",
+                     "security": [{"bearerAuth": []}],
+                     "description": "Devolve um par novo e encerra as outras sessões. Senha atual "
+                                    "errada é 422 no campo, não 401. Com 2FA ativo, exige "
+                                    "`totp_code`.",
+                     "responses": {"200": {"description": "Par de tokens novo"},
+                                   "422": {"description": "Senha atual errada ou nova recusada"}}},
+        },
+        "/api/v1/auth/2fa/verify": {
+            "post": {"tags": ["Auth"], "summary": "Troca o ticket de desafio do 2FA pela sessão",
+                     "description": "Corpo: `mfa_ticket` e `code` (6 dígitos do app ou código de "
+                                    "recuperação). Cada código do app vale uma vez; limite de 5 "
+                                    "falhas/15 min por conta. Errar não gasta o ticket.",
+                     "responses": {"200": {"description": "Usuário, agência e par de tokens"},
+                                   "400": {"description": "Ticket inválido, usado ou vencido"},
+                                   "422": {"description": "Código inválido ou já usado"},
+                                   "429": {"description": "Muitas tentativas"}}},
+        },
+        "/api/v1/auth/2fa/setup": {
+            "post": {"tags": ["Auth"], "summary": "Começa a ativação do 2FA",
+                     "description": "Pelo ticket de ativação (`mfa_ticket`) ou pela sessão "
+                                    "(Bearer). Devolve `secret`, `otpauth_uri` e `qr_svg`.",
+                     "responses": {"200": {"description": "Segredo pendente e QR code"},
+                                   "401": {"description": "Sem ticket nem sessão"},
+                                   "409": {"description": "2FA já ativo"}}},
+        },
+        "/api/v1/auth/2fa/setup/confirm": {
+            "post": {"tags": ["Auth"], "summary": "Confirma a ativação com o primeiro código",
+                     "description": "Liga o 2FA, gera 10 códigos de recuperação (mostrados só "
+                                    "agora) e encerra as outras sessões.",
+                     "responses": {"200": {"description": "recovery_codes e sessão nova"},
+                                   "409": {"description": "Ativação não iniciada ou já ativa"},
+                                   "422": {"description": "Código inválido"}}},
+        },
+        "/api/v1/auth/2fa/recovery-codes": {
+            "post": {"tags": ["Auth"], "summary": "Gera novos códigos de recuperação",
+                     "security": [{"bearerAuth": []}],
+                     "description": "Exige um código válido; os anteriores deixam de valer.",
+                     "responses": {"200": {"description": "recovery_codes"},
+                                   "422": {"description": "Código inválido"}}},
+        },
+        "/api/v1/auth/2fa/disable": {
+            "post": {"tags": ["Auth"], "summary": "Desliga o 2FA (membro e visualizador)",
+                     "security": [{"bearerAuth": []}],
+                     "description": "Exige código válido e, em conta com senha, a senha.",
+                     "responses": {"204": {"description": "2FA desligado"},
+                                   "403": {"description": "Administrador não pode desligar"},
+                                   "422": {"description": "Código ou senha inválidos"}}},
+        },
+        "/api/v1/auth/accept-terms": {
+            "post": {"tags": ["Auth"], "summary": "Registra o aceite dos Termos e da Política",
+                     "security": [{"bearerAuth": []}],
+                     "responses": {"204": {"description": "Aceite registrado"}}},
         },
         "/api/v1/dashboard/overview": {
             "get": {"tags": ["Dashboard"], "summary": "KPIs + growth + featured + top performing",
@@ -248,8 +366,9 @@ def build_openapi() -> dict:
         },
         "/api/v1/auth/logout": {
             "post": {"tags": ["Auth"], "summary": "Encerra a sessão do lado do cliente",
-                     "description": "JWT é stateless (ADR-001): o servidor não revoga nada. "
-                                    "Responde 204 e o cliente descarta os dois tokens.",
+                     "description": "O servidor não guarda sessão (ADR-001): o cliente descarta "
+                                    "os dois tokens. Trocar ou redefinir a senha encerra todas as "
+                                    "sessões no servidor (ADR-0013).",
                      "security": [{"bearerAuth": []}],
                      "responses": {"204": {"description": "No Content"}}},
         },

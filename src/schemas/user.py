@@ -8,7 +8,7 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, EmailStr
 
 from src.models import OAuthProvider, UserRole
-from src.schemas.campos import Nome, UrlHttpsOpcional
+from src.schemas.campos import NomeDePessoa, UrlHttpsOpcional
 
 
 class UserOut(BaseModel):
@@ -18,7 +18,8 @@ class UserOut(BaseModel):
     email: EmailStr
     name: str
     avatar_url: Optional[str] = None
-    oauth_provider: str
+    oauth_provider: Optional[str] = None
+    has_password: bool = False
     role: str
     agency_id: Optional[uuid.UUID] = None
     created_at: datetime
@@ -26,12 +27,18 @@ class UserOut(BaseModel):
 
 
 class UserCreateIn(BaseModel):
-    """Criação de membro (convite). Sem senha — login é só OAuth."""
+    """Criação de membro (convite).
+
+    O convite não leva senha: quem convida não deve conhecer a credencial do
+    convidado. O membro entra pelo provedor indicado em `oauth_provider` ou
+    define a própria senha pelo link de "esqueci a senha", que prova a posse
+    do e-mail (ADR-013).
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     email: EmailStr
-    name: Nome(160)
+    name: NomeDePessoa(160)
     role: UserRole = UserRole.MEMBER
     oauth_provider: OAuthProvider = OAuthProvider.GOOGLE
 
@@ -42,6 +49,6 @@ class UserUpdateIn(BaseModel):
     # Campo obrigatório no banco não é `Optional` aqui. O `None` padrão só marca
     # "não enviado" — a rota aplica `exclude_unset` —, e um `null` explícito vira
     # erro de validação no próprio campo, em vez de erro 500 no banco.
-    name: Nome(160) = None
+    name: NomeDePessoa(160) = None
     role: UserRole = None
     avatar_url: UrlHttpsOpcional = None

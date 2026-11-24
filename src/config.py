@@ -87,8 +87,32 @@ class Config:
     # declara este prazo ao usuário: mudar o número aqui muda um compromisso.
     RETENTION_DAYS: int = int(os.getenv("RETENTION_DAYS", "90"))
 
+    # Cadastro por senha não confirmado some depois deste prazo, liberando o
+    # e-mail e o CNPJ de quem cadastrou e desistiu (ou de quem cadastrou o de
+    # outra pessoa).
+    CONTAS_NAO_VERIFICADAS_DIAS: int = 7
+
     # Front-end
     FRONTEND_ORIGIN: str = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
+
+    # Quantos proxies reversos confiáveis ficam na frente da API (em produção,
+    # o Caddy: 1). Com 0, X-Forwarded-* é ignorado — sem proxy, quem escreve
+    # esses cabeçalhos é o próprio cliente.
+    TRUSTED_PROXIES: int = int(os.getenv("TRUSTED_PROXIES", "0"))
+
+    # E-mail transacional (verificação de e-mail e redefinição de senha). Com
+    # Gmail: smtp.gmail.com, porta 587, e uma "senha de app" — exige
+    # verificação em duas etapas ligada na conta. Sem SMTP_HOST o e-mail vai
+    # para o log, o que serve ao desenvolvimento e à CI; produção exige SMTP.
+    SMTP_HOST: str | None = os.getenv("SMTP_HOST")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER: str | None = os.getenv("SMTP_USER")
+    SMTP_PASSWORD: str | None = os.getenv("SMTP_PASSWORD")
+    SMTP_FROM: str | None = os.getenv("SMTP_FROM")
+
+    # Consulta de CNPJ na BrasilAPI (gratuita, sem chave). Desligada nos testes:
+    # a suíte não depende de rede.
+    CNPJ_CONSULTA_ENABLED: bool = os.getenv("CNPJ_CONSULTA_ENABLED", "true").lower() == "true"
 
     # Base usada pra montar os redirect_uri do OAuth. Deve bater EXATAMENTE com o
     # que está registrado no provider (Google/Microsoft). Se None, usa o host da request.
@@ -135,6 +159,24 @@ class Config:
     # e é interativa — o assistente a refaz ao voltar um passo e mudar seção ou
     # período. Trinta por minuto cobre isso com sobra e ainda corta o abuso.
     RATE_LIMIT_REPORT_PREVIEW: dict = {"limit": 30, "window": 60}
+
+    # Autenticação (spec de 15/10/2026, seção 7). Login conta só as falhas. Por
+    # e-mail é o limite que segura força bruta numa conta; por IP é mais folgado
+    # porque um escritório inteiro pode sair pelo mesmo endereço.
+    RATE_LIMIT_LOGIN_EMAIL: dict = {"limit": 5, "window": 900}
+    RATE_LIMIT_LOGIN_IP: dict = {"limit": 20, "window": 900}
+    # Cadastro, reenvio de verificação e esqueci a senha: cada um manda um
+    # e-mail. Sem teto, o formulário vira canhão de spam com o nosso remetente.
+    RATE_LIMIT_EMAIL_FLOW_EMAIL: dict = {"limit": 3, "window": 3600}
+    RATE_LIMIT_EMAIL_FLOW_IP: dict = {"limit": 10, "window": 3600}
+    # Consulta pública de CNPJ — repassa para a BrasilAPI, serviço comunitário.
+    RATE_LIMIT_CNPJ: dict = {"limit": 20, "window": 60}
+    RATE_LIMIT_TROCA_SENHA: dict = {"limit": 5, "window": 900}
+    # Código do 2FA, por conta: o mesmo limite do login. O NIST SP 800-63B-4
+    # (§3.1.5.2) exige limite de tentativas para OTP.
+    RATE_LIMIT_2FA: dict = {"limit": 5, "window": 900}
+    # Administrador sem 2FA não recebe sessão no login, só o ticket de ativação.
+    MFA_OBRIGATORIO_PARA_ADMIN: bool = True
 
     # Quantas publicações cada sync traz por conta. Era 10 fixo no código, o
     # que bastava para demonstrar e era pouco para auditar: um criador com
@@ -196,6 +238,7 @@ class TestConfig(Config):
     SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
     JWT_SECRET = "test-secret-com-32-bytes-no-minimo-pra-hs256"
     FRONTEND_ORIGIN = "http://localhost:5173"
+    TRUSTED_PROXIES = 0
     GOOGLE_CLIENT_ID = "test-google-client-id"
     GOOGLE_CLIENT_SECRET = "test-google-client-secret"
     MICROSOFT_CLIENT_ID = "test-ms-client-id"
@@ -217,6 +260,9 @@ class TestConfig(Config):
     META_CLIENT_SECRET = "test-meta-secret"
     TIKTOK_CLIENT_KEY = "test-tiktok-key"
     TIKTOK_CLIENT_SECRET = "test-tiktok-secret"
+    # A suíte nunca manda e-mail de verdade, mesmo com SMTP no .env de quem roda.
+    SMTP_HOST = None
+    CNPJ_CONSULTA_ENABLED = False
 
 
 class StagingConfig(Config):
@@ -244,7 +290,8 @@ class ProdConfig(Config):
 
     def __init__(self) -> None:
         # Em prod, sem defaults inseguros — valida no boot.
-        for name in ("DATABASE_URL", "JWT_SECRET", "FERNET_KEY"):
+        for name in ("DATABASE_URL", "JWT_SECRET", "FERNET_KEY",
+                     "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "FRONTEND_ORIGIN"):
             if not os.getenv(name):
                 raise RuntimeError(
                     f"Variável de ambiente obrigatória ausente em produção: {name}"

@@ -12,17 +12,22 @@ import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from flask import current_app
+from sqlalchemy import func, select
 
 from src.extensions import db
 from src.models import (
     Agency,
+    FinalidadeToken,
     OAuthProvider,
     OAuthState,
     User,
     UserRole,
 )
+from src.schemas.auth import AgencySummaryOut, LoginCallbackOut, TokenPairOut, UserOut
+from src.services import token_service
 from src.utils.errors import UnauthorizedError
+from src.utils.jwt_utils import issue_token_pair
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +98,26 @@ def find_or_create_user_from_oauth(
       e avatar, mantém agência. Não troca provider se já estava setado pra outro.
     - Email novo → cria nova Agency "Minha Agência" + User como ADMIN.
     """
-    user = db.session.scalar(select(User).where(User.email == email))
+    email = email.strip().lower()
+    user = db.session.scalar(select(User).where(func.lower(User.email) == email))
+
+    if (
+        user is not None
+        and user.password_hash
+        and user.email_verificado_em is None
+        and user.deleted_at is None
+    ):
+        # Pré-sequestro de conta: alguém cadastrou este e-mail com uma senha que
+        # só ele sabe e nunca confirmou o link. O provedor acabou de provar quem
+        # é a dona do endereço; herdar aquele cadastro entregaria a ela uma conta
+        # cuja senha o outro conhece. O cadastro pendente não tem dado nenhum —
+        # não dá para entrar sem confirmar —, então some, e a conta nasce limpa.
+        agencia = user.agency
+        sozinho = agencia is not None and all(u.id == user.id for u in agencia.users)
+        logger.info("OAuth descartou cadastro não verificado %s", user.id)
+        db.session.delete(agencia if sozinho else user)
+        db.session.flush()
+        user = None
 
     if user is not None:
         if user.deleted_at is not None:
@@ -106,6 +130,9 @@ def find_or_create_user_from_oauth(
             user.avatar_url = avatar_url
         if not user.name:
             user.name = name
+        # O provedor confirmou o e-mail: vale como verificação.
+        if user.email_verificado_em is None:
+            user.email_verificado_em = datetime.now(timezone.utc)
         db.session.commit()
         # O log identifica pelo id, não pelo email. Email é dado pessoal sob a
         # LGPD, e o log sai da fronteira de retenção do banco: vai para arquivo,
@@ -124,6 +151,7 @@ def find_or_create_user_from_oauth(
         oauth_id=oauth_id,
         role=UserRole.ADMIN,
         agency=agency,
+        email_verificado_em=datetime.now(timezone.utc),
     )
     db.session.add(agency)
     db.session.add(user)
@@ -165,3 +193,44 @@ def resolve_dev_login_user(email: str | None) -> User | None:
     if seeded_admin is not None:
         return seeded_admin
     return db.session.scalar(select(User).where(User.role == UserRole.ADMIN))
+
+
+# --------------------------------------------------------------------------
+# Sessão
+# --------------------------------------------------------------------------
+def _precisa_ativar_2fa(user: User) -> bool:
+    return user.role == UserRole.ADMIN and current_app.config.get("MFA_OBRIGATORIO_PARA_ADMIN", True)
+
+
+def concluir_login(user: User, *, exigir_2fa: bool = True) -> dict:
+    """Ponto único em que um login vira sessão: senha, Google, Microsoft,
+    verificação de e-mail, troca de senha e o atalho de desenvolvimento passam
+    todos por aqui.
+
+    Com `exigir_2fa`, quem tem 2FA recebe um ticket de desafio e o
+    administrador sem 2FA recebe um ticket de ativação — nenhum dos dois é
+    sessão (spec de 19/10/2026). `exigir_2fa=False` é para quem já cumpriu o
+    segundo fator nesta mesma requisição, ou já estava numa sessão, e para o
+    atalho de desenvolvimento.
+    """
+    if exigir_2fa and user.mfa_enabled:
+        return {"mfa": "challenge", "mfa_ticket": token_service.emitir(user, FinalidadeToken.DESAFIO_2FA)}
+    if exigir_2fa and _precisa_ativar_2fa(user):
+        return {"mfa": "setup", "mfa_ticket": token_service.emitir(user, FinalidadeToken.ATIVAR_2FA)}
+    tokens = issue_token_pair(user)
+    ttl = int(current_app.config["JWT_ACCESS_TTL"].total_seconds())
+    return LoginCallbackOut(
+        user=UserOut.model_validate(user),
+        agency=AgencySummaryOut.model_validate(user.agency) if user.agency else None,
+        tokens=TokenPairOut(**tokens, expires_in_seconds=ttl),
+    ).model_dump(mode="json")
+
+
+def invalidar_sessoes(user: User) -> None:
+    """Todo token emitido antes deste segundo deixa de valer. O commit fica com quem chama.
+
+    Truncado no segundo porque o `iat` do JWT é inteiro: o par emitido logo em
+    seguida, no mesmo segundo, continua válido — é o da sessão que acabou de
+    trocar a senha.
+    """
+    user.sessoes_validas_desde = datetime.now(timezone.utc).replace(microsecond=0)

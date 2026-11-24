@@ -7,7 +7,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
-from src.schemas.campos import Cnpj, Nome
+from src.schemas.campos import Cnpj, NomeDeEmpresa
 from src.schemas.plan import PlanOut
 
 
@@ -31,7 +31,7 @@ class AgencyUpdateIn(BaseModel):
     # Campo obrigatório no banco não é `Optional` aqui. O `None` padrão só marca
     # "não enviado" — a rota aplica `exclude_unset` —, e um `null` explícito vira
     # erro de validação no próprio campo, em vez de erro 500 no banco.
-    name: Nome(160) = None
+    name: NomeDeEmpresa(160) = None
     # Formato aqui; dígito verificador no serviço, só quando o CNPJ muda.
     cnpj: Cnpj = None
     plan_id: Optional[uuid.UUID] = None

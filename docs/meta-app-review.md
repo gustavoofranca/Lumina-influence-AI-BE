@@ -94,7 +94,7 @@ O passo 6 é o que muda entre os quatro:
 1. Abrir [business.facebook.com](https://business.facebook.com) com a conta que
    é administradora do app.
 2. Menu **Configurações do negócio → Central de segurança**.
-3. Iniciar **Verificação de negócio** e enviar os documentos da K13 WEB: cartão
+3. Iniciar **Verificação de negócio** e enviar os documentos da empresa responsável: cartão
    CNPJ, comprovante de endereço em nome da empresa e um meio de contato
    verificável (telefone ou e-mail no domínio da empresa).
 4. Resultado esperado: status **"Em análise"** na Central de segurança.
@@ -105,7 +105,7 @@ O passo 6 é o que muda entre os quatro:
 
 O revisor precisa alcançar o app, e a Meta só aceita `redirect_uri` em HTTPS.
 
-1. Escolher o domínio (subdomínio da K13 serve).
+1. Domínio: `lumina.gustavofranca.tech` (já publicado, com HTTPS).
 2. Publicar back-end e front-end nele, ou expor a stack local por túnel nomeado
    e estável — o endereço não pode mudar entre a submissão e a revisão.
 3. No back-end, definir `OAUTH_REDIRECT_BASE=https://<domínio>` no `.env`.

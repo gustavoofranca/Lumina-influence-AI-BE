@@ -56,6 +56,8 @@ class _JsonFormatter(logging.Formatter):
 def _register_blueprints(app: Flask) -> None:
     from src.api.agencies import bp as agencies_bp
     from src.api.auth import bp as auth_bp
+    from src.api.auth_senha import bp as auth_senha_bp
+    from src.api.auth_2fa import bp as auth_2fa_bp
     from src.api.campaigns import bp as campaigns_bp
     from src.api.dashboard import bp as dashboard_bp
     from src.api.docs import bp as docs_bp
@@ -70,6 +72,8 @@ def _register_blueprints(app: Flask) -> None:
 
     app.register_blueprint(health_bp)
     app.register_blueprint(auth_bp)
+    app.register_blueprint(auth_senha_bp)
+    app.register_blueprint(auth_2fa_bp)
     app.register_blueprint(plans_bp)
     app.register_blueprint(agencies_bp)
     app.register_blueprint(users_bp)
@@ -195,6 +199,49 @@ def _register_cli(app: Flask) -> None:
             click.echo(f"  {j['id']:.<26} {j['trigger']} ({sched})")
             click.echo(f"  {'':<26} {j['description']}")
 
+    @app.cli.group()
+    def users() -> None:
+        """Comandos de conta de usuário."""
+
+    @users.command("set-password")
+    @click.argument("email")
+    def users_set_password(email: str) -> None:
+        """Define a senha de um usuário existente. A senha é pedida duas vezes, sem eco.
+
+        Nunca por argumento: o que vai na linha de comando fica no histórico do
+        terminal e na lista de processos.
+        """
+        from src.services.senha_service import definir_senha_por_admin
+
+        senha = click.prompt("Nova senha", hide_input=True, confirmation_prompt=True)
+        try:
+            definir_senha_por_admin(email, senha)
+        except ValueError as exc:
+            click.secho(f"[ERRO] {exc}", fg="red")
+            raise SystemExit(1) from exc
+        click.secho(
+            "[OK] Senha definida. O e-mail ficou confirmado e as sessões abertas foram encerradas.",
+            fg="green",
+        )
+
+    @users.command("reset-2fa")
+    @click.argument("email")
+    def users_reset_2fa(email: str) -> None:
+        """Zera o 2FA de quem perdeu o celular e os códigos de recuperação.
+
+        Último recurso, e só pelo terminal do servidor: nenhuma tela alcança
+        isto. A pessoa recebe um e-mail de aviso e, se for administradora,
+        volta a ser levada à ativação no próximo login.
+        """
+        from src.services.dois_fatores_service import resetar_por_comando
+
+        try:
+            resetar_por_comando(email)
+        except ValueError as exc:
+            click.secho(f"[ERRO] {exc}", fg="red")
+            raise SystemExit(1) from exc
+        click.secho("[OK] 2FA zerado. As sessões abertas foram encerradas.", fg="green")
+
     @jobs.command("run")
     @click.argument("name")
     def jobs_run(name: str) -> None:
@@ -218,6 +265,14 @@ def create_app(config_name: str | None = None) -> Flask:
     config_cls = get_config(config_name)
     app = Flask(__name__)
     app.config.from_object(config_cls)
+
+    proxies = app.config.get("TRUSTED_PROXIES", 0)
+    if proxies:
+        # Atrás do Caddy: o IP real alimenta o limite de tentativas por IP, e o
+        # esquema https entra nas URLs absolutas (retorno do OAuth).
+        from werkzeug.middleware.proxy_fix import ProxyFix
+
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=proxies, x_proto=proxies, x_host=proxies)
 
     _configure_logging(app.config.get("ENV", "dev"))
 

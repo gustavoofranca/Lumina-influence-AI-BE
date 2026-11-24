@@ -21,7 +21,10 @@ def build_user_query(agency_id: uuid.UUID) -> Select:
 
 
 def find_by_email(email: str) -> User | None:
-    return db.session.scalar(select(User).where(User.email == email))
+    # Sem caixa: "Ana@X.com" e "ana@x.com" são a mesma pessoa. A migration
+    # 0008 já gravou todos em minúsculas; o `lower` aqui protege quem chega
+    # por caminho que ainda não normaliza.
+    return db.session.scalar(select(User).where(func.lower(User.email) == email.strip().lower()))
 
 
 def find_first_by_role(role: UserRole) -> User | None:
