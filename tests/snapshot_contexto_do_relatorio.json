@@ -1,0 +1,194 @@
+{
+  "report_title": "Relatório congelado",
+  "campaign": {
+    "brand_name": "NovaTech",
+    "title": "Verão Tech"
+  },
+  "period_start": "01/01/2026",
+  "period_end": "01/03/2026",
+  "budget_brl": "50.000,00",
+  "generated_by": "Admin A",
+  "summary": {
+    "influencer_count": 2,
+    "avg_organic_pct": 70.0,
+    "avg_organic_pct_fmt": "70.0%",
+    "avg_sentiment_pct": 82.5,
+    "avg_sentiment_pct_fmt": "82.5%",
+    "total_reach_fmt": "40k",
+    "posts_count": 3,
+    "has_data": true
+  },
+  "sections": [
+    "kpis",
+    "growth",
+    "benchmark",
+    "diagnostic",
+    "video",
+    "recommendations"
+  ],
+  "kpis": [
+    {
+      "label": "Criadores",
+      "value": "2",
+      "change": null,
+      "depends_on_posts": false
+    },
+    {
+      "label": "Alcance Total",
+      "value": "40k",
+      "change": null,
+      "depends_on_posts": true
+    },
+    {
+      "label": "Engajamento Médio",
+      "value": "11.83%",
+      "change": null,
+      "depends_on_posts": true
+    },
+    {
+      "label": "Sentimento Médio",
+      "value": "82.5%",
+      "change": null,
+      "depends_on_posts": true
+    }
+  ],
+  "kpis_detalhe": [
+    {
+      "label": "Curtidas",
+      "value": "4k"
+    },
+    {
+      "label": "Comentários",
+      "value": "400"
+    },
+    {
+      "label": "Compartilhamentos",
+      "value": "200"
+    },
+    {
+      "label": "Custo por mil alcançados",
+      "value": "R$ 1.250,00"
+    }
+  ],
+  "posts_tabela": [
+    {
+      "data": "10/02/2026",
+      "criador": "Nina Tech",
+      "legenda": "—",
+      "alcance": "8k",
+      "curtidas": "800",
+      "comentarios": "80",
+      "compartilhamentos": "40",
+      "salvos": "26"
+    },
+    {
+      "data": "10/02/2026",
+      "criador": "Leo Moda",
+      "legenda": "Look do dia",
+      "alcance": "20k",
+      "curtidas": "2k",
+      "comentarios": "200",
+      "compartilhamentos": "100",
+      "salvos": "66"
+    },
+    {
+      "data": "15/01/2026",
+      "criador": "Nina Tech",
+      "legenda": "Unboxing do novo fone com cancelamento de ruído e bateria de dois dias…",
+      "alcance": "12k",
+      "curtidas": "1k",
+      "comentarios": "120",
+      "compartilhamentos": "60",
+      "salvos": "40"
+    }
+  ],
+  "growth": [
+    {
+      "x": "Jan",
+      "organic": 9000,
+      "paid": 3000,
+      "organic_fmt": "9k",
+      "paid_fmt": "3k"
+    },
+    {
+      "x": "Fev",
+      "organic": 19000,
+      "paid": 9000,
+      "organic_fmt": "19k",
+      "paid_fmt": "9k"
+    }
+  ],
+  "benchmark": [
+    {
+      "display_name": "Nina Tech",
+      "total_reach_fmt": "20k",
+      "organic_pct": 85.0,
+      "organic_pct_fmt": "85.0%",
+      "engagement_rate": 11.83,
+      "engagement_rate_fmt": "11.83%",
+      "sentiment_index_pct": 95.0,
+      "sentiment_index_pct_fmt": "95.0%",
+      "ai_score": 95.2,
+      "ai_score_fmt": "95.2"
+    },
+    {
+      "display_name": "Leo Moda",
+      "total_reach_fmt": "20k",
+      "organic_pct": 55.0,
+      "organic_pct_fmt": "55.0%",
+      "engagement_rate": 11.83,
+      "engagement_rate_fmt": "11.83%",
+      "sentiment_index_pct": 70.0,
+      "sentiment_index_pct_fmt": "70.0%",
+      "ai_score": 79.5,
+      "ai_score_fmt": "79.5"
+    }
+  ],
+  "diagnostic": [
+    {
+      "display_name": "Nina Tech",
+      "niche": "tech",
+      "brand_coherence": 92.0,
+      "bot_probability": 2.0,
+      "note": "Análise indica alinhamento forte com a marca, sentimento majoritariamente positivo e probabilidade de bot baixa."
+    },
+    {
+      "display_name": "Leo Moda",
+      "niche": "moda",
+      "brand_coherence": 70.0,
+      "bot_probability": 9.0,
+      "note": "Análise indica alinhamento parcial com a marca, sentimento misto e probabilidade de bot a monitorar."
+    }
+  ],
+  "video": [
+    {
+      "display_name": "Nina Tech",
+      "caption": "Unboxing do novo   fone\ncom cancelamento de ruído e bateria de dois dias inteiros",
+      "script_score": 8.5,
+      "script_score_fmt": "9",
+      "sentiment_label": "positive",
+      "transcript": "Oi gente, hoje eu vou abrir o fone novo da NovaTech.",
+      "transcript_truncated": false,
+      "key_phrases": [
+        "fone novo",
+        "bateria"
+      ],
+      "analyzed_at": "15/01/2026",
+      "model_version": "teste"
+    }
+  ],
+  "recommendations": [
+    {
+      "title": "Repetir o formato unboxing",
+      "description": "alto alcance"
+    },
+    {
+      "title": "Responder comentários",
+      "description": "engajamento"
+    },
+    {
+      "title": "Mostrar o produto antes",
+      "description": "gancho"
+    }
+  ]
+}

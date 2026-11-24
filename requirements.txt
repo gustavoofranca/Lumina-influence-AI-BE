@@ -18,8 +18,10 @@ sqlalchemy==2.0.52
 pydantic[email]==2.13.4
 pydantic-settings==2.15.0
 email-validator==2.3.0
-authlib==1.7.2
-pyjwt==2.13.0
+# authlib e pyjwt atualizados em 23/11/2026: o pip-audit apontou 24
+# vulnerabilidades nas versões de setembro (authlib 1.7.2, pyjwt 2.13.0).
+authlib==1.9.1
+pyjwt==2.15.0
 requests==2.34.2
 google-genai==2.19.0
 python-dotenv==1.2.3
@@ -44,6 +46,9 @@ pytest-cov==7.1.0
 bandit==1.9.4
 pip-audit==2.10.1
 locust==2.46.5
+# Fixado porque o conjunto padrão de regras muda entre versões do ruff; as
+# regras usadas ficam no ruff.toml.
+ruff==0.17.6
 
 # Servidor WSGI de produção. O container de desenvolvimento continua subindo
 # com `flask run`; gunicorn existe para medir carga sobre múltiplos processos —
