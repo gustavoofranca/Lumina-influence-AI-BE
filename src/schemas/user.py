@@ -27,7 +27,13 @@ class UserOut(BaseModel):
 
 
 class UserCreateIn(BaseModel):
-    """Criação de membro (convite). Sem senha — login é só OAuth."""
+    """Criação de membro (convite).
+
+    O convite não leva senha: quem convida não deve conhecer a credencial do
+    convidado. O membro entra pelo provedor indicado em `oauth_provider` ou
+    define a própria senha pelo link de "esqueci a senha", que prova a posse
+    do e-mail (ADR-013).
+    """
 
     model_config = ConfigDict(extra="forbid")
 
