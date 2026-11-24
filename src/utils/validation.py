@@ -66,58 +66,95 @@ def _numero(valor, campo: str) -> str:
     return f"{valor:,}".replace(",", ".") if isinstance(valor, int) else str(valor)
 
 
+# Tipos de erro cuja frase não depende do valor nem do limite.
+_FRASES_FIXAS = {
+    "missing": "campo obrigatório",
+    "string_type": "deve ser um texto",
+    "string_pattern_mismatch": "use só letras, números, ponto, hífen e sublinhado, sem espaços",
+    "int_type": "deve ser um número inteiro",
+    "int_parsing": "deve ser um número inteiro",
+    "int_from_float": "deve ser um número inteiro",
+    "uuid_parsing": "identificador inválido",
+    "uuid_type": "identificador inválido",
+    "extra_forbidden": "campo não reconhecido",
+    "list_type": "deve ser uma lista",
+    "bool_type": "deve ser verdadeiro ou falso",
+    "bool_parsing": "deve ser verdadeiro ou falso",
+}
+
+# O Pydantic tem um tipo para cada formato de data inválido (`date_parsing`,
+# `date_from_datetime_parsing`...); todos viram a mesma frase.
+_FRASE_DE_DATA = "data inválida; use o formato AAAA-MM-DD"
+
+
+# Com validador antes do tipo, o Pydantic mede o texto pela regra genérica de
+# tamanho (`too_short`/`too_long`) e não pela de string. Texto conta
+# caracteres; lista conta itens.
+def _e_lista(err: dict) -> bool:
+    return err.get("type") in ("too_short", "too_long") and not isinstance(err.get("input"), str)
+
+
+def _pelo_menos(err: dict, ctx: dict, campo: str) -> str:
+    minimo = ctx.get("min_length", 1)
+    if _e_lista(err):
+        return f"deve ter pelo menos {minimo} {'item' if minimo == 1 else 'itens'}"
+    return "não pode ficar em branco" if minimo == 1 else f"deve ter pelo menos {minimo} caracteres"
+
+
+def _no_maximo(err: dict, ctx: dict, campo: str) -> str:
+    unidade = "itens" if _e_lista(err) else "caracteres"
+    return f"deve ter no máximo {ctx.get('max_length')} {unidade}"
+
+
+def _limite_inferior(err: dict, ctx: dict, campo: str) -> str:
+    return f"deve ser maior ou igual a {_numero(ctx.get('ge', ctx.get('gt')), campo)}"
+
+
+def _limite_superior(err: dict, ctx: dict, campo: str) -> str:
+    return f"deve ser no máximo {_numero(ctx.get('le', ctx.get('lt')), campo)}"
+
+
+def _opcoes(err: dict, ctx: dict, campo: str) -> str:
+    # O Pydantic monta a lista com "or" antes do último item.
+    opcoes = str(ctx.get("expected", "")).replace(" or ", " ou ")
+    return f"valor inválido; use um destes: {opcoes}"
+
+
+def _erro_de_valor(err: dict, ctx: dict, campo: str) -> str:
+    # O EmailStr devolve a explicação da biblioteca, em inglês.
+    if campo == "email":
+        return "e-mail inválido"
+    return str(err.get("msg", "")).removeprefix("Value error, ")
+
+
+# Tipos de erro cuja frase leva o limite, o valor ou o campo.
+_FRASES_CALCULADAS = {
+    "string_too_short": _pelo_menos,
+    "too_short": _pelo_menos,
+    "string_too_long": _no_maximo,
+    "too_long": _no_maximo,
+    "greater_than_equal": _limite_inferior,
+    "greater_than": _limite_inferior,
+    "less_than_equal": _limite_superior,
+    "less_than": _limite_superior,
+    "enum": _opcoes,
+    "value_error": _erro_de_valor,
+}
+
+
 def _mensagem(err: dict, campo: str) -> str:
     """Traduz um erro do Pydantic para a frase que a pessoa lê na tela."""
     tipo = err.get("type", "")
-    ctx = err.get("ctx") or {}
+    # Vem antes das tabelas: `enum` e `string_type` com `null` não são valor
+    # errado, são campo obrigatório enviado vazio.
     if tipo in _ERROS_DE_TIPO and err.get("input") is None:
         return "não pode ficar vazio"
-    if tipo == "missing":
-        return "campo obrigatório"
-    # Com validador antes do tipo, o Pydantic mede o texto pela regra genérica
-    # de tamanho (`too_short`/`too_long`) e não pela de string. Texto conta
-    # caracteres; lista conta itens.
-    if tipo in ("string_too_short", "too_short"):
-        minimo = ctx.get("min_length", 1)
-        if tipo == "too_short" and not isinstance(err.get("input"), str):
-            return f"deve ter pelo menos {minimo} {'item' if minimo == 1 else 'itens'}"
-        return "não pode ficar em branco" if minimo == 1 else f"deve ter pelo menos {minimo} caracteres"
-    if tipo in ("string_too_long", "too_long"):
-        maximo = ctx.get("max_length")
-        if tipo == "too_long" and not isinstance(err.get("input"), str):
-            return f"deve ter no máximo {maximo} itens"
-        return f"deve ter no máximo {maximo} caracteres"
-    if tipo == "string_type":
-        return "deve ser um texto"
-    if tipo == "string_pattern_mismatch":
-        return "use só letras, números, ponto, hífen e sublinhado, sem espaços"
-    if tipo in ("int_type", "int_parsing", "int_from_float"):
-        return "deve ser um número inteiro"
-    if tipo in ("greater_than_equal", "greater_than"):
-        limite = ctx.get("ge", ctx.get("gt"))
-        return f"deve ser maior ou igual a {_numero(limite, campo)}"
-    if tipo in ("less_than_equal", "less_than"):
-        limite = ctx.get("le", ctx.get("lt"))
-        return f"deve ser no máximo {_numero(limite, campo)}"
-    if tipo.startswith("date_") or tipo == "date_type":
-        return "data inválida; use o formato AAAA-MM-DD"
-    if tipo == "enum":
-        # O Pydantic monta a lista com "or" antes do último item.
-        opcoes = str(ctx.get("expected", "")).replace(" or ", " ou ")
-        return f"valor inválido; use um destes: {opcoes}"
-    if tipo in ("uuid_parsing", "uuid_type"):
-        return "identificador inválido"
-    if tipo == "extra_forbidden":
-        return "campo não reconhecido"
-    if tipo == "list_type":
-        return "deve ser uma lista"
-    if tipo in ("bool_type", "bool_parsing"):
-        return "deve ser verdadeiro ou falso"
-    if tipo == "value_error":
-        # O EmailStr devolve a explicação da biblioteca, em inglês.
-        if campo == "email":
-            return "e-mail inválido"
-        return str(err.get("msg", "")).removeprefix("Value error, ")
+    if tipo in _FRASES_FIXAS:
+        return _FRASES_FIXAS[tipo]
+    if tipo in _FRASES_CALCULADAS:
+        return _FRASES_CALCULADAS[tipo](err, err.get("ctx") or {}, campo)
+    if tipo.startswith("date_"):
+        return _FRASE_DE_DATA
     return str(err.get("msg", ""))
 
 
