@@ -105,7 +105,9 @@ def test_google_callback_creates_user_and_agency_for_new_email(
     assert data["user"]["role"] == "admin"
     assert data["agency"]["name"] == "Minha Agência"
     assert "access_token" in data["tokens"]
-    assert "refresh_token" in data["tokens"]
+    # O refresh vai no cookie httpOnly, não no corpo (ADR-001, 25/11/2026).
+    assert "refresh_token" not in data["tokens"]
+    assert client.get_cookie("lumina_refresh", path="/api/v1/auth") is not None
 
 
 def test_google_callback_relinks_existing_seed_user(
@@ -262,8 +264,9 @@ def test_refresh_issues_new_access_token(client, clean_db, app):
     )
     assert r.status_code == 200
     body = r.get_json()["data"]
-    assert "access_token" in body
-    assert "refresh_token" in body
+    assert "access_token" in body["tokens"]
+    assert "refresh_token" not in body["tokens"]
+    assert client.get_cookie("lumina_refresh", path="/api/v1/auth") is not None
 
 
 def test_refresh_rejects_access_token(client, clean_db, app):

@@ -16,6 +16,7 @@ from src.models import FinalidadeToken, User
 from src.schemas.auth import MfaCodeIn, MfaConfirmIn, MfaDisableIn, MfaSetupIn, MfaVerifyIn
 from src.services import dois_fatores_service, token_service
 from src.services.auth_service import concluir_login
+from src.utils.sessao_cookie import resposta_de_sessao
 from src.utils.auth_decorators import autenticar_sessao, require_auth
 from src.utils.validation import parse_json
 
@@ -37,7 +38,7 @@ def verify():
     dois_fatores_service.verificar_codigo(user, dados.code)
     token_service.consumir(dados.mfa_ticket, FinalidadeToken.DESAFIO_2FA)
     db.session.commit()
-    return jsonify({"data": concluir_login(user, exigir_2fa=False)})
+    return resposta_de_sessao(concluir_login(user, exigir_2fa=False))
 
 
 @bp.post("/setup")
@@ -56,7 +57,7 @@ def confirm():
         token_service.consumir(dados.mfa_ticket, FinalidadeToken.ATIVAR_2FA)
     db.session.commit()
     # Sessão nova nos dois casos: a ativação encerrou as anteriores.
-    return jsonify({"data": {"recovery_codes": codigos, **concluir_login(user, exigir_2fa=False)}})
+    return resposta_de_sessao({"recovery_codes": codigos, **concluir_login(user, exigir_2fa=False)})
 
 
 @bp.post("/recovery-codes")

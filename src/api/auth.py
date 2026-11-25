@@ -32,6 +32,7 @@ from src.services.auth_service import (
 from src.utils.auth_decorators import require_auth, require_refresh
 from src.utils.errors import ForbiddenError, UnauthorizedError, ValidationError
 from src.utils.jwt_utils import issue_token_pair
+from src.utils.sessao_cookie import apagar_cookie_de_refresh, resposta_de_sessao
 
 bp = Blueprint("auth", __name__, url_prefix="/api/v1/auth")
 
@@ -74,7 +75,7 @@ def _login_result(user, *, agencia_criada: bool = False):
             campos["new_agency"] = "1"
         return redirect(f"{redirect_base}#{urlencode(campos)}")
     payload["new_agency"] = agencia_criada
-    return jsonify({"data": payload})
+    return resposta_de_sessao(payload)
 
 
 # --------------------------------------------------------------------------
@@ -184,7 +185,7 @@ def dev_login():
         )
     # Sem 2FA: o atalho só existe com DEV_LOGIN_ENABLED, e é ele que a suíte
     # e2e e a demonstração usam para entrar.
-    return jsonify({"data": concluir_login(user, exigir_2fa=False)})
+    return resposta_de_sessao(concluir_login(user, exigir_2fa=False))
 
 
 @bp.post("/refresh")
@@ -193,16 +194,20 @@ def refresh_token():
     user = g.current_user
     tokens = issue_token_pair(user)
     ttl_seconds = int(current_app.config["JWT_ACCESS_TTL"].total_seconds())
-    return jsonify(
-        {"data": TokenPairOut(**tokens, expires_in_seconds=ttl_seconds).model_dump(mode="json")}
+    # Cada renovação regrava o cookie com o refresh novo: a sessão dura 30 dias
+    # a partir do último uso, e não do login.
+    return resposta_de_sessao(
+        {"tokens": TokenPairOut(**tokens, expires_in_seconds=ttl_seconds).model_dump(mode="json")}
     )
 
 
 @bp.post("/logout")
-@require_auth
 def logout():
-    # Stateless JWT — client descarta tokens. Documentado em ADR-001.
-    return "", 204
+    # Sem `@require_auth`: o access token vive só na memória da aba e pode já ter
+    # vencido. Exigir um válido deixaria o cookie no navegador, e a sessão
+    # voltaria no próximo carregamento. Apagar o próprio cookie não precisa de
+    # prova de identidade, e o servidor segue sem estado (ADR-001).
+    return apagar_cookie_de_refresh(current_app.response_class(status=204))
 
 
 @bp.get("/me")

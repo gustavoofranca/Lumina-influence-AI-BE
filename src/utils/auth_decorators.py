@@ -75,11 +75,25 @@ def require_auth(view: Callable) -> Callable:
 
 
 def require_refresh(view: Callable) -> Callable:
-    """Variante que aceita refresh token (pra /auth/refresh)."""
+    """Variante que aceita refresh token (pra /auth/refresh).
+
+    Aceita o cookie httpOnly ou o Bearer. O Bearer é por onde o front troca o
+    refresh que chega no fragmento do callback do Google e da Microsoft — o
+    callback pode rodar num host (túnel em dev) onde o cookie da API não seria
+    gravado. Quando os dois vêm, vale o Bearer: é o login que acabou de
+    acontecer, e o cookie pode ser o de quem usou o navegador antes.
+    """
 
     @wraps(view)
     def wrapper(*args, **kwargs):
-        token = _extract_bearer()
+        from src.utils.sessao_cookie import refresh_do_cookie
+
+        if request.headers.get("Authorization"):
+            token = _extract_bearer()
+        else:
+            token = refresh_do_cookie()
+            if not token:
+                raise UnauthorizedError("Sessão ausente", code="missing_bearer")
         payload = decode_token(token, expected_type="refresh")
         user = _load_user(payload["sub"])
         _conferir_marco_de_sessao(user, payload)
