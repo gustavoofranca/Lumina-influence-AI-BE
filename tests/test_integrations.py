@@ -961,3 +961,69 @@ def test_conta_real_sem_token_nao_ganha_metrica_simulada(app, ctx):
 
         assert resultado["accounts"][0]["status"] == "not_connected"
         assert posts() == antes
+
+
+# ==========================================================================
+# Conexão em janela popup (25/11/2026)
+# ==========================================================================
+def _state_popup(app, ctx, influencer_id=None):
+    with app.app_context():
+        return isvc.mint_state(
+            influencer_id=uuid.UUID(influencer_id or ctx.inf_id), platform=Platform.YOUTUBE,
+            agency_id=ctx.agency_id, popup=True,
+        )
+
+
+def _query(resposta):
+    destino = urlparse(resposta.headers["Location"])
+    return destino, {k: v[0] for k, v in parse_qs(destino.query).items()}
+
+
+def test_connect_em_modo_popup_marca_o_state(client, ctx, app, monkeypatch):
+    monkeypatch.setattr(isvc, "get_adapter", lambda platform: FakeAdapter())
+    r = client.get(
+        f"/api/v1/integrations/youtube/connect?influencer_id={ctx.inf_id}&modo=popup",
+        headers=ctx.h_admin,
+    )
+    assert r.status_code == 200
+    state = parse_qs(urlparse(r.get_json()["data"]["auth_url"]).query)["state"][0]
+    with app.app_context():
+        assert isvc.verify_state(state, expected_platform=Platform.YOUTUBE)["pop"] == 1
+
+
+def test_callback_de_popup_volta_para_conexao_concluida(client, ctx, app, monkeypatch):
+    monkeypatch.setattr(isvc, "get_adapter", lambda platform: FakeAdapter())
+    r = client.get(f"/api/v1/integrations/youtube/callback?code=abc&state={_state_popup(app, ctx)}")
+    assert r.status_code == 302
+    destino, q = _query(r)
+    assert destino.path == "/conexao/concluida"
+    assert q == {"plataforma": "youtube", "popup": "1", "influenciador": ctx.inf_id}
+
+
+def test_recusa_em_popup_volta_com_o_erro_e_nao_cria_conta(client, ctx, app, monkeypatch):
+    monkeypatch.setattr(isvc, "get_adapter", lambda platform: FakeAdapter())
+    state = _state_popup(app, ctx)
+    r = client.get(f"/api/v1/integrations/youtube/callback?error=access_denied&state={state}")
+    destino, q = _query(r)
+    assert destino.path == "/conexao/concluida"
+    assert q["erro"] == "access_denied" and q["influenciador"] == ctx.inf_id
+    with app.app_context():
+        assert db.session.scalar(
+            select(SocialAccount).where(SocialAccount.platform_user_id == "ch-1")
+        ) is None
+
+
+def test_falha_no_callback_de_popup_volta_com_o_codigo(client, ctx, app, monkeypatch):
+    """Criador de outra agência: o erro vira `erro=not_found` na janela, não JSON."""
+    monkeypatch.setattr(isvc, "get_adapter", lambda platform: FakeAdapter())
+    state = _state_popup(app, ctx, influencer_id=ctx.inf_other_id)
+    r = client.get(f"/api/v1/integrations/youtube/callback?code=abc&state={state}")
+    destino, q = _query(r)
+    assert destino.path == "/conexao/concluida" and q["erro"] == "not_found"
+
+
+def test_state_ilegivel_continua_respondendo_json(client, ctx, monkeypatch):
+    """Sem state assinado não há como saber se era popup: segue o 401 de antes."""
+    monkeypatch.setattr(isvc, "get_adapter", lambda platform: FakeAdapter())
+    r = client.get("/api/v1/integrations/youtube/callback?code=abc&state=garbage")
+    assert r.status_code == 401

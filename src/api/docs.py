@@ -111,7 +111,14 @@ def build_openapi() -> dict:
         },
         "/api/v1/auth/refresh": {
             "post": {"tags": ["Auth"], "summary": "Renova access token (refresh)",
-                     "security": [{"bearerAuth": []}], "responses": {"200": {"description": "Novo par de tokens"}}},
+                     "description": "Lê o refresh do cookie httpOnly `lumina_refresh` "
+                                    "(exige o cabeçalho `X-Lumina-Csrf: 1`) ou do Bearer; o "
+                                    "Bearer prevalece. Devolve o access token no corpo e regrava "
+                                    "o cookie com o refresh novo (ADR-001, revisão de 25/11/2026).",
+                     "security": [{"bearerAuth": []}],
+                     "responses": {"200": {"description": "Novo access token; refresh em Set-Cookie"},
+                                   "401": {"description": "Sem sessão, token inválido ou revogado"},
+                                   "403": {"description": "Cookie sem o cabeçalho anti-CSRF"}}},
         },
         "/api/v1/auth/cnpj/{cnpj}": {
             "get": {"tags": ["Auth"], "summary": "Consulta pública de CNPJ (BrasilAPI)",
@@ -366,11 +373,12 @@ def build_openapi() -> dict:
         },
         "/api/v1/auth/logout": {
             "post": {"tags": ["Auth"], "summary": "Encerra a sessão do lado do cliente",
-                     "description": "O servidor não guarda sessão (ADR-001): o cliente descarta "
-                                    "os dois tokens. Trocar ou redefinir a senha encerra todas as "
-                                    "sessões no servidor (ADR-0013).",
-                     "security": [{"bearerAuth": []}],
-                     "responses": {"204": {"description": "No Content"}}},
+                     "description": "O servidor não guarda sessão (ADR-001): apaga o cookie "
+                                    "`lumina_refresh` e o cliente descarta o access token. Não "
+                                    "exige Bearer, porque o access pode já ter vencido. Trocar ou "
+                                    "redefinir a senha encerra todas as sessões no servidor "
+                                    "(ADR-0013).",
+                     "responses": {"204": {"description": "Cookie apagado"}}},
         },
         "/api/v1/agencies/{id}/usage": {
             "get": {"tags": ["Agencies"], "summary": "Consumo da agência frente aos limites do plano",
@@ -399,8 +407,12 @@ def build_openapi() -> dict:
                         {"name": "code", "in": "query", "required": True, "schema": {"type": "string"}},
                         {"name": "state", "in": "query", "required": True, "schema": {"type": "string"}},
                     ],
-                    "responses": {"302": {"description": "Redirect à tela do criador, com ?conectado=<plataforma>"},
-                                  "401": {"description": "State inválido, expirado ou já utilizado"}}},
+                    "responses": {"302": {"description": "Redirect à tela do criador, com "
+                                                          "?conectado=<plataforma>. Fluxo aberto em "
+                                                          "popup (marca no state) vai a "
+                                                          "/conexao/concluida?plataforma=&influenciador="
+                                                          "&popup=1[&erro=<código>], inclusive no erro"},
+                                  "401": {"description": "State inválido, expirado ou já utilizado (fora da popup)"}}},
         },
         "/api/v1/integrations/{platform}/disconnect/{id}": {
             "post": {"tags": ["Integrations"], "summary": "Desvincula a conta social da plataforma",
@@ -411,7 +423,11 @@ def build_openapi() -> dict:
             "get": {"tags": ["Integrations"], "summary": "URL de OAuth da plataforma",
                     "security": [{"bearerAuth": []}],
                     "parameters": [{"name": "influencer_id", "in": "query", "required": True,
-                                    "schema": {"type": "string"}}],
+                                    "schema": {"type": "string"}},
+                                   {"name": "modo", "in": "query", "required": False,
+                                    "description": "`popup`: o callback devolve a janela a "
+                                                   "/conexao/concluida, que avisa o painel e fecha",
+                                    "schema": {"type": "string", "enum": ["popup"]}}],
                     "responses": {"200": {"description": "auth_url"}}},
         },
     }

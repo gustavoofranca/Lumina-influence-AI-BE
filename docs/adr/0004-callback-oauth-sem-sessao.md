@@ -72,6 +72,19 @@ ramo alternativo devolvendo JSON: quem chega ali é sempre um navegador, e
 **não** é `AUTH_SUCCESS_REDIRECT` — essa aponta para a página de callback do
 login (`/auth/callback`), e usá-la como base produziria uma rota inexistente.
 
+**Adendo de 25/11/2026 — conexão em janela popup.** Navegar a própria aba até
+o provedor tirava o usuário do painel. O front agora abre o consentimento numa
+janela pequena e pede a URL com `modo=popup`, que grava `pop: 1` **dentro do
+state assinado**. O callback lê essa marca (sem gastar o nonce) e, nesse caso,
+termina sempre em `{FRONTEND_ORIGIN}/conexao/concluida?plataforma=…&influenciador=…&popup=1`,
+acrescentando `erro=<código>` na recusa do provedor ou na falha do
+`handle_callback`. Essa página avisa a aba do painel por `BroadcastChannel` e
+fecha. A marca vai no state, e não no `window.name`, porque provedores com
+`Cross-Origin-Opener-Policy` trocam o contexto da janela e podem apagar o nome.
+Fora da popup, nada muda: sucesso volta à tela do criador, erro responde JSON,
+e um state ilegível responde 401 nos dois modos — sem state assinado não há
+como saber de onde o pedido veio.
+
 ## Consequências
 
 - O endpoint sai da lista de rotas protegidas por Bearer. Quem auditar o
