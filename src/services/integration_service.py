@@ -156,7 +156,9 @@ def parse_platform(raw: str) -> Platform:
 # ==========================================================================
 # State assinado (CSRF)
 # ==========================================================================
-def mint_state(*, influencer_id: uuid.UUID, platform: Platform, agency_id: uuid.UUID) -> str:
+def mint_state(
+    *, influencer_id: uuid.UUID, platform: Platform, agency_id: uuid.UUID, popup: bool = False
+) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "typ": SOCIAL_STATE_TYPE,
@@ -167,6 +169,11 @@ def mint_state(*, influencer_id: uuid.UUID, platform: Platform, agency_id: uuid.
         "exp": int((now + STATE_TTL).timestamp()),
         "jti": uuid.uuid4().hex,
     }
+    # A marca de "abriu numa janela" viaja assinada no state, e não no
+    # `window.name` da janela: provedores com Cross-Origin-Opener-Policy (o
+    # Facebook) trocam o contexto da janela e podem apagar o nome no caminho.
+    if popup:
+        payload["pop"] = 1
     return jwt.encode(payload, current_app.config["JWT_SECRET"], algorithm="HS256")
 
 
@@ -188,10 +195,13 @@ def verify_state(state: str, *, expected_platform: Platform) -> dict:
 # Connect / Callback
 # ==========================================================================
 def build_connect_url(
-    *, influencer: Influencer, platform: Platform, agency_id: uuid.UUID, redirect_uri: str
+    *, influencer: Influencer, platform: Platform, agency_id: uuid.UUID, redirect_uri: str,
+    popup: bool = False,
 ) -> str:
     adapter = get_adapter(platform)
-    state = mint_state(influencer_id=influencer.id, platform=platform, agency_id=agency_id)
+    state = mint_state(
+        influencer_id=influencer.id, platform=platform, agency_id=agency_id, popup=popup
+    )
     return adapter.build_auth_url(state=state, redirect_uri=redirect_uri)
 
 

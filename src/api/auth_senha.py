@@ -14,6 +14,7 @@ from src.schemas.auth import (
 )
 from src.services import cadastro_service, senha_service
 from src.services.auth_service import concluir_login
+from src.utils.sessao_cookie import resposta_de_sessao
 from src.utils.auth_decorators import require_auth
 from src.utils.rate_limit import ip_do_cliente, limitar
 from src.utils.validation import parse_json, validar_dados
@@ -55,7 +56,7 @@ def register():
 def verify_email():
     dados = parse_json(VerifyEmailIn)
     user = cadastro_service.verificar_email(dados.token, dados.password)
-    return jsonify({"data": concluir_login(user)})
+    return resposta_de_sessao(concluir_login(user))
 
 
 @bp.post("/resend-verification")
@@ -83,7 +84,7 @@ def opcoes():
 def login():
     dados = parse_json(LoginIn)
     user = senha_service.entrar(dados.email, dados.password)
-    return jsonify({"data": concluir_login(user)})
+    return resposta_de_sessao(concluir_login(user))
 
 
 @bp.post("/forgot-password")
@@ -109,7 +110,7 @@ def change_password():
         g.current_user, dados.current_password, dados.new_password, totp_code=dados.totp_code
     )
     # A pessoa já estava na sessão e, com 2FA, acabou de digitar o código.
-    return jsonify({"data": concluir_login(user, exigir_2fa=False)})
+    return resposta_de_sessao(concluir_login(user, exigir_2fa=False))
 
 
 @bp.post("/accept-terms")

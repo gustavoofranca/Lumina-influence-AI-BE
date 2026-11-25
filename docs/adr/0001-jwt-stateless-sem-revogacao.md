@@ -121,3 +121,52 @@ Consequências:
   Continua valendo o que a decisão original diz — sem estado no servidor, não há
   como revogar. Esta é a troca aceita, e é o argumento mais forte que existe
   para uma blocklist, se o requisito voltar.
+
+
+## Terceira revisão: refresh em cookie httpOnly (2026-11-25)
+
+A premissa "fechar a aba encerra a sessão" virou o problema. No uso real — e na
+demonstração — a pessoa abre o sistema em outra aba, fecha e reabre o
+navegador, ou volta de uma tela de autorização de rede social, e cai no login a
+cada vez. O pedido foi explícito: o login precisa se manter.
+
+Duas coisas mudaram desde a decisão original e tornam isso seguro de fazer:
+
+- **Existe revogação no servidor.** O marco `sessoes_validas_desde` (ADR-0013)
+  invalida todo token emitido antes da troca ou redefinição de senha e da
+  mudança no 2FA. O argumento "sem estado não há como revogar" deixou de valer
+  por inteiro.
+- **Há um lugar onde o JavaScript não alcança.** Um cookie `HttpOnly` não é
+  legível por `document.cookie`, então o XSS que a segunda revisão admitia
+  deixa de levar o refresh token (OWASP Session Management Cheat Sheet;
+  JWT Cheat Sheet, "Token Storage on Client Side").
+
+**Decisão:** o refresh token sai do `sessionStorage` e do corpo das respostas e
+passa a viver num cookie `lumina_refresh`:
+
+- `HttpOnly`, `Secure` (fora de dev e testes), `SameSite=Strict`,
+  `Path=/api/v1/auth`, `Max-Age` de 30 dias, regravado a cada renovação;
+- `POST /auth/refresh` aceita o cookie **com** o cabeçalho `X-Lumina-Csrf: 1`
+  (cabeçalho próprio força preflight de CORS — OWASP CSRF Cheat Sheet, "Custom
+  Request Headers"), ou o Bearer, que prevalece quando vem;
+- `POST /auth/logout` apaga o cookie e não exige access token;
+- o access token fica **só em memória**. Aba nova, F5 ou navegador reaberto
+  pedem um access novo ao `/auth/refresh` na carga.
+
+O callback do Google e da Microsoft continua entregando o par no fragmento: o
+host do callback pode não ser o da API (túnel em dev), e ali o cookie não seria
+gravado. O front troca esse refresh no `/auth/refresh` pelo Bearer, e é essa
+resposta que grava o cookie.
+
+Consequências:
+
+- A sessão dura 30 dias a partir do último uso, ou até o logout, a troca de
+  senha ou a mudança no 2FA.
+- Um XSS ainda pode agir **durante** a visita (usar o access em memória, chamar
+  o refresh pela página), mas não leva credencial para fora. A CSP do build
+  (`script-src 'self'`) continua sendo a primeira barreira.
+- Front e API precisam ser o mesmo *site* para `SameSite=Strict` funcionar —
+  `lumina.<dominio>` e `api.lumina.<dominio>` são; em dev, `localhost:5173` e
+  `localhost:5000` também.
+- O logout numa aba avisa as outras (`BroadcastChannel`), que descartam o
+  access em memória.

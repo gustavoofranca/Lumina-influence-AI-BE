@@ -171,6 +171,25 @@ def _register_cli(app: Flask) -> None:
         for table, count in stats.items():
             click.echo(f"  {table:.<24} {count}")
 
+    @seed.command("refresh")
+    @click.option("--dry-run", is_flag=True, help="Só mostra o que seria criado, sem gravar.")
+    def seed_refresh_cmd(dry_run: bool) -> None:
+        """Acrescenta posts de demonstração do último post semeado até hoje.
+
+        Só toca as contas do seed que nunca foram conectadas; não apaga nada.
+        """
+        from src.seed.seed_data import seed_refresh
+
+        try:
+            stats = seed_refresh(gravar=not dry_run)
+        except RuntimeError as exc:
+            click.secho(f"[ERRO] {exc}", fg="red")
+            raise SystemExit(1) from exc
+        titulo = "[SIMULAÇÃO] Seria criado:" if dry_run else "[OK] Seed renovado:"
+        click.secho(titulo, fg="yellow" if dry_run else "green")
+        for table, count in stats.items():
+            click.echo(f"  {table:.<24} {count}")
+
     @seed.command("clear")
     def seed_clear_cmd() -> None:
         """Apaga todos os dados de domínio (preserva alembic_version)."""

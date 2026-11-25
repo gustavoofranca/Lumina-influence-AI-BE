@@ -44,6 +44,9 @@ class Config:
     JWT_SECRET: str = os.getenv("JWT_SECRET", "dev-jwt-secret-change-me")
     JWT_ACCESS_TTL: timedelta = timedelta(hours=1)
     JWT_REFRESH_TTL: timedelta = timedelta(days=30)
+    # Cookie do refresh só por HTTPS (ver `utils/sessao_cookie.py`). Desligado
+    # em dev e nos testes, que rodam em http.
+    REFRESH_COOKIE_SECURE: bool = True
 
     # OAuth
     GOOGLE_CLIENT_ID: str | None = os.getenv("GOOGLE_CLIENT_ID")
@@ -208,6 +211,7 @@ class Config:
 class DevConfig(Config):
     ENV = "dev"
     DEBUG = True
+    REFRESH_COOKIE_SECURE = False
 
 
 class TestConfig(Config):
@@ -227,6 +231,7 @@ class TestConfig(Config):
 
     ENV = "test"
     TESTING = True
+    REFRESH_COOKIE_SECURE = False
     DEBUG = True
     SQLALCHEMY_DATABASE_URI = os.getenv(
         "TEST_DATABASE_URL", "sqlite:///:memory:"

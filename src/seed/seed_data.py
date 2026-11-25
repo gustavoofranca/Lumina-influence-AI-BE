@@ -16,7 +16,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from src.extensions import db
 from src.models import (
@@ -127,6 +127,158 @@ RECOMMENDATION_TEMPLATES = [
     {"priority": "medium", "title": "Diversificar formato de hook em até 20%",
      "description": "Padrão de abertura repetitivo. Testar 2-3 hooks alternativos pra evitar fadiga."},
 ]
+
+
+# --------------------------------------------------------------------------
+# Geração de post, comentário e análise — compartilhada por seed_run e refresh
+# --------------------------------------------------------------------------
+# A ordem das chamadas ao `rng` é a de antes da extração: o `seed run` continua
+# produzindo os mesmos números para a mesma semente.
+def _gerar_post(
+    rng: random.Random, *, sa: SocialAccount, data: dict, campaign, posted_at: datetime,
+    platform_post_id: str, indice: int,
+) -> Post:
+    base_reach = int(sa.follower_count * (data["engagement"] / 100) * rng.uniform(0.6, 1.6))
+    reach_total = max(100, base_reach)
+    reach_organic = int(reach_total * data["organic_reach_pct"] / 100)
+    reach_paid = reach_total - reach_organic
+    impressions = int(reach_total * rng.uniform(1.2, 2.0))
+    likes = int(reach_total * (data["engagement"] / 100) * rng.uniform(0.4, 1.2))
+    comments_count = int(likes * rng.uniform(0.04, 0.15))
+    shares = int(likes * rng.uniform(0.05, 0.18))
+    saves = int(likes * rng.uniform(0.10, 0.25))
+
+    post_type = _post_type_for_platform(sa.platform, rng)
+    avg_watch = None
+    retention = None
+    if post_type in (PostType.VIDEO, PostType.REEL, PostType.SHORT, PostType.STORY):
+        avg_watch = round(rng.uniform(8.0, 42.0), 1)
+        retention = round(rng.uniform(0.35, 0.85), 3)
+
+    post = Post(
+        id=uuid.uuid4(),
+        social_account=sa,
+        campaign=campaign,
+        platform_post_id=platform_post_id,
+        post_type=post_type,
+        posted_at=posted_at,
+        caption=f"Post #{indice + 1} de {data['display_name']} — {data['niche']}.",
+        video_url=f"https://cdn.lumina.example/{platform_post_id}.mp4" if avg_watch else None,
+        # Sem miniatura, e não com uma URL inventada.
+        #
+        # `cdn.lumina.example` não existe — o domínio é reservado para
+        # documentação. Enquanto a tela desenhava um degradê no lugar da
+        # miniatura, o campo nunca era buscado e o endereço falso não
+        # incomodava ninguém. Desde 08/09 o cartão de destaque do painel
+        # renderiza um `<img>` de verdade, e aí cada post semeado passou
+        # a disparar uma requisição que morre em DNS: imagem quebrada na
+        # tela e erro no console. Foi o primeiro CI de ponta a ponta que
+        # expôs isso, porque lá o banco é semeado do zero.
+        #
+        # `None` é a resposta honesta: o seed não tem miniatura para
+        # oferecer, e o componente já desenha o vazio de propósito. É a
+        # mesma regra da ADR-003 — ausência de dado não vira dado
+        # inventado, e endereço que não resolve é dado inventado.
+        thumbnail_url=None,
+        reach_total=reach_total,
+        reach_organic=reach_organic,
+        reach_paid=reach_paid,
+        impressions=impressions,
+        likes=likes,
+        comments_count=comments_count,
+        shares=shares,
+        saves=saves,
+        avg_watch_time=avg_watch,
+        retention_rate=retention,
+    )
+    db.session.add(post)
+    return post
+
+
+def _gerar_comentarios(rng: random.Random, *, post: Post, data: dict, n_c: int, ate: datetime) -> int:
+    """Comentários do post, com data limitada a `ate` (nenhum no futuro)."""
+    sent = data["sentiment_score"]
+    pos_weight = max(0.1, sent / 100)
+    neg_weight = max(0.05, (100 - sent) / 200)
+    neu_weight = 1 - pos_weight - neg_weight
+
+    for c in range(n_c):
+        r = rng.random()
+        if r < pos_weight:
+            bucket = "positive"
+        elif r < pos_weight + neu_weight:
+            bucket = "neutral"
+        else:
+            bucket = "negative"
+        content = rng.choice(COMMENT_TEMPLATES[bucket])
+        comment = Comment(
+            id=uuid.uuid4(),
+            post=post,
+            platform_comment_id=f"cmt-{post.platform_post_id}-{c:02d}",
+            content=content,
+            author_handle=f"user{rng.randint(1000, 9999)}",
+            posted_at=min(post.posted_at + timedelta(hours=rng.randint(1, 72)), ate),
+            like_count=rng.randint(0, 200),
+        )
+        db.session.add(comment)
+    return n_c
+
+
+def _gerar_analise(rng: random.Random, *, post: Post, data: dict, ate: datetime) -> AIAnalysis:
+    """Análise de IA de demonstração, marcada `seed-fixture-v1` e `raw_response.seed`."""
+    sent_score_normalized = round((data["sentiment_score"] / 100) * 2 - 1, 3)  # -1..1
+    sent_label = _sentiment_label_from_score(data["sentiment_score"])
+
+    # Sentiment breakdown — soma 100
+    tech = rng.randint(30, 50)
+    purchase = rng.randint(20, 35)
+    skepticism = rng.randint(5, 18)
+    neutral = max(0, 100 - tech - purchase - skepticism)
+
+    n_pos_phrases = rng.randint(3, 6)
+    n_neg_phrases = rng.randint(0, 2)
+    key_phrases = (
+        rng.sample(KEY_PHRASES_POSITIVE, k=min(n_pos_phrases, len(KEY_PHRASES_POSITIVE)))
+        + rng.sample(KEY_PHRASES_NEGATIVE, k=min(n_neg_phrases, len(KEY_PHRASES_NEGATIVE)))
+    )
+    recs = rng.sample(RECOMMENDATION_TEMPLATES, k=rng.randint(2, 3))
+
+    analysis = AIAnalysis(
+        id=uuid.uuid4(),
+        post=post,
+        analyzed_at=min(post.posted_at + timedelta(hours=rng.randint(2, 48)), ate),
+        model_version="seed-fixture-v1",
+        sentiment_score=sent_score_normalized,
+        sentiment_label=sent_label,
+        script_score=round(rng.uniform(5.0, 9.5), 2),
+        brand_coherence_score=round(data["brand_coherence"] + rng.uniform(-5, 3), 2),
+        bot_probability=round(data["bot_probability"] + rng.uniform(-2, 4), 2),
+        # Faixa suspeita como grandeza própria, e não fração da de bot: no
+        # dado real ela vem medida pelo modelo, e o seed precisa ter a
+        # mesma forma para a tela de demonstração exercitar o mesmo
+        # caminho. Fica um pouco acima da de bot porque dúvida é mais
+        # comum que automação confirmada.
+        suspicious_probability=round(
+            data["bot_probability"] * rng.uniform(1.1, 1.8), 2
+        ),
+        transcript_text=(
+            "Olha só esse drop — testei por semanas e a diferença é absurda. "
+            "Pra quem trabalha pesado, vale cada centavo. Link na bio com cupom."
+            if post.post_type in (PostType.VIDEO, PostType.REEL, PostType.SHORT)
+            else None
+        ),
+        key_phrases=key_phrases,
+        recommendations=recs,
+        sentiment_breakdown={
+            "technical_enthusiasm": tech,
+            "purchase_intent": purchase,
+            "value_skepticism": skepticism,
+            "neutral": neutral,
+        },
+        raw_response={"seed": True, "version": "v1"},
+    )
+    db.session.add(analysis)
+    return analysis
 
 
 # --------------------------------------------------------------------------
@@ -325,61 +477,10 @@ def seed_run() -> dict[str, int]:
 
             # ~40% dos posts são de campanha
             campaign = rng.choice(inf_campaigns) if (inf_campaigns and rng.random() < 0.4) else None
-
-            base_reach = int(sa.follower_count * (data["engagement"] / 100) * rng.uniform(0.6, 1.6))
-            reach_total = max(100, base_reach)
-            reach_organic = int(reach_total * data["organic_reach_pct"] / 100)
-            reach_paid = reach_total - reach_organic
-            impressions = int(reach_total * rng.uniform(1.2, 2.0))
-            likes = int(reach_total * (data["engagement"] / 100) * rng.uniform(0.4, 1.2))
-            comments_count = int(likes * rng.uniform(0.04, 0.15))
-            shares = int(likes * rng.uniform(0.05, 0.18))
-            saves = int(likes * rng.uniform(0.10, 0.25))
-
-            post_type = _post_type_for_platform(sa.platform, rng)
-            avg_watch = None
-            retention = None
-            if post_type in (PostType.VIDEO, PostType.REEL, PostType.SHORT, PostType.STORY):
-                avg_watch = round(rng.uniform(8.0, 42.0), 1)
-                retention = round(rng.uniform(0.35, 0.85), 3)
-
-            post = Post(
-                id=uuid.uuid4(),
-                social_account=sa,
-                campaign=campaign,
-                platform_post_id=f"{sa.platform.value}-{slug}-{i:03d}",
-                post_type=post_type,
-                posted_at=posted_at,
-                caption=f"Post #{i + 1} de {data['display_name']} — {data['niche']}.",
-                video_url=f"https://cdn.lumina.example/{slug}/{i}.mp4" if avg_watch else None,
-                # Sem miniatura, e não com uma URL inventada.
-                #
-                # `cdn.lumina.example` não existe — o domínio é reservado para
-                # documentação. Enquanto a tela desenhava um degradê no lugar da
-                # miniatura, o campo nunca era buscado e o endereço falso não
-                # incomodava ninguém. Desde 08/09 o cartão de destaque do painel
-                # renderiza um `<img>` de verdade, e aí cada post semeado passou
-                # a disparar uma requisição que morre em DNS: imagem quebrada na
-                # tela e erro no console. Foi o primeiro CI de ponta a ponta que
-                # expôs isso, porque lá o banco é semeado do zero.
-                #
-                # `None` é a resposta honesta: o seed não tem miniatura para
-                # oferecer, e o componente já desenha o vazio de propósito. É a
-                # mesma regra da ADR-003 — ausência de dado não vira dado
-                # inventado, e endereço que não resolve é dado inventado.
-                thumbnail_url=None,
-                reach_total=reach_total,
-                reach_organic=reach_organic,
-                reach_paid=reach_paid,
-                impressions=impressions,
-                likes=likes,
-                comments_count=comments_count,
-                shares=shares,
-                saves=saves,
-                avg_watch_time=avg_watch,
-                retention_rate=retention,
+            post = _gerar_post(
+                rng, sa=sa, data=data, campaign=campaign, posted_at=posted_at,
+                platform_post_id=f"{sa.platform.value}-{slug}-{i:03d}", indice=i,
             )
-            db.session.add(post)
             posts.append(post)
 
     db.session.flush()
@@ -394,31 +495,7 @@ def seed_run() -> dict[str, int]:
             next(s for s, sa_list in social_accounts_by_inf.items()
                  if any(sa.id == post.social_account_id for sa in sa_list))
         ]
-        sent = data["sentiment_score"]
-        pos_weight = max(0.1, sent / 100)
-        neg_weight = max(0.05, (100 - sent) / 200)
-        neu_weight = 1 - pos_weight - neg_weight
-
-        for c in range(n_c):
-            r = rng.random()
-            if r < pos_weight:
-                bucket = "positive"
-            elif r < pos_weight + neu_weight:
-                bucket = "neutral"
-            else:
-                bucket = "negative"
-            content = rng.choice(COMMENT_TEMPLATES[bucket])
-            comment = Comment(
-                id=uuid.uuid4(),
-                post=post,
-                platform_comment_id=f"cmt-{post.platform_post_id}-{c:02d}",
-                content=content,
-                author_handle=f"user{rng.randint(1000, 9999)}",
-                posted_at=post.posted_at + timedelta(hours=rng.randint(1, 72)),
-                like_count=rng.randint(0, 200),
-            )
-            db.session.add(comment)
-            n_comments += 1
+        n_comments += _gerar_comentarios(rng, post=post, data=data, n_c=n_c, ate=now)
     db.session.flush()
     stats["comments"] = n_comments
 
@@ -433,58 +510,7 @@ def seed_run() -> dict[str, int]:
             next(s for s, sa_list in social_accounts_by_inf.items()
                  if any(sa.id == post.social_account_id for sa in sa_list))
         ]
-        sent_score_normalized = round((data["sentiment_score"] / 100) * 2 - 1, 3)  # -1..1
-        sent_label = _sentiment_label_from_score(data["sentiment_score"])
-
-        # Sentiment breakdown — soma 100
-        tech = rng.randint(30, 50)
-        purchase = rng.randint(20, 35)
-        skepticism = rng.randint(5, 18)
-        neutral = max(0, 100 - tech - purchase - skepticism)
-
-        n_pos_phrases = rng.randint(3, 6)
-        n_neg_phrases = rng.randint(0, 2)
-        key_phrases = (
-            rng.sample(KEY_PHRASES_POSITIVE, k=min(n_pos_phrases, len(KEY_PHRASES_POSITIVE)))
-            + rng.sample(KEY_PHRASES_NEGATIVE, k=min(n_neg_phrases, len(KEY_PHRASES_NEGATIVE)))
-        )
-        recs = rng.sample(RECOMMENDATION_TEMPLATES, k=rng.randint(2, 3))
-
-        analysis = AIAnalysis(
-            id=uuid.uuid4(),
-            post=post,
-            analyzed_at=post.posted_at + timedelta(hours=rng.randint(2, 48)),
-            model_version="seed-fixture-v1",
-            sentiment_score=sent_score_normalized,
-            sentiment_label=sent_label,
-            script_score=round(rng.uniform(5.0, 9.5), 2),
-            brand_coherence_score=round(data["brand_coherence"] + rng.uniform(-5, 3), 2),
-            bot_probability=round(data["bot_probability"] + rng.uniform(-2, 4), 2),
-            # Faixa suspeita como grandeza própria, e não fração da de bot: no
-            # dado real ela vem medida pelo modelo, e o seed precisa ter a
-            # mesma forma para a tela de demonstração exercitar o mesmo
-            # caminho. Fica um pouco acima da de bot porque dúvida é mais
-            # comum que automação confirmada.
-            suspicious_probability=round(
-                data["bot_probability"] * rng.uniform(1.1, 1.8), 2
-            ),
-            transcript_text=(
-                "Olha só esse drop — testei por semanas e a diferença é absurda. "
-                "Pra quem trabalha pesado, vale cada centavo. Link na bio com cupom."
-                if post.post_type in (PostType.VIDEO, PostType.REEL, PostType.SHORT)
-                else None
-            ),
-            key_phrases=key_phrases,
-            recommendations=recs,
-            sentiment_breakdown={
-                "technical_enthusiasm": tech,
-                "purchase_intent": purchase,
-                "value_skepticism": skepticism,
-                "neutral": neutral,
-            },
-            raw_response={"seed": True, "version": "v1"},
-        )
-        db.session.add(analysis)
+        _gerar_analise(rng, post=post, data=data, ate=now)
         n_analyses += 1
     db.session.flush()
     stats["ai_analyses"] = n_analyses
@@ -512,6 +538,134 @@ def seed_run() -> dict[str, int]:
 
     db.session.commit()
     logger.info("Seed concluído: %s", stats)
+    return stats
+
+
+# --------------------------------------------------------------------------
+# seed_refresh
+# --------------------------------------------------------------------------
+JANELA_DO_REFRESH = timedelta(days=90)
+
+
+def _contas_semeadas(agency: Agency) -> dict[str, list[SocialAccount]]:
+    """Contas criadas pelo seed e nunca conectadas, por slug do criador.
+
+    Três condições, e todas importam. O id estável diz que a linha nasceu no
+    seed. O `platform_user_id` igual ao do seed e a ausência de token dizem que
+    ela continua sendo do seed: o callback de conexão reaproveita a linha quando
+    criador, rede e handle coincidem, e uma conta conectada de verdade ou pelo
+    provedor de demonstração pode ter herdado o id semeado. Pôr post simulado
+    nela seria repetir o incidente de 15/10/2026, dado simulado somado ao
+    coletado (ver `SocialAccount.data_provenance`).
+    """
+    contas: dict[str, list[SocialAccount]] = {}
+    for raw in _load("influencers"):
+        for plat_str in raw["platforms"]:
+            sa = db.session.get(SocialAccount, _stable_uuid(f"sa:{raw['slug']}:{plat_str}"))
+            if (
+                sa is None
+                or sa.influencer.agency_id != agency.id
+                or sa.platform_user_id != f"{plat_str}-{raw['slug']}"
+                or sa.access_token_encrypted is not None
+            ):
+                continue
+            contas.setdefault(raw["slug"], []).append(sa)
+    return contas
+
+
+def seed_refresh(*, agora: datetime | None = None, gravar: bool = True) -> dict[str, int]:
+    """Acrescenta posts de demonstração do último post semeado até agora.
+
+    O seed gera os 90 dias anteriores à execução; semanas depois, o painel abre
+    em "30 dias" e não encontra nada. Este comando estende só as contas do seed
+    (`_contas_semeadas`), com a mesma densidade (10 a 17 posts por criador a
+    cada 90 dias), os mesmos comentários e as mesmas análises marcadas
+    `seed-fixture-v1`.
+
+    Só acrescenta: nada é apagado nem reescrito (ADR-012). Não mexe em
+    `last_synced_at` — carga de demonstração não é coleta (ADR-003). Lacuna
+    maior que 90 dias é preenchida só nos últimos 90. Rodar de novo logo em
+    seguida não acrescenta nada.
+
+    `gravar=False` calcula e desfaz, para o `--dry-run`.
+    """
+    agora = agora or datetime.now(timezone.utc)
+    agency = db.session.scalar(select(Agency).where(Agency.name == SEEDED_AGENCY_NAME))
+    if agency is None:
+        raise RuntimeError("Agência do seed não encontrada — rode 'flask seed run' antes.")
+
+    rng = random.Random(f"{RANDOM_SEED}:{agora.date().isoformat()}")
+    dados_por_slug = {raw["slug"]: raw for raw in _load("influencers")}
+    campanhas = list(db.session.scalars(
+        select(Campaign).where(
+            Campaign.agency_id == agency.id,
+            Campaign.status.in_((CampaignStatus.ACTIVE, CampaignStatus.ENDED)),
+        )
+    ))
+    stats = {"posts": 0, "comments": 0, "ai_analyses": 0, "posts_needing_analysis": 0}
+
+    for slug, contas in _contas_semeadas(agency).items():
+        data = dados_por_slug[slug]
+        ultimo = db.session.scalar(
+            select(func.max(Post.posted_at)).where(
+                Post.social_account_id.in_([sa.id for sa in contas])
+            )
+        )
+        inicio = agora - JANELA_DO_REFRESH
+        if ultimo is not None:
+            ultimo = ultimo if ultimo.tzinfo else ultimo.replace(tzinfo=timezone.utc)
+            inicio = max(inicio, ultimo)
+        lacuna = agora - inicio
+        n_posts = round(rng.randint(10, 17) * lacuna / JANELA_DO_REFRESH)
+        if n_posts <= 0:
+            continue
+
+        inf_id = contas[0].influencer_id
+        participacoes = {
+            ci.campaign_id for ci in db.session.scalars(
+                select(CampaignInfluencer).where(CampaignInfluencer.influencer_id == inf_id)
+            )
+        }
+        for i in range(n_posts):
+            sa = rng.choice(contas)
+            # O último cai nas 6 horas finais: é ele que marca até onde o
+            # criador está coberto, e é o que faz a execução seguinte achar
+            # lacuna nenhuma em vez de reabrir os dias depois do último sorteio.
+            if i == n_posts - 1:
+                posted_at = agora - timedelta(hours=rng.uniform(0, 6))
+            else:
+                posted_at = inicio + lacuna * rng.uniform(0.02, 1.0)
+            # Campanha só quando a data cai no período dela: post fora do
+            # período inflaria o alcance da campanha no painel.
+            possiveis = [
+                c for c in campanhas
+                if c.id in participacoes and c.period_start <= posted_at.date() <= c.period_end
+            ]
+            campaign = rng.choice(possiveis) if (possiveis and rng.random() < 0.4) else None
+            post = _gerar_post(
+                rng, sa=sa, data=data, campaign=campaign, posted_at=posted_at,
+                # O carimbo do instante deixa o id único entre execuções; o do
+                # seed original termina em `-{i:03d}` e colidiria.
+                platform_post_id=f"{sa.platform.value}-{slug}-r{int(posted_at.timestamp())}-{i}",
+                indice=i,
+            )
+            db.session.flush()
+            stats["posts"] += 1
+            stats["comments"] += _gerar_comentarios(
+                rng, post=post, data=data, n_c=rng.randint(12, 18), ate=agora
+            )
+            if rng.random() >= 0.75:
+                post.needs_analysis = True
+                stats["posts_needing_analysis"] += 1
+            else:
+                _gerar_analise(rng, post=post, data=data, ate=agora)
+                stats["ai_analyses"] += 1
+
+    if gravar:
+        db.session.commit()
+        logger.info("Seed renovado: %s", stats)
+    else:
+        db.session.rollback()
     return stats
 
 
