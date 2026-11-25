@@ -156,8 +156,63 @@ def parse_platform(raw: str) -> Platform:
 # ==========================================================================
 # State assinado (CSRF)
 # ==========================================================================
+# ==========================================================================
+# Link de conexão para o criador (25/11/2026)
+# ==========================================================================
+# A agência manda um link por WhatsApp ou e-mail, e a dona da conta autoriza
+# no aparelho dela, sem conta no Lumina. O link é um JWT assinado com o
+# JWT_SECRET, como o state: só serve para aquele criador e aquela rede, vence em
+# 7 dias e deixa de servir quando a conta já está conectada. Sem tabela nova —
+# a garantia de uso único continua sendo a do state, gasto no callback.
+CONVITE_TTL = timedelta(days=7)
+CONVITE_TYPE = "social_connect_invite"
+
+
+def emitir_convite(*, influencer: Influencer, platform: Platform, agency_id: uuid.UUID) -> dict:
+    get_adapter(platform)  # plataforma sem credencial não ganha link que só daria erro
+    agora = datetime.now(timezone.utc)
+    expira = agora + CONVITE_TTL
+    token = jwt.encode({
+        "typ": CONVITE_TYPE,
+        "inf": str(influencer.id),
+        "plat": platform.value,
+        "ag": str(agency_id),
+        "iat": int(agora.timestamp()),
+        "exp": int(expira.timestamp()),
+        "jti": uuid.uuid4().hex,
+    }, current_app.config["JWT_SECRET"], algorithm="HS256")
+    return {"token": token, "expires_at": expira}
+
+
+def ler_convite(token: str) -> tuple[Influencer, Platform, dict]:
+    """Confere o link e devolve o criador, a rede e o payload."""
+    try:
+        payload = jwt.decode(token, current_app.config["JWT_SECRET"], algorithms=["HS256"])
+    except jwt.ExpiredSignatureError as exc:
+        raise UnauthorizedError("Este link de conexão venceu", code="convite_expirado") from exc
+    except jwt.InvalidTokenError as exc:
+        raise UnauthorizedError("Link de conexão inválido", code="convite_invalido") from exc
+    if payload.get("typ") != CONVITE_TYPE:
+        raise UnauthorizedError("Link de conexão inválido", code="convite_invalido")
+    platform = parse_platform(payload.get("plat", ""))
+    influencer = db.session.scalar(
+        select(Influencer).where(
+            Influencer.id == uuid.UUID(payload["inf"]),
+            Influencer.agency_id == uuid.UUID(payload["ag"]),
+        )
+    )
+    if influencer is None:
+        raise UnauthorizedError("Link de conexão inválido", code="convite_invalido")
+    return influencer, platform, payload
+
+
+def conta_conectada(influencer: Influencer, platform: Platform) -> bool:
+    return any(sa.platform == platform and sa.connected for sa in influencer.contas_visiveis)
+
+
 def mint_state(
-    *, influencer_id: uuid.UUID, platform: Platform, agency_id: uuid.UUID, popup: bool = False
+    *, influencer_id: uuid.UUID, platform: Platform, agency_id: uuid.UUID, popup: bool = False,
+    convite: bool = False,
 ) -> str:
     now = datetime.now(timezone.utc)
     payload = {
@@ -174,6 +229,10 @@ def mint_state(
     # Facebook) trocam o contexto da janela e podem apagar o nome no caminho.
     if popup:
         payload["pop"] = 1
+    # Fluxo aberto pelo link do criador: a volta é a página pública de
+    # "pronto", porque quem autoriza não tem sessão no Lumina.
+    if convite:
+        payload["cv"] = 1
     return jwt.encode(payload, current_app.config["JWT_SECRET"], algorithm="HS256")
 
 
@@ -196,11 +255,12 @@ def verify_state(state: str, *, expected_platform: Platform) -> dict:
 # ==========================================================================
 def build_connect_url(
     *, influencer: Influencer, platform: Platform, agency_id: uuid.UUID, redirect_uri: str,
-    popup: bool = False,
+    popup: bool = False, convite: bool = False,
 ) -> str:
     adapter = get_adapter(platform)
     state = mint_state(
-        influencer_id=influencer.id, platform=platform, agency_id=agency_id, popup=popup
+        influencer_id=influencer.id, platform=platform, agency_id=agency_id, popup=popup,
+        convite=convite,
     )
     return adapter.build_auth_url(state=state, redirect_uri=redirect_uri)
 

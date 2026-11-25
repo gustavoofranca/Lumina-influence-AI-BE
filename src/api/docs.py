@@ -420,6 +420,36 @@ def build_openapi() -> dict:
                      "security": [{"bearerAuth": []}],
                      "responses": {"200": {"description": "Conta desvinculada"}}},
         },
+        "/api/v1/integrations/{platform}/connect-link": {
+            "post": {"tags": ["Integrations"],
+                     "summary": "Gera o link de conexão que a agência manda ao criador",
+                     "description": "Corpo `{influencer_id}`. Devolve `{url, expires_at, platform}`: "
+                                    "JWT assinado, só para aquele criador e rede, válido por 7 dias.",
+                     "security": [{"bearerAuth": []}],
+                     "responses": {"200": {"description": "url do link"},
+                                   "422": {"description": "Plataforma sem credencial ou corpo inválido"}}},
+        },
+        "/api/v1/integrations/convite/{token}": {
+            "get": {"tags": ["Integrations"],
+                    "summary": "Dados públicos do link de conexão (página do criador)",
+                    "description": "Sem Bearer: quem abre é o criador. Devolve nome do criador, "
+                                   "da agência, rede, validade e se já está conectada. Limite por IP.",
+                    "parameters": [{"name": "token", "in": "path", "required": True,
+                                    "schema": {"type": "string"}}],
+                    "responses": {"200": {"description": "Dados do convite"},
+                                  "401": {"description": "convite_invalido ou convite_expirado"},
+                                  "429": {"description": "Muitas tentativas"}}},
+        },
+        "/api/v1/integrations/convite/{token}/autorizar": {
+            "get": {"tags": ["Integrations"],
+                    "summary": "Leva o navegador do criador ao consentimento da rede",
+                    "description": "Sem Bearer. O callback termina em /conectar/concluido no front.",
+                    "parameters": [{"name": "token", "in": "path", "required": True,
+                                    "schema": {"type": "string"}}],
+                    "responses": {"302": {"description": "Redirect ao provedor, ou a "
+                                                          "/conectar/concluido?erro=ja_conectada"},
+                                  "401": {"description": "convite_invalido ou convite_expirado"}}},
+        },
         "/api/v1/integrations/{platform}/connect": {
             "get": {"tags": ["Integrations"], "summary": "URL de OAuth da plataforma",
                     "security": [{"bearerAuth": []}],

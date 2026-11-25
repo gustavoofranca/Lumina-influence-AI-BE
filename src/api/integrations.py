@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from urllib.parse import urlencode
 
 from flask import Blueprint, current_app, redirect, request, url_for
@@ -11,6 +12,7 @@ from src.services import integration_service
 from src.utils.auth_decorators import require_auth
 from src.utils.authz import current_agency_id, get_scoped_or_404, require_role
 from src.utils.errors import LuminaError, ValidationError
+from src.utils.rate_limit import ip_do_cliente, limitar
 from src.utils.responses import ok
 from src.models import Influencer
 
@@ -57,11 +59,11 @@ def connect(platform):
 
 
 def _state_de_popup(plat, state: str | None) -> dict | None:
-    """O payload do state, se ele for legível e vier de uma janela popup.
+    """O payload do state, se ele for legível e vier de popup ou de link.
 
     Só lê: gastar o nonce é trabalho do `handle_callback`. Serve ao caminho de
-    erro, que precisa saber para onde devolver a janela antes de qualquer outra
-    coisa.
+    erro, que precisa saber para onde devolver o navegador antes de qualquer
+    outra coisa.
     """
     if not state:
         return None
@@ -69,12 +71,22 @@ def _state_de_popup(plat, state: str | None) -> dict | None:
         payload = integration_service.verify_state(state, expected_platform=plat)
     except LuminaError:
         return None
-    return payload if payload.get("pop") else None
+    return payload if (payload.get("pop") or payload.get("cv")) else None
 
 
-def _concluida(plat, influencer_id: str | None, erro: str | None = None):
-    """Redirect para a página do front que avisa o painel e fecha a janela."""
+def _concluida(plat, influencer_id: str | None, erro: str | None = None, *, convite: bool = False):
+    """Redirect para a página do front que fecha o fluxo.
+
+    Popup: `/conexao/concluida`, que avisa o painel e fecha a janela. Link do
+    criador: `/conectar/concluido`, pública, porque quem autorizou não tem
+    sessão no Lumina — e por isso sem o id do criador na URL.
+    """
     destino = current_app.config["FRONTEND_ORIGIN"].rstrip("/")
+    if convite:
+        query = {"plataforma": plat.value}
+        if erro:
+            query["erro"] = erro
+        return redirect(f"{destino}/conectar/concluido?{urlencode(query)}")
     query = {"plataforma": plat.value, "popup": "1"}
     if influencer_id:
         query["influenciador"] = influencer_id
@@ -102,10 +114,11 @@ def callback(platform):
     state = request.args.get("state")
     popup = _state_de_popup(plat, state)
 
+    convite = bool(popup and popup.get("cv"))
     error = request.args.get("error")
     if error:
         if popup:
-            return _concluida(plat, popup.get("inf"), erro=error[:40])
+            return _concluida(plat, popup.get("inf"), erro=error[:40], convite=convite)
         raise ValidationError(
             f"Provedor retornou erro: {error}",
             details={"description": request.args.get("error_description")},
@@ -123,11 +136,11 @@ def callback(platform):
         )
     except LuminaError as exc:
         if popup:
-            return _concluida(plat, popup.get("inf"), erro=exc.code)
+            return _concluida(plat, popup.get("inf"), erro=exc.code, convite=convite)
         raise
 
     if popup:
-        return _concluida(plat, str(account.influencer_id))
+        return _concluida(plat, str(account.influencer_id), convite=convite)
     # O browser está nesta aba: devolver JSON deixaria o usuário olhando para um
     # payload. Volta para a tela do criador, na origem do front — e não em
     # AUTH_SUCCESS_REDIRECT, que aponta para a página de callback do login.
@@ -135,6 +148,67 @@ def callback(platform):
     return redirect(
         f"{destino}/app/influenciadores/{account.influencer_id}?conectado={plat.value}"
     )
+
+
+# --------------------------------------------------------------------------
+# Link de conexão para o criador
+# --------------------------------------------------------------------------
+@bp.post("/<platform>/connect-link")
+@require_auth
+@require_role(UserRole.ADMIN, UserRole.MEMBER)
+def connect_link(platform):
+    """Gera o link que a agência manda ao criador para ele autorizar a conta."""
+    plat = integration_service.parse_platform(platform)
+    corpo = request.get_json(silent=True) or {}
+    influencer_id = corpo.get("influencer_id")
+    if not influencer_id:
+        raise ValidationError("influencer_id é obrigatório")
+    influencer = get_scoped_or_404(Influencer, influencer_id)
+    convite = integration_service.emitir_convite(
+        influencer=influencer, platform=plat, agency_id=current_agency_id()
+    )
+    destino = current_app.config["FRONTEND_ORIGIN"].rstrip("/")
+    return ok({
+        "url": f"{destino}/conectar/{convite['token']}",
+        "expires_at": convite["expires_at"].isoformat(),
+        "platform": plat.value,
+    })
+
+
+@bp.get("/convite/<token>")
+def convite_info(token):
+    """O que a página pública mostra antes de a pessoa autorizar.
+
+    Pública: quem abre é o criador, sem conta no Lumina. Devolve o mínimo para
+    ele saber quem está pedindo e para qual perfil — nada de métrica ou de
+    outros criadores da agência.
+    """
+    limitar("RATE_LIMIT_CONVITE", ip_do_cliente())
+    influencer, plat, payload = integration_service.ler_convite(token)
+    return ok({
+        "influencer": influencer.display_name,
+        "agency": influencer.agency.name if influencer.agency else None,
+        "platform": plat.value,
+        "expires_at": datetime.fromtimestamp(payload["exp"], tz=timezone.utc).isoformat(),
+        "connected": integration_service.conta_conectada(influencer, plat),
+    })
+
+
+@bp.get("/convite/<token>/autorizar")
+def convite_autorizar(token):
+    """Leva o navegador do criador à tela de consentimento da rede."""
+    limitar("RATE_LIMIT_CONVITE", ip_do_cliente())
+    influencer, plat, _ = integration_service.ler_convite(token)
+    if integration_service.conta_conectada(influencer, plat):
+        return _concluida(plat, None, erro="ja_conectada", convite=True)
+    auth_url = integration_service.build_connect_url(
+        influencer=influencer,
+        platform=plat,
+        agency_id=influencer.agency_id,
+        redirect_uri=callback_uri(plat.value),
+        convite=True,
+    )
+    return redirect(auth_url)
 
 
 @bp.post("/<platform>/disconnect/<social_account_id>")
