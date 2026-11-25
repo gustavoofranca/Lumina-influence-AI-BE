@@ -47,9 +47,11 @@ def test_refresh_pelo_cookie_sem_cabecalho_anti_csrf_e_recusado(client, conta_co
     assert r.get_json()["error"]["code"] == "csrf_header_missing"
 
 
-def test_refresh_sem_cookie_e_sem_bearer_da_401(client):
+def test_refresh_sem_cookie_e_sem_bearer_responde_sem_sessao(client):
+    """Visita sem sessão não é credencial recusada: 204, e nada no console."""
     r = client.post("/api/v1/auth/refresh", headers=CSRF)
-    assert r.status_code == 401
+    assert r.status_code == 204
+    assert not r.data
 
 
 def test_bearer_prevalece_sobre_cookie_antigo(app, client, conta_com_senha):
@@ -83,7 +85,7 @@ def test_logout_apaga_o_cookie_mesmo_sem_access_token(client, conta_com_senha):
     r = client.post("/api/v1/auth/logout")
     assert r.status_code == 204
     assert client.get_cookie(COOKIE, path=CAMINHO) is None
-    assert client.post("/api/v1/auth/refresh", headers=CSRF).status_code == 401
+    assert client.post("/api/v1/auth/refresh", headers=CSRF).status_code == 204
 
 
 def test_ticket_de_2fa_nao_grava_cookie(client, conta_com_senha):

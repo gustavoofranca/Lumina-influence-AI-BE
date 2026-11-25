@@ -117,7 +117,8 @@ def build_openapi() -> dict:
                                     "o cookie com o refresh novo (ADR-001, revisão de 25/11/2026).",
                      "security": [{"bearerAuth": []}],
                      "responses": {"200": {"description": "Novo access token; refresh em Set-Cookie"},
-                                   "401": {"description": "Sem sessão, token inválido ou revogado"},
+                                   "204": {"description": "Sem cookie e sem Bearer: não há sessão"},
+                                   "401": {"description": "Token inválido, vencido ou revogado"},
                                    "403": {"description": "Cookie sem o cabeçalho anti-CSRF"}}},
         },
         "/api/v1/auth/cnpj/{cnpj}": {

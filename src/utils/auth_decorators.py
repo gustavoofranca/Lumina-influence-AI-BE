@@ -6,7 +6,7 @@ from datetime import timezone
 from functools import wraps
 from typing import Callable
 
-from flask import g, request
+from flask import current_app, g, request
 from sqlalchemy import select
 
 from src.extensions import db
@@ -93,7 +93,10 @@ def require_refresh(view: Callable) -> Callable:
         else:
             token = refresh_do_cookie()
             if not token:
-                raise UnauthorizedError("Sessão ausente", code="missing_bearer")
+                # Sem cookie e sem Bearer não é credencial recusada: é visita sem
+                # sessão, e o front pergunta isso em toda carga de página. Um 401
+                # aqui viraria erro no console de todo visitante.
+                return current_app.response_class(status=204)
         payload = decode_token(token, expected_type="refresh")
         user = _load_user(payload["sub"])
         _conferir_marco_de_sessao(user, payload)
