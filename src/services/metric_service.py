@@ -59,7 +59,7 @@ def fetch_agency_posts(
         select(Post)
         .join(SocialAccount, Post.social_account_id == SocialAccount.id)
         .join(Influencer, SocialAccount.influencer_id == Influencer.id)
-        .where(Influencer.agency_id == agency_id)
+        .where(Influencer.agency_id == agency_id, SocialAccount.visivel_sql())
         .options(selectinload(Post.social_account))
     )
     if campaign_id is not None:
@@ -74,7 +74,7 @@ def fetch_influencer_posts(influencer_id: uuid.UUID, *, limit: int | None = None
     stmt = (
         select(Post)
         .join(SocialAccount, Post.social_account_id == SocialAccount.id)
-        .where(SocialAccount.influencer_id == influencer_id)
+        .where(SocialAccount.influencer_id == influencer_id, SocialAccount.visivel_sql())
         .options(selectinload(Post.social_account))
         .order_by(Post.posted_at.desc())
     )
@@ -98,7 +98,7 @@ def fetch_posts_by_influencer(
     rows = db.session.execute(
         select(SocialAccount.influencer_id, Post)
         .join(Post, Post.social_account_id == SocialAccount.id)
-        .where(SocialAccount.influencer_id.in_(influencer_ids))
+        .where(SocialAccount.influencer_id.in_(influencer_ids), SocialAccount.visivel_sql())
         .order_by(Post.posted_at.desc())
     ).all()
 
@@ -119,7 +119,7 @@ def fetch_analyses_by_influencer(
         select(SocialAccount.influencer_id, AIAnalysis)
         .join(Post, Post.social_account_id == SocialAccount.id)
         .join(AIAnalysis, AIAnalysis.post_id == Post.id)
-        .where(SocialAccount.influencer_id.in_(influencer_ids))
+        .where(SocialAccount.influencer_id.in_(influencer_ids), SocialAccount.visivel_sql())
         .order_by(AIAnalysis.analyzed_at.desc())
     ).all()
 
@@ -134,7 +134,7 @@ def fetch_influencer_analyses(influencer_id: uuid.UUID) -> list[AIAnalysis]:
         select(AIAnalysis)
         .join(Post, AIAnalysis.post_id == Post.id)
         .join(SocialAccount, Post.social_account_id == SocialAccount.id)
-        .where(SocialAccount.influencer_id == influencer_id)
+        .where(SocialAccount.influencer_id == influencer_id, SocialAccount.visivel_sql())
         .order_by(AIAnalysis.analyzed_at.desc())
     )
     return list(db.session.scalars(stmt).all())

@@ -61,6 +61,22 @@ class SocialAccount(Base, TimestampMixin):
     last_synced_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Quando alguém desconectou a conta (migration 0010). Com valor, a conta e
+    # o que veio dela saem da tela e das contas — seguidores, posts, análises,
+    # recomendações —, mas as linhas ficam: o histórico é guardado, só não é
+    # mostrado. Reconectar zera. Filtre com `SocialAccount.visivel_sql()`.
+    desconectada_em: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    @property
+    def visivel(self) -> bool:
+        return self.desconectada_em is None
+
+    @classmethod
+    def visivel_sql(cls):
+        """Condição SQL das contas que aparecem (não desconectadas)."""
+        return cls.desconectada_em.is_(None)
 
     @property
     def connected(self) -> bool:

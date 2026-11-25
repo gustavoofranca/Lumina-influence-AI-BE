@@ -288,6 +288,7 @@ def handle_callback(
     account.refresh_token_encrypted = encrypt_token(bundle.refresh_token)
     account.token_expires_at = bundle.expires_at
     account.last_synced_at = None
+    account.desconectada_em = None  # reconectar devolve a conta e o histórico
     db.session.commit()
     logger.info("Conta social conectada: influencer=%s platform=%s", influencer_id, platform.value)
     return account
@@ -333,6 +334,9 @@ def disconnect_account(
     account.access_token_encrypted = None
     account.refresh_token_encrypted = None
     account.token_expires_at = None
+    # A conta sai da tela e das contas junto com o que veio dela; as linhas
+    # ficam, e reconectar devolve tudo (migration 0010).
+    account.desconectada_em = datetime.now(timezone.utc)
     db.session.commit()
     return {"purged": purge_collected, "posts_deleted": apagados}
 
@@ -372,7 +376,7 @@ def sync_influencer(
     que token de demonstração não vá parar na API real.
     """
     results = []
-    for account in influencer.social_accounts:
+    for account in influencer.contas_visiveis:
         if not account.access_token_encrypted:
             # A simulação infla os números ao acaso e só serve à carga inicial.
             # Conta real sem token fica como está: inventar crescimento sobre o

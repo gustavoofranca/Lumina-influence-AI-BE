@@ -36,7 +36,7 @@ def run_sync_metrics(*, rng: random.Random | None = None) -> dict:
         # Crescimento simulado só onde o número já é simulado: carga inicial e
         # demonstração. Em conta real ele somaria crescimento inventado ao que a
         # plataforma mediu.
-        if p.social_account.vinculo_real:
+        if p.social_account.vinculo_real or not p.social_account.visivel:
             continue
         # Crescimento simulado: 0.5% a 4% nas métricas de engajamento/alcance.
         growth = 1 + rng.uniform(0.005, 0.04)

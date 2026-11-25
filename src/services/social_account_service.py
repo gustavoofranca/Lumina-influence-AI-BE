@@ -26,6 +26,15 @@ def contas_da_agencia(agency_id: uuid.UUID) -> Select:
     )
 
 
+def contas_desconectadas() -> Select:
+    """Subconsulta com os ids das contas desconectadas (migration 0010).
+
+    Para outro domínio tirar da conta o que veio delas — post de campanha num
+    relatório, por exemplo — sem refazer a regra.
+    """
+    return select(SocialAccount.id).where(SocialAccount.desconectada_em.is_not(None))
+
+
 def build_account_query(
     agency_id: uuid.UUID, *, influencer_id: str | None = None
 ) -> Select:
@@ -36,7 +45,7 @@ def build_account_query(
     stmt = (
         select(SocialAccount)
         .join(Influencer, SocialAccount.influencer_id == Influencer.id)
-        .where(Influencer.agency_id == agency_id)
+        .where(Influencer.agency_id == agency_id, SocialAccount.visivel_sql())
         .order_by(SocialAccount.created_at.desc())
     )
     if influencer_id:
