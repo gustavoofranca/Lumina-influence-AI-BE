@@ -88,3 +88,85 @@ def test_seeded_post_has_consistent_reach_split(app, fresh_db):
             # reach_total = organic + paid (com tolerância de arredondamento)
             assert abs(p.reach_total - (p.reach_organic + p.reach_paid)) <= 1
             assert p.likes <= p.reach_total
+
+
+# --------------------------------------------------------------------------
+# seed refresh (25/11/2026)
+# --------------------------------------------------------------------------
+def _envelhecer_posts(dias: int) -> None:
+    """Simula o seed rodado `dias` atrás: empurra posts, comentários e análises."""
+    from datetime import timedelta
+
+    from src.models import AIAnalysis, Comment
+
+    # Linha a linha, e não num UPDATE: o SQLite da suíte não subtrai intervalo.
+    for modelo, coluna in ((Post, "posted_at"), (Comment, "posted_at"), (AIAnalysis, "analyzed_at")):
+        for linha in db.session.scalars(select(modelo)):
+            setattr(linha, coluna, getattr(linha, coluna) - timedelta(days=dias))
+    db.session.commit()
+
+
+def test_seed_refresh_traz_o_painel_de_30_dias_de_volta(app, fresh_db):
+    from src.seed.seed_data import seed_refresh
+    from src.services import dashboard_service
+
+    with app.app_context():
+        seed_run()
+        _envelhecer_posts(120)
+        agency = db.session.scalar(select(Agency).where(Agency.name == SEEDED_AGENCY_NAME))
+        antes = dashboard_service.overview(agency.id, period="30d")
+
+        stats = seed_refresh()
+        depois = dashboard_service.overview(agency.id, period="30d")
+        assert depois["growth_trajectory"] != antes["growth_trajectory"]
+        assert depois["top_performing"], "o painel de 30 dias deveria ter posts"
+        assert 100 <= stats["posts"] <= 300
+        assert stats["comments"] >= stats["posts"] * 12
+        assert stats["ai_analyses"] > 0
+
+        recentes = db.session.scalar(
+            select(func.count(Post.id)).where(Post.platform_post_id.contains("-r"))
+        )
+        assert recentes == stats["posts"]
+
+
+def test_seed_refresh_nao_toca_conta_conectada(app, fresh_db):
+    from src.models import SocialAccount
+    from src.seed.seed_data import seed_refresh
+
+    with app.app_context():
+        seed_run()
+        _envelhecer_posts(60)
+        conta = db.session.scalar(select(SocialAccount).order_by(SocialAccount.id))
+        conta.platform_user_id = "real-123"  # o callback de conexão grava o id da rede
+        db.session.commit()
+        antes = db.session.scalar(select(func.count(Post.id)).where(Post.social_account_id == conta.id))
+
+        seed_refresh()
+
+        depois = db.session.scalar(select(func.count(Post.id)).where(Post.social_account_id == conta.id))
+        assert depois == antes
+
+
+def test_seed_refresh_seguido_nao_acrescenta_nada_e_dry_run_nao_grava(app, fresh_db):
+    from src.seed.seed_data import seed_refresh
+
+    with app.app_context():
+        seed_run()
+        _envelhecer_posts(45)
+        total = db.session.scalar(select(func.count(Post.id)))
+
+        simulado = seed_refresh(gravar=False)
+        assert simulado["posts"] > 0
+        assert db.session.scalar(select(func.count(Post.id))) == total
+
+        seed_refresh()
+        assert seed_refresh()["posts"] == 0
+
+
+def test_seed_refresh_sem_seed_avisa(app, fresh_db):
+    from src.seed.seed_data import seed_refresh
+
+    with app.app_context():
+        with pytest.raises(RuntimeError, match="seed run"):
+            seed_refresh()

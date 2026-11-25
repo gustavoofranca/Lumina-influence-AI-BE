@@ -104,6 +104,7 @@ curl http://localhost:5000/api/v1/health
 | Aplicar migrations | `flask db upgrade` |
 | Popular seed | `flask seed run` |
 | Limpar seed | `flask seed clear` |
+| Renovar a demo até hoje (só acrescenta; `--dry-run` simula) | `flask seed refresh` |
 | Definir senha de um usuário | `flask users set-password <email>` |
 | Zerar o 2FA de quem perdeu o celular e os códigos | `flask users reset-2fa <email>` |
 | Listar jobs | `flask jobs list` |
