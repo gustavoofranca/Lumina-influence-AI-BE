@@ -1104,3 +1104,73 @@ def test_reconectar_devolve_a_conta_e_o_historico(client, ctx, app, monkeypatch)
 
     assert any(sa["handle"] == "canal_teste" for sa in _detalhe(client, ctx)["social_accounts"])
     assert "Da conta real" in _titulos_de_recomendacao(client, ctx)
+
+
+# ==========================================================================
+# Link de conexão para o criador (25/11/2026)
+# ==========================================================================
+def _gerar_link(client, ctx, plataforma="youtube"):
+    r = client.post(f"/api/v1/integrations/{plataforma}/connect-link",
+                    headers=ctx.h_admin, json={"influencer_id": ctx.inf_id})
+    assert r.status_code == 200, r.get_json()
+    return r.get_json()["data"]
+
+
+def test_link_de_conexao_leva_o_criador_ate_conectar_sem_login(client, ctx, app, monkeypatch):
+    monkeypatch.setattr(isvc, "get_adapter", lambda platform: FakeAdapter())
+    dados = _gerar_link(client, ctx)
+    assert dados["url"].startswith("http://localhost:5173/conectar/")
+    token = dados["url"].rsplit("/", 1)[1]
+
+    info = client.get(f"/api/v1/integrations/convite/{token}").get_json()["data"]
+    assert info == {**info, "influencer": "Inf", "agency": "Ag", "platform": "youtube", "connected": False}
+
+    r = client.get(f"/api/v1/integrations/convite/{token}/autorizar")
+    assert r.status_code == 302
+    state = parse_qs(urlparse(r.headers["Location"]).query)["state"][0]
+
+    volta = client.get(f"/api/v1/integrations/youtube/callback?code=abc&state={state}")
+    destino = urlparse(volta.headers["Location"])
+    assert destino.path == "/conectar/concluido"
+    assert parse_qs(destino.query) == {"plataforma": ["youtube"]}
+
+    # Conectada, o mesmo link deixa de servir.
+    assert client.get(f"/api/v1/integrations/convite/{token}").get_json()["data"]["connected"] is True
+    de_novo = client.get(f"/api/v1/integrations/convite/{token}/autorizar")
+    assert "erro=ja_conectada" in de_novo.headers["Location"]
+
+
+def test_recusa_pelo_link_volta_para_a_pagina_publica_com_o_erro(client, ctx, app, monkeypatch):
+    monkeypatch.setattr(isvc, "get_adapter", lambda platform: FakeAdapter())
+    token = _gerar_link(client, ctx)["url"].rsplit("/", 1)[1]
+    r = client.get(f"/api/v1/integrations/convite/{token}/autorizar")
+    state = parse_qs(urlparse(r.headers["Location"]).query)["state"][0]
+    volta = client.get(f"/api/v1/integrations/youtube/callback?error=access_denied&state={state}")
+    destino = urlparse(volta.headers["Location"])
+    assert destino.path == "/conectar/concluido"
+    assert parse_qs(destino.query)["erro"] == ["access_denied"]
+
+
+def test_link_adulterado_ou_vencido_e_recusado(client, ctx, app, monkeypatch):
+    monkeypatch.setattr(isvc, "get_adapter", lambda platform: FakeAdapter())
+    assert client.get("/api/v1/integrations/convite/lixo").get_json()["error"]["code"] == "convite_invalido"
+
+    import jwt as pyjwt
+
+    with app.app_context():
+        vencido = pyjwt.encode({
+            "typ": isvc.CONVITE_TYPE, "inf": ctx.inf_id, "plat": "youtube", "ag": str(ctx.agency_id),
+            "exp": int((datetime.now(timezone.utc) - timedelta(minutes=1)).timestamp()),
+        }, app.config["JWT_SECRET"], algorithm="HS256")
+        # Um state de OAuth não vale como convite, mesmo assinado.
+        state = isvc.mint_state(influencer_id=uuid.UUID(ctx.inf_id), platform=Platform.YOUTUBE,
+                                agency_id=ctx.agency_id)
+    r = client.get(f"/api/v1/integrations/convite/{vencido}")
+    assert r.status_code == 401 and r.get_json()["error"]["code"] == "convite_expirado"
+    assert client.get(f"/api/v1/integrations/convite/{state}").get_json()["error"]["code"] == "convite_invalido"
+
+
+def test_visualizador_nao_gera_link(client, ctx):
+    r = client.post("/api/v1/integrations/youtube/connect-link",
+                    headers=ctx.h_viewer, json={"influencer_id": ctx.inf_id})
+    assert r.status_code == 403

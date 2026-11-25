@@ -174,6 +174,8 @@ class Config:
     RATE_LIMIT_EMAIL_FLOW_IP: dict = {"limit": 10, "window": 3600}
     # Consulta pública de CNPJ — repassa para a BrasilAPI, serviço comunitário.
     RATE_LIMIT_CNPJ: dict = {"limit": 20, "window": 60}
+    # Página pública do link de conexão do criador: abrir e autorizar.
+    RATE_LIMIT_CONVITE: dict = {"limit": 30, "window": 600}
     RATE_LIMIT_TROCA_SENHA: dict = {"limit": 5, "window": 900}
     # Código do 2FA, por conta: o mesmo limite do login. O NIST SP 800-63B-4
     # (§3.1.5.2) exige limite de tentativas para OTP.
