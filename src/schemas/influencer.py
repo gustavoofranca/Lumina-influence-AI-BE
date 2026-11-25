@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Optional
 
-from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from src.models import InfluencerStatus, RecommendationDecisionKind
 from src.schemas.campos import Nome, NomeOpcional, TextoOpcional
@@ -23,7 +23,11 @@ class InfluencerOut(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
-    social_accounts: list[SocialAccountOut] = []
+    # Lê `contas_visiveis` do modelo: conta desconectada não aparece nem soma
+    # seguidores (migration 0010). O nome no JSON continua `social_accounts`.
+    social_accounts: list[SocialAccountOut] = Field(
+        default=[], validation_alias=AliasChoices("contas_visiveis", "social_accounts")
+    )
     # Agregados convenientes pro front (derivados das contas sociais)
     total_followers: int = 0
     platforms: list[str] = []

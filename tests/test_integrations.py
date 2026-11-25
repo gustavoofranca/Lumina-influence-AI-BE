@@ -599,11 +599,16 @@ def test_payload_da_conta_diz_se_ela_esta_conectada(client, ctx, app, monkeypatc
         f"/api/v1/integrations/youtube/disconnect/{conectada['id']}", headers=headers
     )
     assert r.status_code == 200
-    assert contas()[conectada["id"]]["connected"] is False, "o botão da tela depende disso"
+    # Desde 25/11/2026 a conta desconectada sai do payload (migration 0010):
+    # a linha da rede volta a oferecer "Conectar".
+    assert conectada["id"] not in contas()
 
 
-def test_conta_desconectada_preserva_handle_e_historico(client, ctx, app, monkeypatch):
-    """Desvincular não é apagar: handle, seguidores e posts continuam na tela.
+def test_conta_desconectada_sai_da_tela_e_guarda_o_historico(client, ctx, app, monkeypatch):
+    """Desconectar esconde, não apaga (decisão de 25/11/2026, migration 0010).
+
+    A conta, os seguidores e os posts dela saem da tela; as linhas ficam no
+    banco e voltam ao reconectar (`test_reconectar_devolve_a_conta_e_o_historico`).
 
     O token é criado pelo próprio fluxo de callback, e não escrito direto no
     banco: fora de um request, a escrita não é enxergada pela sessão que atende
@@ -633,15 +638,15 @@ def test_conta_desconectada_preserva_handle_e_historico(client, ctx, app, monkey
     )
     assert r.status_code == 200, r.get_json()
 
-    depois = contas()[antes["id"]]
-    assert depois["connected"] is False
-    assert depois["handle"] == antes["handle"]
-    assert depois["follower_count"] == antes["follower_count"]
+    assert antes["id"] not in contas()
 
     posts_depois = client.get(
         f"/api/v1/influencers/{ctx.inf_id}/posts", headers=headers
     ).get_json()["data"]
-    assert len(posts_depois) == posts_antes, "desconectar não pode levar o histórico junto"
+    # O post visível é o da conta do seed, que segue ligada; o callback não
+    # coleta. Que o post da conta desconectada sai da tela e fica no banco está
+    # em `test_desconectar_esconde_conta_seguidores_e_recomendacoes`.
+    assert len(posts_depois) == posts_antes
 
 
 def test_sync_coleta_comentario_de_post_que_ja_existia(client, ctx, app, monkeypatch):
@@ -1027,3 +1032,75 @@ def test_state_ilegivel_continua_respondendo_json(client, ctx, monkeypatch):
     monkeypatch.setattr(isvc, "get_adapter", lambda platform: FakeAdapter())
     r = client.get("/api/v1/integrations/youtube/callback?code=abc&state=garbage")
     assert r.status_code == 401
+
+
+# ==========================================================================
+# Conta desconectada some da tela, com o histórico guardado (migration 0010)
+# ==========================================================================
+def _conectar_canal_teste(client, app, ctx, monkeypatch):
+    monkeypatch.setattr(isvc, "get_adapter", lambda platform: FakeAdapter())
+    with app.app_context():
+        state = isvc.mint_state(
+            influencer_id=uuid.UUID(ctx.inf_id), platform=Platform.YOUTUBE, agency_id=ctx.agency_id
+        )
+    assert client.get(f"/api/v1/integrations/youtube/callback?code=abc&state={state}").status_code == 302
+    with app.app_context():
+        conta = db.session.scalar(select(SocialAccount).where(SocialAccount.handle == "canal_teste"))
+        from src.models import AIAnalysis, SentimentLabel
+
+        post = Post(social_account_id=conta.id, platform_post_id="yt-real-1", post_type=PostType.VIDEO,
+                    posted_at=datetime.now(timezone.utc), reach_total=900, reach_organic=900,
+                    reach_paid=0, impressions=1200, likes=90, comments_count=9, shares=1, saves=1)
+        db.session.add(post)
+        db.session.flush()
+        db.session.add(AIAnalysis(
+            post_id=post.id, model_version="teste", sentiment_score=0.5,
+            sentiment_label=SentimentLabel.POSITIVE,
+            recommendations=[{"priority": "high", "title": "Da conta real", "description": "x"}],
+        ))
+        db.session.commit()
+        return str(conta.id)
+
+
+def _detalhe(client, ctx):
+    return client.get(f"/api/v1/influencers/{ctx.inf_id}", headers=ctx.h_admin).get_json()["data"]
+
+
+def _titulos_de_recomendacao(client, ctx):
+    dados = client.get(f"/api/v1/influencers/{ctx.inf_id}/analysis", headers=ctx.h_admin).get_json()["data"]
+    return [r.get("title") for r in dados.get("recommendations") or []]
+
+
+def test_desconectar_esconde_conta_seguidores_e_recomendacoes(client, ctx, app, monkeypatch):
+    conta_id = _conectar_canal_teste(client, app, ctx, monkeypatch)
+    antes = _detalhe(client, ctx)
+    assert any(sa["handle"] == "canal_teste" for sa in antes["social_accounts"])
+    assert antes["total_followers"] == 51000
+    assert "Da conta real" in _titulos_de_recomendacao(client, ctx)
+
+    r = client.post(f"/api/v1/integrations/youtube/disconnect/{conta_id}", headers=ctx.h_admin, json={})
+    assert r.status_code == 200
+
+    depois = _detalhe(client, ctx)
+    assert [sa["handle"] for sa in depois["social_accounts"]] == ["canal"]
+    assert depois["total_followers"] == 1000
+    assert "Da conta real" not in _titulos_de_recomendacao(client, ctx)
+    posts = client.get(f"/api/v1/influencers/{ctx.inf_id}/posts", headers=ctx.h_admin).get_json()["data"]
+    assert all(p.get("platform_post_id") != "yt-real-1" for p in posts)
+
+    # O histórico ficou no banco.
+    with app.app_context():
+        assert db.session.scalar(select(Post).where(Post.platform_post_id == "yt-real-1")) is not None
+
+
+def test_reconectar_devolve_a_conta_e_o_historico(client, ctx, app, monkeypatch):
+    conta_id = _conectar_canal_teste(client, app, ctx, monkeypatch)
+    client.post(f"/api/v1/integrations/youtube/disconnect/{conta_id}", headers=ctx.h_admin, json={})
+    with app.app_context():
+        state = isvc.mint_state(
+            influencer_id=uuid.UUID(ctx.inf_id), platform=Platform.YOUTUBE, agency_id=ctx.agency_id
+        )
+    client.get(f"/api/v1/integrations/youtube/callback?code=abc&state={state}")
+
+    assert any(sa["handle"] == "canal_teste" for sa in _detalhe(client, ctx)["social_accounts"])
+    assert "Da conta real" in _titulos_de_recomendacao(client, ctx)

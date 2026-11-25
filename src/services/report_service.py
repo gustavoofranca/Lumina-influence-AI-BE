@@ -25,7 +25,7 @@ from src.models import (
     Report,
     ReportFormat,
 )
-from src.services import dashboard_service
+from src.services import dashboard_service, social_account_service
 from src.services import metric_service as M
 from src.services.report_template import REPORT_HTML
 from src.utils.brand import marca_data_uri
@@ -342,6 +342,9 @@ def _posts_in_period(campaign_id: uuid.UUID, period_start: date, period_end: dat
     return (
         select(Post)
         .where(Post.campaign_id == campaign_id)
+        # Post de conta desconectada não entra em relatório novo; os já
+        # publicados não mudam (ADR-012).
+        .where(Post.social_account_id.not_in(social_account_service.contas_desconectadas()))
         .where(func.date(Post.posted_at) >= period_start)
         .where(func.date(Post.posted_at) <= period_end)
     )

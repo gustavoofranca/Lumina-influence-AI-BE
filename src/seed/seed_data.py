@@ -567,6 +567,7 @@ def _contas_semeadas(agency: Agency) -> dict[str, list[SocialAccount]]:
                 or sa.influencer.agency_id != agency.id
                 or sa.platform_user_id != f"{plat_str}-{raw['slug']}"
                 or sa.access_token_encrypted is not None
+                or sa.desconectada_em is not None
             ):
                 continue
             contas.setdefault(raw["slug"], []).append(sa)

@@ -37,6 +37,15 @@ class Influencer(Base, TimestampMixin):
     social_accounts: Mapped[list["SocialAccount"]] = relationship(
         back_populates="influencer", cascade="all, delete-orphan"
     )
+
+    @property
+    def contas_visiveis(self) -> list["SocialAccount"]:
+        """Contas que aparecem e contam: sem as desconectadas (migration 0010).
+
+        `social_accounts` continua com todas — é por ele que a exclusão do
+        criador leva as contas junto. Tela e agregados leem daqui.
+        """
+        return [sa for sa in self.social_accounts if sa.desconectada_em is None]
     campaign_links: Mapped[list["CampaignInfluencer"]] = relationship(
         back_populates="influencer", cascade="all, delete-orphan"
     )

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.orm import selectinload
 
 from src.extensions import db
@@ -56,7 +56,7 @@ def build_influencer_query(
 
     if platform is not None:
         stmt = stmt.where(
-            Influencer.social_accounts.any(SocialAccount.platform == platform)
+            Influencer.social_accounts.any(and_(SocialAccount.platform == platform, SocialAccount.visivel_sql()))
         )
 
     if follower_min is not None or follower_max is not None:
@@ -66,6 +66,7 @@ def build_influencer_query(
                 SocialAccount.influencer_id.label("inf_id"),
                 func.coalesce(func.sum(SocialAccount.follower_count), 0).label("total"),
             )
+            .where(SocialAccount.visivel_sql())
             .group_by(SocialAccount.influencer_id)
             .subquery()
         )

@@ -163,7 +163,7 @@ def featured_diagnosis(agency_id: uuid.UUID) -> dict | None:
         .join(Post, AIAnalysis.post_id == Post.id)
         .join(SocialAccount, Post.social_account_id == SocialAccount.id)
         .join(Influencer, SocialAccount.influencer_id == Influencer.id)
-        .where(Influencer.agency_id == agency_id)
+        .where(Influencer.agency_id == agency_id, SocialAccount.visivel_sql())
         .order_by(AIAnalysis.analyzed_at.desc())
     )
 
@@ -243,7 +243,7 @@ def _influencer_scorecard(
     eng = M.engagement_rate(posts)
     ai = M.ai_aggregates(analyses)
     resonance = M.resonance_score(eng, ai["sentiment_index_pct"], ai["brand_coherence"])
-    accounts = influencer.social_accounts
+    accounts = influencer.contas_visiveis
     handle = f"@{accounts[0].handle}" if accounts else None
     followers = sum(sa.follower_count for sa in accounts)
     return {
@@ -343,7 +343,7 @@ def network_density(agency_id: uuid.UUID) -> dict:
         select(func.count(func.distinct(Influencer.id)))
         .select_from(Influencer)
         .join(SocialAccount, SocialAccount.influencer_id == Influencer.id)
-        .where(Influencer.agency_id == agency_id)
+        .where(Influencer.agency_id == agency_id, SocialAccount.visivel_sql())
     ) or 0
     value = round(connected / total * 100) if total else 0
     return {"value": value, "total": int(total), "connected": int(connected)}
@@ -497,7 +497,7 @@ def influencer_analysis(influencer: Influencer) -> dict:
     # uma afirmação favorável inventada, pior que um zero (ADR-003).
     bot = ai["bot_probability"]
     suspeita = ai["suspicious_probability"]
-    total_followers = sum(sa.follower_count for sa in influencer.social_accounts)
+    total_followers = sum(sa.follower_count for sa in influencer.contas_visiveis)
     audience_integrity = None
     if bot is not None:
         # A faixa suspeita é **medida** pelo modelo. Até 02/09/2026 ela saía de
@@ -568,7 +568,7 @@ def influencer_analysis(influencer: Influencer) -> dict:
             "id": str(influencer.id),
             "display_name": influencer.display_name,
             "niche": influencer.niche,
-            "platforms": sorted({sa.platform.value for sa in influencer.social_accounts}),
+            "platforms": sorted({sa.platform.value for sa in influencer.contas_visiveis}),
             "total_followers": total_followers,
         },
         "diagnostic_kpis": {
@@ -754,7 +754,7 @@ def campaign_benchmarking(
         split = M.reach_split(posts)
         resonance = M.resonance_score(eng, ai["sentiment_index_pct"], ai["brand_coherence"])
 
-        accounts = influencer.social_accounts
+        accounts = influencer.contas_visiveis
         rows.append(
             {
                 "influencer_id": str(influencer.id),
